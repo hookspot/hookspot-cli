@@ -34,9 +34,15 @@ func (c *Client) Listen(ctx context.Context, handler func(message []byte) error)
 	}
 	defer conn.Close()
 
+	done := make(chan struct{})
+	defer close(done)
+
 	go func() {
-		<-ctx.Done()
-		conn.Close()
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
 	}()
 
 	for {
