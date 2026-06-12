@@ -1201,7 +1201,10 @@ import (
 	"hookspot-cli/internal/ws"
 )
 
-var listenPath string
+var (
+	listenPath  string
+	forwardHost string
+)
 
 var listenCmd = &cobra.Command{
 	Use:   "listen <port> [source...]",
@@ -1220,9 +1223,9 @@ var listenCmd = &cobra.Command{
 		}
 
 		if len(sources) == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://localhost:%s%s\n", cfg.Project, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s%s\n", cfg.Project, forwardHost, port, listenPath)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://localhost:%s%s\n", strings.Join(sources, ", "), cfg.Project, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s%s\n", strings.Join(sources, ", "), cfg.Project, forwardHost, port, listenPath)
 		}
 
 		query := url.Values{}
@@ -1234,7 +1237,7 @@ var listenCmd = &cobra.Command{
 		wsURL := strings.Replace(cfg.ServerURL, "http", "ws", 1) + "/cli/listen?" + query.Encode()
 
 		wsClient := ws.New(wsURL, cfg.Token)
-		forwarder := proxy.New("http://localhost:" + port)
+		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
 		return wsClient.Listen(cmd.Context(), func(message []byte) error {
 			resp, err := forwarder.Forward(cmd.Context(), listenPath, message, nil)
@@ -1252,6 +1255,7 @@ var listenCmd = &cobra.Command{
 
 func init() {
 	listenCmd.Flags().StringVar(&listenPath, "path", "/", "path to forward events to on the local server")
+	listenCmd.Flags().StringVar(&forwardHost, "forward-host", "localhost", "host to forward events to (use host.docker.internal when running in Docker)")
 	rootCmd.AddCommand(listenCmd)
 }
 ```
@@ -1263,7 +1267,7 @@ make build
 make run ARGS="listen --help"
 ```
 
-Expected: builds with no errors; `listen --help` prints usage including the `--path` flag and `<port> [source...]` usage line.
+Expected: builds with no errors; `listen --help` prints usage including the `--path` and `--forward-host` flags and `<port> [source...]` usage line.
 
 - [ ] **Step 3: Verify the auth/project guard errors**
 
@@ -1417,8 +1421,80 @@ git commit -m "Add production Dockerfile, README, and Docker usage docs"
 
 ---
 
+### Task 10: docker-compose for running the built CLI
+
+**Files:**
+- Create: `docker-compose.yml`
+- Modify: `README.md`
+
+This task depends on the `Dockerfile` created in Task 9.
+
+- [ ] **Step 1: Write `docker-compose.yml`**
+
+```yaml
+services:
+  hookspot-cli:
+    build: .
+    image: hookspot-cli:dev
+    environment:
+      - HOOKSPOT_TOKEN
+      - HOOKSPOT_PROJECT
+      - HOOKSPOT_SERVER_URL
+      - HOOKSPOT_LOG_LEVEL
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+- [ ] **Step 2: Build and smoke test via Compose**
+
+```bash
+docker compose build
+docker compose run --rm hookspot-cli version
+docker compose run --rm hookspot-cli --help
+HOOKSPOT_TOKEN=test-token HOOKSPOT_PROJECT=proj_1 docker compose run --rm hookspot-cli listen 3000 --path /webhooks --forward-host host.docker.internal
+```
+
+Expected: `version` prints `hookspot-cli dev`; `--help` prints Cobra usage; the `listen` invocation prints `Listening for all sources in project proj_1, forwarding to http://host.docker.internal:3000/webhooks` and then fails with a websocket connection error (there is no real hookspot server yet) — that failure is expected at this stage.
+
+- [ ] **Step 3: Append a "Docker Compose" section to `README.md`**
+
+Add this section after the existing "Running in Docker" section:
+
+```markdown
+## Running with Docker Compose
+
+A `docker-compose.yml` is provided for building and running `hookspot-cli`
+without a local Go toolchain.
+
+```bash
+docker compose build
+
+# Set credentials via env vars (or a .env file) before running
+export HOOKSPOT_TOKEN=hk_...
+export HOOKSPOT_PROJECT=proj_...
+
+docker compose run --rm hookspot-cli login
+docker compose run --rm hookspot-cli project list
+docker compose run --rm hookspot-cli listen 3000 --path /webhooks --forward-host host.docker.internal
+```
+
+`host.docker.internal` (mapped via `extra_hosts` in `docker-compose.yml`)
+lets the container reach services running on your host machine — use it as
+the `--forward-host` when the target server (e.g. `localhost:3000`) runs
+outside the container.
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add docker-compose.yml README.md
+git commit -m "Add docker-compose for building and running hookspot-cli"
+```
+
+---
+
 ## Plan self-review notes
 
-- **Spec coverage:** auth (Task 4), project commands (Task 5), listen command (Task 8), config/Docker precedence (Tasks 2-3), Dockerfile (Task 9), proxy/ws placeholders (Tasks 6-7) — all spec sections have a corresponding task.
-- **Type consistency:** `config.Config{Token, Project, ServerURL, LogLevel}` (Task 2) is used identically in Tasks 3-5 and 8. `proxy.New(targetBaseURL string) *Forwarder` / `Forward(ctx, path, body, headers)` (Task 6) matches its use in Task 8. `ws.New(url, token string) *Client` / `Listen(ctx, handler)` (Task 7) matches its use in Task 8. `api.Client.Me`/`ListProjects` (Tasks 4-5) match their use in `cmd/login.go` and `cmd/project.go`.
+- **Spec coverage:** auth (Task 4), project commands (Task 5), listen command (Task 8), config/Docker precedence (Tasks 2-3), Dockerfile (Task 9), docker-compose (Task 10), proxy/ws placeholders (Tasks 6-7) — all spec sections have a corresponding task.
+- **Type consistency:** `config.Config{Token, Project, ServerURL, LogLevel}` (Task 2) is used identically in Tasks 3-5 and 8. `proxy.New(targetBaseURL string) *Forwarder` / `Forward(ctx, path, body, headers)` (Task 6) matches its use in Task 8. `ws.New(url, token string) *Client` / `Listen(ctx, handler)` (Task 7) matches its use in Task 8. `api.Client.Me`/`ListProjects` (Tasks 4-5) match their use in `cmd/login.go` and `cmd/project.go`. `--forward-host` (added to Task 8's `listenCmd`, default `localhost`) is the value Task 10's docker-compose docs tell users to set to `host.docker.internal`.
 - **No placeholders:** all code blocks are complete and compile together; out-of-scope items (browser-pairing login, real hookspot server endpoints/protocol) are explicitly deferred in the spec, not left as TODOs in code.
