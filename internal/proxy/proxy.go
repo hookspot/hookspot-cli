@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Forwarder forwards received event bytes to a local target via HTTP POST.
@@ -17,7 +18,7 @@ type Forwarder struct {
 func New(targetBaseURL string) *Forwarder {
 	return &Forwarder{
 		targetBaseURL: strings.TrimRight(targetBaseURL, "/"),
-		client:        http.DefaultClient,
+		client:        &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

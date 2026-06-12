@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +12,8 @@ import (
 	"hookspot-cli/internal/proxy"
 	"hookspot-cli/internal/ws"
 )
+
+const reconnectDelay = 2 * time.Second
 
 var (
 	listenPath  string
@@ -50,7 +53,7 @@ var listenCmd = &cobra.Command{
 		wsClient := ws.New(wsURL, cfg.Token)
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
-		return wsClient.Listen(cmd.Context(), func(message []byte) error {
+		handler := func(message []byte) error {
 			resp, err := forwarder.Forward(cmd.Context(), listenPath, message, nil)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
@@ -60,7 +63,17 @@ var listenCmd = &cobra.Command{
 
 			fmt.Fprintf(cmd.OutOrStdout(), "forwarded event -> %d\n", resp.StatusCode)
 			return nil
-		})
+		}
+
+		for {
+			err := wsClient.Listen(cmd.Context(), handler)
+			if cmd.Context().Err() != nil {
+				return cmd.Context().Err()
+			}
+
+			fmt.Fprintf(cmd.ErrOrStderr(), "connection error: %v, reconnecting in %s...\n", err, reconnectDelay)
+			time.Sleep(reconnectDelay)
+		}
 	},
 }
 
