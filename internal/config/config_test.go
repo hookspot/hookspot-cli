@@ -90,3 +90,28 @@ func TestSave_WritesAndReloads(t *testing.T) {
 		t.Fatalf("Token = %q, want %q", cfg.Token, "saved-token")
 	}
 }
+
+func TestSave_SetsRestrictivePermissions(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+
+	v, err := New(configFile)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	v.Set("token", "saved-token")
+
+	if err := Save(v, configFile); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	info, err := os.Stat(configFile)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("file mode = %o, want %o", perm, 0o600)
+	}
+}

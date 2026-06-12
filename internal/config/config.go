@@ -75,5 +75,9 @@ func Save(v *viper.Viper, configFile string) error {
 		return err
 	}
 
-	return v.WriteConfigAs(configFile)
+	if err := v.WriteConfigAs(configFile); err != nil {
+		return err
+	}
+
+	return os.Chmod(configFile, 0o600)
 }
