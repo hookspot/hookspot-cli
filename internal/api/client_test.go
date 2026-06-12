@@ -32,3 +32,32 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 		t.Fatalf("Email = %q, want %q", user.Email, "dev@example.com")
 	}
 }
+
+func TestClient_ListProjects_ReturnsProjects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects" {
+			t.Errorf("path = %q, want /api/projects", r.URL.Path)
+		}
+		projects := []Project{
+			{ID: "proj_1", Name: "Production"},
+			{ID: "proj_2", Name: "Staging"},
+		}
+		if err := json.NewEncoder(w).Encode(projects); err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := New(server.URL, "test-token")
+
+	projects, err := client.ListProjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("len(projects) = %d, want 2", len(projects))
+	}
+	if projects[0].ID != "proj_1" || projects[1].ID != "proj_2" {
+		t.Fatalf("unexpected projects: %+v", projects)
+	}
+}

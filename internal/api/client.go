@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Client is a small REST client for the hookspot API.
@@ -20,7 +21,7 @@ func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		http:    http.DefaultClient,
+		http:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -37,6 +38,21 @@ func (c *Client) Me(ctx context.Context) (*User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// Project represents a hookspot project accessible to the current user.
+type Project struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListProjects returns the projects accessible to the client's token.
+func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
+	var projects []Project
+	if err := c.get(ctx, "/api/projects", &projects); err != nil {
+		return nil, err
+	}
+	return projects, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
