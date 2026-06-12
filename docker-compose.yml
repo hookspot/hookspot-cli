@@ -1,0 +1,11 @@
+services:
+  hookspot-cli:
+    build: .
+    image: hookspot-cli:dev
+    environment:
+      - HOOKSPOT_TOKEN
+      - HOOKSPOT_PROJECT
+      - HOOKSPOT_SERVER_URL
+      - HOOKSPOT_LOG_LEVEL
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
