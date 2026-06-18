@@ -8,9 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hookspot-cli/internal/config"
-	"hookspot-cli/internal/proxy"
-	"hookspot-cli/internal/ws"
+	"hookspot/internal/api"
+	"hookspot/internal/config"
+	"hookspot/internal/proxy"
+	"hookspot/internal/ws"
 )
 
 const reconnectDelay = 2 * time.Second
@@ -29,17 +30,28 @@ var listenCmd = &cobra.Command{
 		sources := args[1:]
 
 		cfg := config.Load(v)
-		if cfg.Token == "" {
-			return fmt.Errorf("not logged in: run 'hookspot-cli login' or set HOOKSPOT_TOKEN")
+		if cfg.CLIKey == "" {
+			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
 		}
 		if cfg.Project == "" {
-			return fmt.Errorf("no active project: run 'hookspot-cli project use <project>' or set HOOKSPOT_PROJECT")
+			return fmt.Errorf("no active project: run 'hookspot project use <project>' or set HOOKSPOT_PROJECT")
 		}
 
+		srvURL, err := requireServerURL()
+		if err != nil {
+			return err
+		}
+
+		project, err := api.New(srvURL, cfg.CLIKey).GetProject(cmd.Context(), cfg.Project)
+		if err != nil {
+			return fmt.Errorf("resolve project: %w", err)
+		}
+		projectLabel := project.Organization.Name + "/" + project.Name
+
 		if len(sources) == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s%s\n", cfg.Project, forwardHost, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s%s\n", projectLabel, forwardHost, port, listenPath)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s%s\n", strings.Join(sources, ", "), cfg.Project, forwardHost, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s%s\n", strings.Join(sources, ", "), projectLabel, forwardHost, port, listenPath)
 		}
 
 		query := url.Values{}
@@ -48,9 +60,9 @@ var listenCmd = &cobra.Command{
 			query.Add("source", source)
 		}
 
-		wsURL := strings.Replace(cfg.ServerURL, "http", "ws", 1) + "/cli/listen?" + query.Encode()
+		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?" + query.Encode()
 
-		wsClient := ws.New(wsURL, cfg.Token)
+		wsClient := ws.New(wsURL, cfg.CLIKey)
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
 		handler := func(message []byte) error {
