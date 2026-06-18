@@ -12,47 +12,63 @@ import (
 // Client is a small REST client for the hookspot API.
 type Client struct {
 	baseURL string
-	token   string
+	cliKey  string
 	http    *http.Client
 }
 
-// New returns a Client configured for baseURL, authenticating with token.
-func New(baseURL, token string) *Client {
+// New returns a Client configured for baseURL, authenticating with cliKey.
+func New(baseURL, cliKey string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
+		cliKey:  cliKey,
 		http:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 // User represents the authenticated hookspot user.
 type User struct {
-	ID    string `json:"id"`
+	UID   string `json:"uid"`
 	Email string `json:"email"`
 }
 
-// Me returns the user associated with the client's token.
+// Me returns the user associated with the client's CLI key.
 func (c *Client) Me(ctx context.Context) (*User, error) {
 	var user User
-	if err := c.get(ctx, "/api/me", &user); err != nil {
+	if err := c.get(ctx, "/cli/me", &user); err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
-// Project represents a hookspot project accessible to the current user.
-type Project struct {
-	ID   string `json:"id"`
+// Organization represents the organization a project belongs to.
+type Organization struct {
+	UID  string `json:"uid"`
 	Name string `json:"name"`
 }
 
-// ListProjects returns the projects accessible to the client's token.
+// Project represents a hookspot project accessible to the current user.
+type Project struct {
+	UID          string       `json:"uid"`
+	Name         string       `json:"name"`
+	Organization Organization `json:"organization"`
+}
+
+// ListProjects returns the projects accessible to the client's CLI key.
 func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	var projects []Project
-	if err := c.get(ctx, "/api/projects", &projects); err != nil {
+	if err := c.get(ctx, "/cli/projects", &projects); err != nil {
 		return nil, err
 	}
 	return projects, nil
+}
+
+// GetProject returns a single project by uid, including its organization.
+func (c *Client) GetProject(ctx context.Context, uid string) (*Project, error) {
+	var project Project
+	if err := c.get(ctx, "/cli/projects/"+uid, &project); err != nil {
+		return nil, err
+	}
+	return &project, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
@@ -60,8 +76,8 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 	if err != nil {
 		return err
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.cliKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.cliKey)
 	}
 
 	resp, err := c.http.Do(req)

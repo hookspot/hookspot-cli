@@ -10,19 +10,19 @@ import (
 
 func TestClient_Me_ReturnsUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/me" {
-			t.Errorf("path = %q, want /api/me", r.URL.Path)
+		if r.URL.Path != "/cli/me" {
+			t.Errorf("path = %q, want /cli/me", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer test-key")
 		}
-		if err := json.NewEncoder(w).Encode(User{ID: "usr_1", Email: "dev@example.com"}); err != nil {
+		if err := json.NewEncoder(w).Encode(User{UID: "usr_1", Email: "dev@example.com"}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
 	defer server.Close()
 
-	client := New(server.URL, "test-token")
+	client := New(server.URL, "test-key")
 
 	user, err := client.Me(context.Background())
 	if err != nil {
@@ -35,12 +35,12 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 
 func TestClient_ListProjects_ReturnsProjects(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/projects" {
-			t.Errorf("path = %q, want /api/projects", r.URL.Path)
+		if r.URL.Path != "/cli/projects" {
+			t.Errorf("path = %q, want /cli/projects", r.URL.Path)
 		}
 		projects := []Project{
-			{ID: "proj_1", Name: "Production"},
-			{ID: "proj_2", Name: "Staging"},
+			{UID: "proj_1", Name: "Production"},
+			{UID: "proj_2", Name: "Staging"},
 		}
 		if err := json.NewEncoder(w).Encode(projects); err != nil {
 			t.Fatalf("encode: %v", err)
@@ -48,7 +48,7 @@ func TestClient_ListProjects_ReturnsProjects(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL, "test-token")
+	client := New(server.URL, "test-key")
 
 	projects, err := client.ListProjects(context.Background())
 	if err != nil {
@@ -57,7 +57,40 @@ func TestClient_ListProjects_ReturnsProjects(t *testing.T) {
 	if len(projects) != 2 {
 		t.Fatalf("len(projects) = %d, want 2", len(projects))
 	}
-	if projects[0].ID != "proj_1" || projects[1].ID != "proj_2" {
+	if projects[0].UID != "proj_1" || projects[1].UID != "proj_2" {
 		t.Fatalf("unexpected projects: %+v", projects)
+	}
+}
+
+func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cli/projects/proj_1" {
+			t.Errorf("path = %q, want /cli/projects/proj_1", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer test-key")
+		}
+		project := Project{
+			UID:          "proj_1",
+			Name:         "Production",
+			Organization: Organization{UID: "org_1", Name: "Acme"},
+		}
+		if err := json.NewEncoder(w).Encode(project); err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := New(server.URL, "test-key")
+
+	project, err := client.GetProject(context.Background(), "proj_1")
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	if project.Name != "Production" {
+		t.Fatalf("Name = %q, want %q", project.Name, "Production")
+	}
+	if project.Organization.Name != "Acme" {
+		t.Fatalf("Organization.Name = %q, want %q", project.Organization.Name, "Acme")
 	}
 }
