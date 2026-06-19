@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -54,15 +53,10 @@ var listenCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s%s\n", strings.Join(sources, ", "), projectLabel, forwardHost, port, listenPath)
 		}
 
-		query := url.Values{}
-		query.Set("project", cfg.Project)
-		for _, source := range sources {
-			query.Add("source", source)
-		}
+		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?vsn=2.0.0"
+		topic := "project:" + cfg.Project
 
-		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?" + query.Encode()
-
-		wsClient := ws.New(wsURL, cfg.CLIKey)
+		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sources)
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
 		handler := func(message []byte) error {
