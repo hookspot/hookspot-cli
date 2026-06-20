@@ -59,8 +59,8 @@ var listenCmd = &cobra.Command{
 		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sources)
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
-		handler := func(message []byte) error {
-			resp, err := forwarder.Forward(cmd.Context(), listenPath, message, nil)
+		handler := func(d ws.Delivery) error {
+			resp, err := forwarder.Forward(cmd.Context(), d.Method, listenPath, d.Query, d.Body, d.Headers)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
 				return nil

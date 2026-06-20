@@ -77,10 +77,16 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 			t.Errorf("write reply: %v", err)
 		}
 
+		deliveryPayload, _ := json.Marshal(Delivery{
+			Method:  "POST",
+			Headers: http.Header{"Content-Type": []string{"application/json"}},
+			Query:   "a=1",
+			Body:    []byte(`{"k":1}`),
+		})
 		push, _ := encode(message{
 			Topic:   "project:proj_1",
-			Event:   "delivery_attempt.created",
-			Payload: json.RawMessage(`{"id":"da_1"}`),
+			Event:   "delivery",
+			Payload: deliveryPayload,
 		})
 		if err := conn.WriteMessage(websocket.TextMessage, push); err != nil {
 			t.Errorf("write push: %v", err)
@@ -97,9 +103,9 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	received := make(chan string, 1)
-	err := client.Listen(ctx, func(message []byte) error {
-		received <- string(message)
+	received := make(chan Delivery, 1)
+	err := client.Listen(ctx, func(d Delivery) error {
+		received <- d
 		return errStop
 	})
 
@@ -108,9 +114,18 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 	}
 
 	select {
-	case msg := <-received:
-		if msg != `{"id":"da_1"}` {
-			t.Fatalf("payload = %q, want %q", msg, `{"id":"da_1"}`)
+	case d := <-received:
+		if d.Method != "POST" {
+			t.Fatalf("method = %q, want POST", d.Method)
+		}
+		if d.Query != "a=1" {
+			t.Fatalf("query = %q, want a=1", d.Query)
+		}
+		if got := d.Headers.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("Content-Type = %q, want application/json", got)
+		}
+		if string(d.Body) != `{"k":1}` {
+			t.Fatalf("body = %q, want %q", d.Body, `{"k":1}`)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -151,7 +166,7 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := client.Listen(ctx, func([]byte) error { return nil })
+	err := client.Listen(ctx, func(Delivery) error { return nil })
 	if err == nil {
 		t.Fatal("Listen error = nil, want join error")
 	}

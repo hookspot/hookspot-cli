@@ -14,8 +14,21 @@ import (
 const (
 	joinRef           = "1"
 	heartbeatInterval = 30 * time.Second
-	deliveryEvent     = "delivery_attempt.created"
+	deliveryEvent     = "delivery"
 )
+
+// Delivery is the payload of a delivery event: a captured webhook request to
+// replay against the local target.
+//
+// Body is base64-encoded on the wire; encoding/json base64-decodes it
+// automatically when unmarshaling into the []byte field, so delivery.Body
+// holds the raw request body.
+type Delivery struct {
+	Method  string      `json:"method"`
+	Headers http.Header `json:"headers"`
+	Query   string      `json:"query"`
+	Body    []byte      `json:"body"`
+}
 
 // Client connects to a hookspot Phoenix Channel and streams events.
 type Client struct {
@@ -31,10 +44,10 @@ func New(url, cliKey, topic string, sources []string) *Client {
 	return &Client{url: url, cliKey: cliKey, topic: topic, sources: sources}
 }
 
-// Listen connects, joins the channel, and invokes handler with the payload of
-// each delivery_attempt.created event. It blocks until handler returns an
-// error, the channel errors/closes, or ctx is cancelled.
-func (c *Client) Listen(ctx context.Context, handler func(message []byte) error) error {
+// Listen connects, joins the channel, and invokes handler with the decoded
+// Delivery of each delivery event. It blocks until handler returns an error,
+// the channel errors/closes, or ctx is cancelled.
+func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) error) error {
 	header := http.Header{}
 	if c.cliKey != "" {
 		header.Set("X-CLI-KEY", c.cliKey)
@@ -79,7 +92,11 @@ func (c *Client) Listen(ctx context.Context, handler func(message []byte) error)
 
 		switch msg.Event {
 		case deliveryEvent:
-			if err := handler(msg.Payload); err != nil {
+			var delivery Delivery
+			if err := json.Unmarshal(msg.Payload, &delivery); err != nil {
+				return fmt.Errorf("decode delivery: %w", err)
+			}
+			if err := handler(delivery); err != nil {
 				return err
 			}
 		case "phx_error", "phx_close":

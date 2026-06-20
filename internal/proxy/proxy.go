@@ -22,14 +22,22 @@ func New(targetBaseURL string) *Forwarder {
 	}
 }
 
-// Forward sends body as an HTTP POST to targetBaseURL+path, copying the
-// given headers onto the outgoing request.
-func (f *Forwarder) Forward(ctx context.Context, path string, body []byte, headers http.Header) (*http.Response, error) {
+// Forward replays a request to targetBaseURL+path with the given method, raw
+// query string, body, and headers. An empty method defaults to POST.
+func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
+	if method == "" {
+		method = http.MethodPost
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, f.targetBaseURL+path, bytes.NewReader(body))
+	target := f.targetBaseURL + path
+	if query != "" {
+		target += "?" + query
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
