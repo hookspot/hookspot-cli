@@ -79,6 +79,7 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 
 		deliveryPayload, _ := json.Marshal(Delivery{
 			Method:  "POST",
+			Path:    "/webhooks/stripe",
 			Headers: http.Header{"Content-Type": []string{"application/json"}},
 			Query:   "a=1",
 			Body:    []byte(`{"k":1}`),
@@ -117,6 +118,9 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 	case d := <-received:
 		if d.Method != "POST" {
 			t.Fatalf("method = %q, want POST", d.Method)
+		}
+		if d.Path != "/webhooks/stripe" {
+			t.Fatalf("path = %q, want /webhooks/stripe", d.Path)
 		}
 		if d.Query != "a=1" {
 			t.Fatalf("query = %q, want a=1", d.Query)

@@ -15,10 +15,7 @@ import (
 
 const reconnectDelay = 2 * time.Second
 
-var (
-	listenPath  string
-	forwardHost string
-)
+var forwardHost string
 
 var listenCmd = &cobra.Command{
 	Use:   "listen <port> [source...]",
@@ -48,9 +45,9 @@ var listenCmd = &cobra.Command{
 		projectLabel := project.Organization.Name + "/" + project.Name
 
 		if len(sources) == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s%s\n", projectLabel, forwardHost, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s\n", projectLabel, forwardHost, port)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s%s\n", strings.Join(sources, ", "), projectLabel, forwardHost, port, listenPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s\n", strings.Join(sources, ", "), projectLabel, forwardHost, port)
 		}
 
 		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?vsn=2.0.0"
@@ -60,7 +57,9 @@ var listenCmd = &cobra.Command{
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
 		handler := func(d ws.Delivery) error {
-			resp, err := forwarder.Forward(cmd.Context(), d.Method, listenPath, d.Query, d.Body, d.Headers)
+			fmt.Printf("!! %+v\n", d)
+
+			resp, err := forwarder.Forward(cmd.Context(), d.Method, d.Path, d.Query, d.Body, d.Headers)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
 				return nil
@@ -84,7 +83,6 @@ var listenCmd = &cobra.Command{
 }
 
 func init() {
-	listenCmd.Flags().StringVar(&listenPath, "path", "/", "path to forward events to on the local server")
 	listenCmd.Flags().StringVar(&forwardHost, "forward-host", "localhost", "host to forward events to (use host.docker.internal when running in Docker)")
 	rootCmd.AddCommand(listenCmd)
 }

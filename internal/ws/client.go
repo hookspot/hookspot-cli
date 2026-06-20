@@ -25,6 +25,7 @@ const (
 // holds the raw request body.
 type Delivery struct {
 	Method  string      `json:"method"`
+	Path    string      `json:"path"`
 	Headers http.Header `json:"headers"`
 	Query   string      `json:"query"`
 	Body    []byte      `json:"body"`
