@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +11,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-var errStop = errors.New("stop after first message")
 
 // readFrame reads one text frame and decodes it as a Phoenix V2 message.
 func readFrame(t *testing.T, conn *websocket.Conn) message {
@@ -29,8 +26,10 @@ func readFrame(t *testing.T, conn *websocket.Conn) message {
 	return m
 }
 
-func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
+func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	upgrader := websocket.Upgrader{}
+
+	gotResponse := make(chan deliveryResponse, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
@@ -65,7 +64,7 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 			t.Errorf("sources = %v, want [stripe]", joinPayload.Sources)
 		}
 
-		// Reply ok, then push an event.
+		// Reply ok, then push a delivery.
 		reply, _ := encode(message{
 			JoinRef: join.JoinRef,
 			Ref:     join.Ref,
@@ -78,11 +77,12 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 		}
 
 		deliveryPayload, _ := json.Marshal(Delivery{
-			Method:  "POST",
-			Path:    "/webhooks/stripe",
-			Headers: http.Header{"Content-Type": []string{"application/json"}},
-			Query:   "a=1",
-			Body:    []byte(`{"k":1}`),
+			AttemptUID: "att_1",
+			Method:     "POST",
+			Path:       "/webhooks/stripe",
+			Headers:    http.Header{"Content-Type": []string{"application/json"}},
+			Query:      "a=1",
+			Body:       []byte(`{"k":1}`),
 		})
 		push, _ := encode(message{
 			Topic:   "project:proj_1",
@@ -93,7 +93,21 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 			t.Errorf("write push: %v", err)
 		}
 
-		time.Sleep(100 * time.Millisecond)
+		// Expect the delivery_response push back.
+		respFrame := readFrame(t, conn)
+		if respFrame.Event != "delivery_response" {
+			t.Errorf("event = %q, want delivery_response", respFrame.Event)
+		}
+		if respFrame.Topic != "project:proj_1" {
+			t.Errorf("topic = %q, want project:proj_1", respFrame.Topic)
+		}
+		var dr deliveryResponse
+		if err := json.Unmarshal(respFrame.Payload, &dr); err != nil {
+			t.Errorf("unmarshal delivery_response: %v", err)
+		}
+		gotResponse <- dr
+
+		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
@@ -104,18 +118,23 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	received := make(chan Delivery, 1)
-	err := client.Listen(ctx, func(d Delivery) error {
-		received <- d
-		return errStop
-	})
-
-	if !errors.Is(err, errStop) {
-		t.Fatalf("Listen error = %v, want %v", err, errStop)
-	}
+	gotDelivery := make(chan Delivery, 1)
+	go func() {
+		_ = client.Listen(ctx, func(d Delivery) (Response, error) {
+			gotDelivery <- d
+			return Response{
+				Status:  201,
+				Headers: http.Header{"X-Foo": []string{"bar"}},
+				Body:    []byte("ok"),
+			}, nil
+		})
+	}()
 
 	select {
-	case d := <-received:
+	case d := <-gotDelivery:
+		if d.AttemptUID != "att_1" {
+			t.Fatalf("attempt_uid = %q, want att_1", d.AttemptUID)
+		}
 		if d.Method != "POST" {
 			t.Fatalf("method = %q, want POST", d.Method)
 		}
@@ -131,8 +150,26 @@ func TestClient_Listen_JoinsAndReceivesEvent(t *testing.T) {
 		if string(d.Body) != `{"k":1}` {
 			t.Fatalf("body = %q, want %q", d.Body, `{"k":1}`)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for event")
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delivery")
+	}
+
+	select {
+	case dr := <-gotResponse:
+		if dr.AttemptUID != "att_1" {
+			t.Fatalf("attempt_uid = %q, want att_1", dr.AttemptUID)
+		}
+		if dr.Status != 201 {
+			t.Fatalf("status = %d, want 201", dr.Status)
+		}
+		if got := dr.Headers.Get("X-Foo"); got != "bar" {
+			t.Fatalf("X-Foo = %q, want bar", got)
+		}
+		if string(dr.Body) != "ok" {
+			t.Fatalf("body = %q, want %q", dr.Body, "ok")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delivery_response")
 	}
 }
 
@@ -170,7 +207,7 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := client.Listen(ctx, func(Delivery) error { return nil })
+	err := client.Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	if err == nil {
 		t.Fatal("Listen error = nil, want join error")
 	}

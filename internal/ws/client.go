@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,20 +16,40 @@ const (
 	joinRef           = "1"
 	heartbeatInterval = 30 * time.Second
 	deliveryEvent     = "delivery"
+	responseEvent     = "delivery_response"
 )
 
 // Delivery is the payload of a delivery event: a captured webhook request to
-// replay against the local target.
+// replay against the local target. AttemptUID correlates the delivery with the
+// delivery_response sent back after forwarding.
 //
 // Body is base64-encoded on the wire; encoding/json base64-decodes it
 // automatically when unmarshaling into the []byte field, so delivery.Body
 // holds the raw request body.
 type Delivery struct {
-	Method  string      `json:"method"`
-	Path    string      `json:"path"`
+	AttemptUID string      `json:"attempt_uid"`
+	Method     string      `json:"method"`
+	Path       string      `json:"path"`
+	Headers    http.Header `json:"headers"`
+	Query      string      `json:"query"`
+	Body       []byte      `json:"body"`
+}
+
+// Response is the local target's reply to a forwarded delivery. Body is
+// base64-encoded on the wire by encoding/json.
+type Response struct {
+	Status  int         `json:"status"`
 	Headers http.Header `json:"headers"`
-	Query   string      `json:"query"`
 	Body    []byte      `json:"body"`
+}
+
+// deliveryResponse is the delivery_response event payload sent back to the
+// server, correlated to the delivery by AttemptUID.
+type deliveryResponse struct {
+	AttemptUID string      `json:"attempt_uid"`
+	Status     int         `json:"status"`
+	Headers    http.Header `json:"headers"`
+	Body       []byte      `json:"body"`
 }
 
 // Client connects to a hookspot Phoenix Channel and streams events.
@@ -45,10 +66,36 @@ func New(url, cliKey, topic string, sources []string) *Client {
 	return &Client{url: url, cliKey: cliKey, topic: topic, sources: sources}
 }
 
-// Listen connects, joins the channel, and invokes handler with the decoded
-// Delivery of each delivery event. It blocks until handler returns an error,
-// the channel errors/closes, or ctx is cancelled.
-func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) error) error {
+// connWriter serializes writes to a websocket connection and assigns a unique,
+// incrementing ref to each outgoing message. gorilla permits only one
+// concurrent writer, and both the heartbeat goroutine and the read loop send
+// frames, so all writes go through here.
+type connWriter struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+	ref  int
+}
+
+func (w *connWriter) send(m message) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.ref++
+	r := strconv.Itoa(w.ref)
+	m.Ref = &r
+
+	frame, err := encode(m)
+	if err != nil {
+		return err
+	}
+	return w.conn.WriteMessage(websocket.TextMessage, frame)
+}
+
+// Listen connects, joins the channel, and for each delivery event invokes
+// handler and pushes the returned Response back as a delivery_response. It
+// blocks until handler returns an error, the channel errors/closes, or ctx is
+// cancelled.
+func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) (Response, error)) error {
 	header := http.Header{}
 	if c.cliKey != "" {
 		header.Set("X-CLI-KEY", c.cliKey)
@@ -64,6 +111,8 @@ func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) err
 		return err
 	}
 
+	writer := &connWriter{conn: conn}
+
 	done := make(chan struct{})
 	defer close(done)
 
@@ -75,7 +124,7 @@ func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) err
 		}
 	}()
 
-	go c.heartbeat(conn, done)
+	go c.heartbeat(writer, done)
 
 	for {
 		_, data, err := conn.ReadMessage()
@@ -93,11 +142,7 @@ func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) err
 
 		switch msg.Event {
 		case deliveryEvent:
-			var delivery Delivery
-			if err := json.Unmarshal(msg.Payload, &delivery); err != nil {
-				return fmt.Errorf("decode delivery: %w", err)
-			}
-			if err := handler(delivery); err != nil {
+			if err := c.handleDelivery(writer, msg.Payload, handler); err != nil {
 				return err
 			}
 		case "phx_error", "phx_close":
@@ -106,6 +151,41 @@ func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) err
 			}
 		}
 	}
+}
+
+// handleDelivery decodes a delivery, invokes handler, and pushes the resulting
+// delivery_response back to the server, correlated by the attempt uid.
+func (c *Client) handleDelivery(writer *connWriter, payload []byte, handler func(Delivery) (Response, error)) error {
+	var delivery Delivery
+	if err := json.Unmarshal(payload, &delivery); err != nil {
+		return fmt.Errorf("decode delivery: %w", err)
+	}
+
+	resp, err := handler(delivery)
+	if err != nil {
+		return err
+	}
+
+	responsePayload, err := json.Marshal(deliveryResponse{
+		AttemptUID: delivery.AttemptUID,
+		Status:     resp.Status,
+		Headers:    resp.Headers,
+		Body:       resp.Body,
+	})
+	if err != nil {
+		return fmt.Errorf("encode delivery response: %w", err)
+	}
+
+	jr := joinRef
+	if err := writer.send(message{
+		JoinRef: &jr,
+		Topic:   c.topic,
+		Event:   responseEvent,
+		Payload: responsePayload,
+	}); err != nil {
+		return fmt.Errorf("send delivery response: %w", err)
+	}
+	return nil
 }
 
 // join sends phx_join and waits for the matching phx_reply.
@@ -164,27 +244,16 @@ func (c *Client) join(conn *websocket.Conn) error {
 }
 
 // heartbeat sends a Phoenix heartbeat every heartbeatInterval until done closes.
-func (c *Client) heartbeat(conn *websocket.Conn, done <-chan struct{}) {
+func (c *Client) heartbeat(writer *connWriter, done <-chan struct{}) {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
-	ref := 1
 	for {
 		select {
 		case <-done:
 			return
 		case <-ticker.C:
-			ref++
-			r := strconv.Itoa(ref)
-			frame, err := encode(message{
-				Ref:   &r,
-				Topic: "phoenix",
-				Event: "heartbeat",
-			})
-			if err != nil {
-				return
-			}
-			if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+			if err := writer.send(message{Topic: "phoenix", Event: "heartbeat"}); err != nil {
 				return
 			}
 		}

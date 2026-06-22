@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -56,18 +58,26 @@ var listenCmd = &cobra.Command{
 		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sources)
 		forwarder := proxy.New("http://" + forwardHost + ":" + port)
 
-		handler := func(d ws.Delivery) error {
-			fmt.Printf("!! %+v\n", d)
-
+		handler := func(d ws.Delivery) (ws.Response, error) {
 			resp, err := forwarder.Forward(cmd.Context(), d.Method, d.Path, d.Query, d.Body, d.Headers)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
-				return nil
+				return ws.Response{Status: http.StatusBadGateway}, nil
 			}
 			defer resp.Body.Close()
 
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "read response body: %v\n", err)
+				return ws.Response{Status: http.StatusBadGateway}, nil
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "forwarded event -> %d\n", resp.StatusCode)
-			return nil
+			return ws.Response{
+				Status:  resp.StatusCode,
+				Headers: resp.Header,
+				Body:    body,
+			}, nil
 		}
 
 		for {
