@@ -17,6 +17,10 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: ${{ github.ref_name }}
+    env:
+      SERVER_URL: ${{ vars.SERVER_URL }}
 
     steps:
       - name: Checkout
@@ -41,11 +45,9 @@ jobs:
           install-only: true
 
       - name: Validate release configuration
-        env:
-          SERVER_URL: ${{ vars.STAGE_SERVER_URL }}
         run: |
           if [ -z "${SERVER_URL}" ]; then
-            echo "::error::Set the STAGE_SERVER_URL repository variable before publishing stage builds."
+            echo "::error::Set SERVER_URL in the GitHub Environment for this branch."
             exit 1
           fi
           goreleaser check
@@ -56,8 +58,6 @@ jobs:
           echo "RELEASE_TAG=stage_${COMMIT_NUMBER}" >> "${GITHUB_ENV}"
 
       - name: Build release artifacts
-        env:
-          SERVER_URL: ${{ vars.STAGE_SERVER_URL }}
         run: goreleaser release --snapshot --clean
 
       - name: Publish GitHub prerelease

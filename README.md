@@ -131,5 +131,7 @@ tests the project, builds Linux, macOS, and Windows archives with GoReleaser,
 and publishes them as a GitHub prerelease with SHA-256 checksums. Release tags
 use the repository commit count, for example `stage_42`.
 
-Before the first stage release, add a repository Actions variable named
-`STAGE_SERVER_URL` containing the API URL to bake into the binaries.
+Create GitHub Environments named after the release branches (`stage` and,
+later, `main`) and add a `SERVER_URL` environment variable to each one. The
+workflow selects the environment from its branch name, so stage and production
+binaries can use different API URLs without repository-level URL variables.
