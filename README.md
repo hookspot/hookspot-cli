@@ -123,3 +123,13 @@ make run SERVER_URL=https://api.hookspot.dev ARGS="listen --help"
 HOOKSPOT_CLI_KEY=hk_... HOOKSPOT_PROJECT=proj_... make dev
 make dev ARGS="listen --help"
 ```
+
+### Stage releases
+
+Every push to the `stage` branch runs the stage release workflow. It
+tests the project, builds Linux, macOS, and Windows archives with GoReleaser,
+and publishes them as a GitHub prerelease with SHA-256 checksums. Release tags
+use the repository commit count, for example `stage_42`.
+
+Before the first stage release, add a repository Actions variable named
+`STAGE_SERVER_URL` containing the API URL to bake into the binaries.

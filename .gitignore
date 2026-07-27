@@ -1,2 +1,5 @@
 # air live-reload build output
 /tmp/
+
+# GoReleaser build output
+/dist/

@@ -1,0 +1,74 @@
+name: Publish stage
+
+on:
+  push:
+    branches:
+      - stage
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Test
+        run: go test ./...
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v7.2.1
+        with:
+          distribution: goreleaser
+          version: v2.17.0
+          install-only: true
+
+      - name: Validate release configuration
+        env:
+          SERVER_URL: ${{ vars.STAGE_SERVER_URL }}
+        run: |
+          if [ -z "${SERVER_URL}" ]; then
+            echo "::error::Set the STAGE_SERVER_URL repository variable before publishing stage builds."
+            exit 1
+          fi
+          goreleaser check
+
+      - name: Set release tag
+        run: |
+          COMMIT_NUMBER="$(git rev-list --count HEAD)"
+          echo "RELEASE_TAG=stage_${COMMIT_NUMBER}" >> "${GITHUB_ENV}"
+
+      - name: Build release artifacts
+        env:
+          SERVER_URL: ${{ vars.STAGE_SERVER_URL }}
+        run: goreleaser release --snapshot --clean
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "${RELEASE_TAG}"
+          dist/*.tar.gz
+          dist/*.zip
+          dist/checksums.txt
+          --target "${GITHUB_SHA}"
+          --title "${RELEASE_TAG}"
+          --prerelease
+          --generate-notes
