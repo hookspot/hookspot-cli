@@ -43,6 +43,9 @@ type Response struct {
 	Body    []byte      `json:"body"`
 }
 
+// Handler responds to a webhook delivery.
+type Handler func(delivery Delivery) (Response, error)
+
 // deliveryResponse is the delivery_response event payload sent back to the
 // server, correlated to the delivery by AttemptUID.
 type deliveryResponse struct {
@@ -95,7 +98,7 @@ func (w *connWriter) send(m message) error {
 // handler and pushes the returned Response back as a delivery_response. It
 // blocks until handler returns an error, the channel errors/closes, or ctx is
 // cancelled.
-func (c *Client) Listen(ctx context.Context, handler func(delivery Delivery) (Response, error)) error {
+func (c *Client) Listen(ctx context.Context, handler Handler) error {
 	header := http.Header{}
 	if c.cliKey != "" {
 		header.Set("X-CLI-KEY", c.cliKey)

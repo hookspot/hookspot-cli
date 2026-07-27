@@ -1,11 +1,35 @@
 services:
-  hookspot-cli:
-    build: .
-    image: hookspot-cli:dev
+  cli:
+    build:
+      context: .
+      args:
+        SERVER_URL: ${SERVER_URL:-https://hookspot.localhost}
+    image: hookspot:dev
     environment:
-      - HOOKSPOT_TOKEN
+      - HOOKSPOT_CLI_KEY
       - HOOKSPOT_PROJECT
-      - HOOKSPOT_SERVER_URL
+      - HOOKSPOT_LOG_LEVEL
+    extra_hosts:
+      - "hookspot.localhost:host-gateway"
+
+  dev:
+    image: golang:1.26.5
+    working_dir: /src
+    init: true
+    command: go run github.com/air-verse/air@v1.67.3 -- listen
+    volumes:
+      - .:/src
+      - hookspot-gomod:/go/pkg/mod
+      - hookspot-gocache:/root/.cache/go-build
+    environment:
+      - SERVER_URL=${SERVER_URL:-https://hookspot.localhost}
+      - HOOKSPOT_CLI_KEY=cTupesvm3CpnZmKixddAWfPAlh6LFfIcuFiCvjvr5uczvJTHpD
+      - HOOKSPOT_PROJECT=QqGtdKYPxUl0idgmwM3t9MfQrl
       - HOOKSPOT_LOG_LEVEL
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "hookspot.localhost:host-gateway"
+
+volumes:
+  hookspot-gomod:
+  hookspot-gocache:

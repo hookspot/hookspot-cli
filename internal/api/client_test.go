@@ -13,8 +13,8 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 		if r.URL.Path != "/cli/me" {
 			t.Errorf("path = %q, want /cli/me", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer test-key")
+		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
+			t.Errorf("X-CLI-KEY = %q, want %q", got, "test-key")
 		}
 		if err := json.NewEncoder(w).Encode(User{UID: "usr_1", Email: "dev@example.com"}); err != nil {
 			t.Fatalf("encode: %v", err)
@@ -67,8 +67,8 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 		if r.URL.Path != "/cli/projects/proj_1" {
 			t.Errorf("path = %q, want /cli/projects/proj_1", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
-			t.Errorf("Authorization = %q, want %q", got, "Bearer test-key")
+		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
+			t.Errorf("X-CLI-KEY = %q, want %q", got, "test-key")
 		}
 		project := Project{
 			UID:          "proj_1",

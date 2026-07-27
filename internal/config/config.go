@@ -8,25 +8,20 @@ import (
 	"github.com/spf13/viper"
 )
 
-// DefaultServerURL is used when no server URL is configured.
-const DefaultServerURL = "https://api.hookspot.dev"
-
-// Config holds the resolved hookspot-cli settings.
+// Config holds the resolved hookspot settings.
 type Config struct {
-	Token     string
-	Project   string
-	ServerURL string
-	LogLevel  string
+	CLIKey   string
+	Project  string
+	LogLevel string
 }
 
-// New returns a viper instance configured with hookspot-cli's defaults,
+// New returns a viper instance configured with hookspot's defaults,
 // environment variable bindings, and config file location. If configFile
-// is empty, it defaults to $HOME/.config/hookspot-cli/config.toml.
+// is empty, it defaults to $HOME/.config/hookspot/config.toml.
 func New(configFile string) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetEnvPrefix("HOOKSPOT")
 	v.AutomaticEnv()
-	v.SetDefault("server_url", DefaultServerURL)
 	v.SetDefault("log_level", "info")
 
 	if configFile == "" {
@@ -34,7 +29,7 @@ func New(configFile string) (*viper.Viper, error) {
 		if err != nil {
 			return nil, err
 		}
-		configFile = filepath.Join(home, ".config", "hookspot-cli", "config.toml")
+		configFile = filepath.Join(home, ".config", "hookspot", "config.toml")
 	}
 
 	v.SetConfigFile(configFile)
@@ -53,10 +48,9 @@ func New(configFile string) (*viper.Viper, error) {
 // Load resolves the current configuration from v.
 func Load(v *viper.Viper) Config {
 	return Config{
-		Token:     v.GetString("token"),
-		Project:   v.GetString("project"),
-		ServerURL: v.GetString("server_url"),
-		LogLevel:  v.GetString("log_level"),
+		CLIKey:   v.GetString("cli_key"),
+		Project:  v.GetString("project"),
+		LogLevel: v.GetString("log_level"),
 	}
 }
 
@@ -68,7 +62,7 @@ func Save(v *viper.Viper, configFile string) error {
 		if err != nil {
 			return err
 		}
-		configFile = filepath.Join(home, ".config", "hookspot-cli", "config.toml")
+		configFile = filepath.Join(home, ".config", "hookspot", "config.toml")
 	}
 
 	if err := os.MkdirAll(filepath.Dir(configFile), 0o700); err != nil {

@@ -7,38 +7,43 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hookspot-cli/internal/api"
-	"hookspot-cli/internal/config"
+	"hookspot/internal/api"
+	"hookspot/internal/config"
 )
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate hookspot-cli with a personal access token",
+	Short: "Authenticate hookspot with a CLI key",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Load(v)
 
-		token := cfg.Token
-		if token == "" {
-			fmt.Fprint(cmd.OutOrStdout(), "Enter your hookspot API token: ")
+		cliKey := cfg.CLIKey
+		if cliKey == "" {
+			fmt.Fprint(cmd.OutOrStdout(), "Enter your hookspot CLI key: ")
 			reader := bufio.NewReader(cmd.InOrStdin())
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				return fmt.Errorf("read token: %w", err)
+				return fmt.Errorf("read CLI key: %w", err)
 			}
-			token = strings.TrimSpace(line)
+			cliKey = strings.TrimSpace(line)
 		}
 
-		if token == "" {
-			return fmt.Errorf("no token provided")
+		if cliKey == "" {
+			return fmt.Errorf("no CLI key provided")
 		}
 
-		client := api.New(cfg.ServerURL, token)
+		url, err := requireServerURL()
+		if err != nil {
+			return err
+		}
+
+		client := api.New(url, cliKey)
 		user, err := client.Me(cmd.Context())
 		if err != nil {
-			return fmt.Errorf("validate token: %w", err)
+			return fmt.Errorf("validate CLI key: %w", err)
 		}
 
-		v.Set("token", token)
+		v.Set("cli_key", cliKey)
 		if err := config.Save(v, cfgFile); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}

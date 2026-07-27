@@ -77,7 +77,7 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		return err
 	}
 	if c.cliKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.cliKey)
+		req.Header.Set("X-CLI-KEY", c.cliKey)
 	}
 
 	resp, err := c.http.Do(req)

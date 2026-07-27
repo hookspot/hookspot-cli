@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"hookspot-cli/cmd"
+	"hookspot/cmd"
 )
 
 func main() {

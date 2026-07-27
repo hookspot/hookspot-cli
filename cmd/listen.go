@@ -11,21 +11,24 @@ import (
 
 	"hookspot/internal/api"
 	"hookspot/internal/config"
+	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
 )
 
 const reconnectDelay = 2 * time.Second
 
-var forwardHost string
+var (
+	forwardTo string
+	printBody bool
+)
 
 var listenCmd = &cobra.Command{
-	Use:   "listen <port> [source...]",
-	Short: "Forward hookspot webhook events to a local port",
-	Args:  cobra.MinimumNArgs(1),
+	Use:   "listen [source...]",
+	Short: "Print hookspot webhook events, optionally forwarding them to a local server",
+	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		port := args[0]
-		sources := args[1:]
+		sources := args
 
 		cfg := config.Load(v)
 		if cfg.CLIKey == "" {
@@ -46,39 +49,45 @@ var listenCmd = &cobra.Command{
 		}
 		projectLabel := project.Organization.Name + "/" + project.Name
 
+		p := printer.New(cmd.OutOrStdout(), printBody)
+		var handler ws.Handler = p.Handle
+		mode := "printing deliveries (pass --forward-to to forward)"
+		if forwardTo != "" {
+			target := forwardBaseURL(forwardTo)
+			forwarder := proxy.New(target)
+			handler = p.Wrap(func(d ws.Delivery) (ws.Response, error) {
+				resp, err := forwarder.Forward(cmd.Context(), d.Method, d.Path, d.Query, d.Body, d.Headers)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
+					return ws.Response{Status: http.StatusBadGateway}, nil
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "read response body: %v\n", err)
+					return ws.Response{Status: http.StatusBadGateway}, nil
+				}
+
+				return ws.Response{
+					Status:  resp.StatusCode,
+					Headers: resp.Header,
+					Body:    body,
+				}, nil
+			})
+			mode = "forwarding to " + target
+		}
+
 		if len(sources) == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, forwarding to http://%s:%s\n", projectLabel, forwardHost, port)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for all sources in project %s, %s\n", projectLabel, mode)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, forwarding to http://%s:%s\n", strings.Join(sources, ", "), projectLabel, forwardHost, port)
+			fmt.Fprintf(cmd.OutOrStdout(), "Listening for sources %s in project %s, %s\n", strings.Join(sources, ", "), projectLabel, mode)
 		}
 
 		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?vsn=2.0.0"
 		topic := "project:" + cfg.Project
 
 		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sources)
-		forwarder := proxy.New("http://" + forwardHost + ":" + port)
-
-		handler := func(d ws.Delivery) (ws.Response, error) {
-			resp, err := forwarder.Forward(cmd.Context(), d.Method, d.Path, d.Query, d.Body, d.Headers)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
-				return ws.Response{Status: http.StatusBadGateway}, nil
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "read response body: %v\n", err)
-				return ws.Response{Status: http.StatusBadGateway}, nil
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "forwarded event -> %d\n", resp.StatusCode)
-			return ws.Response{
-				Status:  resp.StatusCode,
-				Headers: resp.Header,
-				Body:    body,
-			}, nil
-		}
 
 		for {
 			err := wsClient.Listen(cmd.Context(), handler)
@@ -92,7 +101,16 @@ var listenCmd = &cobra.Command{
 	},
 }
 
+// forwardBaseURL defaults a scheme-less --forward-to value to http.
+func forwardBaseURL(s string) string {
+	if !strings.Contains(s, "://") {
+		return "http://" + s
+	}
+	return s
+}
+
 func init() {
-	listenCmd.Flags().StringVar(&forwardHost, "forward-host", "localhost", "host to forward events to (use host.docker.internal when running in Docker)")
+	listenCmd.Flags().StringVar(&forwardTo, "forward-to", "", "base URL to forward events to, e.g. localhost:3000 (deliveries keep their own path; omit to only print)")
+	listenCmd.Flags().BoolVar(&printBody, "print-body", false, "print request bodies, not just summary lines")
 	rootCmd.AddCommand(listenCmd)
 }

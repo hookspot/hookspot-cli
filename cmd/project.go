@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
-	"hookspot-cli/internal/api"
-	"hookspot-cli/internal/config"
+	"hookspot/internal/api"
+	"hookspot/internal/config"
 )
 
 var projectCmd = &cobra.Command{
@@ -19,20 +20,27 @@ var projectListCmd = &cobra.Command{
 	Short: "List projects accessible to your account",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Load(v)
-		if cfg.Token == "" {
-			return fmt.Errorf("not logged in: run 'hookspot-cli login' or set HOOKSPOT_TOKEN")
+		if cfg.CLIKey == "" {
+			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
 		}
 
-		client := api.New(cfg.ServerURL, cfg.Token)
+		url, err := requireServerURL()
+		if err != nil {
+			return err
+		}
+
+		client := api.New(url, cfg.CLIKey)
 		projects, err := client.ListProjects(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("list projects: %w", err)
 		}
 
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "UID\tOrganization\tProject")
 		for _, p := range projects {
-			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", p.ID, p.Name)
+			fmt.Fprintf(w, "%s\t%s\t%s\n", p.UID, p.Organization.Name, p.Name)
 		}
-		return nil
+		return w.Flush()
 	},
 }
 
@@ -41,12 +49,29 @@ var projectUseCmd = &cobra.Command{
 	Short: "Set the active hookspot project",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		v.Set("project", args[0])
+		uid := args[0]
+
+		cfg := config.Load(v)
+		if cfg.CLIKey == "" {
+			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
+		}
+
+		url, err := requireServerURL()
+		if err != nil {
+			return err
+		}
+
+		project, err := api.New(url, cfg.CLIKey).GetProject(cmd.Context(), uid)
+		if err != nil {
+			return fmt.Errorf("validate project %q: %w", uid, err)
+		}
+
+		v.Set("project", uid)
 		if err := config.Save(v, cfgFile); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Active project set to %s\n", args[0])
+		fmt.Fprintf(cmd.OutOrStdout(), "Active project set to %s/%s (%s)\n", project.Organization.Name, project.Name, uid)
 		return nil
 	},
 }
