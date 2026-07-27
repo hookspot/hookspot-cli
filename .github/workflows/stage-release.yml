@@ -54,8 +54,9 @@ jobs:
 
       - name: Set release tag
         run: |
-          COMMIT_NUMBER="$(git rev-parse --short=7 HEAD)"
-          echo "RELEASE_TAG=stage_${COMMIT_NUMBER}" >> "${GITHUB_ENV}"
+          COMMIT_NUMBER="$(git rev-list --count HEAD)"
+          COMMIT_SHORT="$(git rev-parse --short=7 HEAD)"
+          echo "RELEASE_TAG=stage_${COMMIT_NUMBER}_${COMMIT_NUMBER}" >> "${GITHUB_ENV}"
 
       - name: Build release artifacts
         run: goreleaser release --snapshot --clean
