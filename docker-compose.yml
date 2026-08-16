@@ -7,7 +7,8 @@ services:
     image: hookspot:dev
     environment:
       - HOOKSPOT_CLI_KEY
-      - HOOKSPOT_PROJECT
+      - HOOKSPOT_ORGANIZATION_SLUG
+      - HOOKSPOT_PROJECT_SLUG
       - HOOKSPOT_LOG_LEVEL
     extra_hosts:
       - "hookspot.localhost:host-gateway"
@@ -24,7 +25,8 @@ services:
     environment:
       - SERVER_URL=${SERVER_URL:-https://hookspot.localhost}
       - HOOKSPOT_CLI_KEY=cTupesvm3CpnZmKixddAWfPAlh6LFfIcuFiCvjvr5uczvJTHpD
-      - HOOKSPOT_PROJECT=QqGtdKYPxUl0idgmwM3t9MfQrl
+      - HOOKSPOT_ORGANIZATION_SLUG=asd1-1
+      - HOOKSPOT_PROJECT_SLUG=default-project
       - HOOKSPOT_LOG_LEVEL
     extra_hosts:
       - "host.docker.internal:host-gateway"

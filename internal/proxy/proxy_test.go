@@ -79,3 +79,51 @@ func TestForwarder_Forward_DefaultsToPOST(t *testing.T) {
 		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
 	}
 }
+
+func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	resp, err := New(server.URL+"/local").Forward(
+		context.Background(),
+		http.MethodPost,
+		"/webhooks/shopify",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Forward: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if got, want := gotPath, "/local/webhooks/shopify"; got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestForwardURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		path string
+		want string
+	}{
+		{"destination path", "http://localhost:4000", "/webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "http://localhost:4000/local/webhooks/shopify"},
+		{"path without slash", "http://localhost:4000", "webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"empty path", "http://localhost:4000", "", "http://localhost:4000/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ForwardURL(tt.base, tt.path); got != tt.want {
+				t.Fatalf("ForwardURL(%q, %q) = %q, want %q", tt.base, tt.path, got, tt.want)
+			}
+		})
+	}
+}

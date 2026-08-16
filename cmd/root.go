@@ -63,6 +63,6 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default $HOME/.config/hookspot/config.toml)")
 	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (env HOOKSPOT_CLI_KEY)")
-	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID (env HOOKSPOT_PROJECT)")
+	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
 	rootCmd.PersistentFlags().String("log-level", "", "log level: debug, info, warn, error (env HOOKSPOT_LOG_LEVEL)")
 }

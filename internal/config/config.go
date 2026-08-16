@@ -10,9 +10,11 @@ import (
 
 // Config holds the resolved hookspot settings.
 type Config struct {
-	CLIKey   string
-	Project  string
-	LogLevel string
+	CLIKey           string
+	Project          string
+	OrganizationSlug string
+	ProjectSlug      string
+	LogLevel         string
 }
 
 // New returns a viper instance configured with hookspot's defaults,
@@ -21,7 +23,11 @@ type Config struct {
 func New(configFile string) (*viper.Viper, error) {
 	v := viper.New()
 	v.SetEnvPrefix("HOOKSPOT")
-	v.AutomaticEnv()
+	for _, key := range []string{"cli_key", "organization_slug", "project_slug", "log_level"} {
+		if err := v.BindEnv(key); err != nil {
+			return nil, err
+		}
+	}
 	v.SetDefault("log_level", "info")
 
 	if configFile == "" {
@@ -48,9 +54,11 @@ func New(configFile string) (*viper.Viper, error) {
 // Load resolves the current configuration from v.
 func Load(v *viper.Viper) Config {
 	return Config{
-		CLIKey:   v.GetString("cli_key"),
-		Project:  v.GetString("project"),
-		LogLevel: v.GetString("log_level"),
+		CLIKey:           v.GetString("cli_key"),
+		Project:          v.GetString("project"),
+		OrganizationSlug: v.GetString("organization_slug"),
+		ProjectSlug:      v.GetString("project_slug"),
+		LogLevel:         v.GetString("log_level"),
 	}
 }
 

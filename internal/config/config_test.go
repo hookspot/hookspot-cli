@@ -50,6 +50,46 @@ func TestLoad_EnvOverridesFile(t *testing.T) {
 	}
 }
 
+func TestLoad_ReadsProjectSlugsFromEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+
+	t.Setenv("HOOKSPOT_ORGANIZATION_SLUG", "acme")
+	t.Setenv("HOOKSPOT_PROJECT_SLUG", "payments")
+
+	v, err := New(configFile)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	cfg := Load(v)
+	if cfg.OrganizationSlug != "acme" {
+		t.Fatalf("OrganizationSlug = %q, want %q", cfg.OrganizationSlug, "acme")
+	}
+	if cfg.ProjectSlug != "payments" {
+		t.Fatalf("ProjectSlug = %q, want %q", cfg.ProjectSlug, "payments")
+	}
+}
+
+func TestLoad_DoesNotReadProjectFromEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+
+	if err := os.WriteFile(configFile, []byte("project = \"from-file\"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("HOOKSPOT_PROJECT", "from-env")
+
+	v, err := New(configFile)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if cfg := Load(v); cfg.Project != "from-file" {
+		t.Fatalf("Project = %q, want %q", cfg.Project, "from-file")
+	}
+}
+
 func TestSave_WritesAndReloads(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "nested", "config.toml")

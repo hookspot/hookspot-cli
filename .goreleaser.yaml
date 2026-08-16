@@ -5,6 +5,7 @@ project_name: hookspot
 before:
   hooks:
     - go mod download
+    - go test ./...
 
 builds:
   - id: hookspot
@@ -46,8 +47,8 @@ archives:
 checksum:
   name_template: checksums.txt
 
-snapshot:
-  version_template: "{{ .Env.RELEASE_TAG }}"
+release:
+  prerelease: auto
 
 changelog:
   sort: asc

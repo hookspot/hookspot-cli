@@ -24,10 +24,16 @@ export HOOKSPOT_CLI_KEY=hk_...
 
 ```bash
 hookspot project list
-hookspot project use <project-id>
+hookspot project use               # select interactively
+hookspot project use <project-id>  # optional non-interactive form
 ```
 
-Or set `HOOKSPOT_PROJECT=<project-id>`.
+Or select it by organization and project slug:
+
+```bash
+export HOOKSPOT_ORGANIZATION_SLUG=acme
+export HOOKSPOT_PROJECT_SLUG=payments
+```
 
 ### Listen for events
 
@@ -46,9 +52,11 @@ hookspot listen --forward-to localhost:3000
 ## Configuration
 
 Settings are resolved in this order: command-line flags, environment
-variables (`HOOKSPOT_CLI_KEY`, `HOOKSPOT_PROJECT`, `HOOKSPOT_LOG_LEVEL`), the
-config file (`~/.config/hookspot/config.toml` by default, override with
-`--config`), then built-in defaults.
+variables (`HOOKSPOT_CLI_KEY`, `HOOKSPOT_ORGANIZATION_SLUG`,
+`HOOKSPOT_PROJECT_SLUG`, `HOOKSPOT_LOG_LEVEL`), the config file
+(`~/.config/hookspot/config.toml` by default, override with `--config`), then
+built-in defaults. The organization and project slug variables must be set
+together.
 
 The hookspot server URL is not user-configurable: it is baked into the
 binary at build time via `-ldflags "-X hookspot/cmd.serverURL=https://..."`
@@ -69,7 +77,8 @@ Then run it:
 ```bash
 docker run --rm \
   -e HOOKSPOT_CLI_KEY=hk_... \
-  -e HOOKSPOT_PROJECT=proj_... \
+  -e HOOKSPOT_ORGANIZATION_SLUG=acme \
+  -e HOOKSPOT_PROJECT_SLUG=payments \
   --network host \
   hookspot:dev listen --forward-to localhost:3000
 ```
@@ -82,7 +91,8 @@ your host machine:
 ```bash
 docker run --rm \
   -e HOOKSPOT_CLI_KEY=hk_... \
-  -e HOOKSPOT_PROJECT=proj_... \
+  -e HOOKSPOT_ORGANIZATION_SLUG=acme \
+  -e HOOKSPOT_PROJECT_SLUG=payments \
   --add-host host.docker.internal:host-gateway \
   hookspot:dev listen --forward-to host.docker.internal:3000
 ```
@@ -97,7 +107,8 @@ docker compose build
 
 # Set credentials via env vars (or a .env file) before running
 export HOOKSPOT_CLI_KEY=hk_...
-export HOOKSPOT_PROJECT=proj_...
+export HOOKSPOT_ORGANIZATION_SLUG=acme
+export HOOKSPOT_PROJECT_SLUG=payments
 
 docker compose run --rm hookspot login
 docker compose run --rm hookspot project list
@@ -120,18 +131,33 @@ make test                                        # run tests
 make run SERVER_URL=https://api.hookspot.dev ARGS="listen --help"
 
 # Live reload (runs `listen` by default)
-HOOKSPOT_CLI_KEY=hk_... HOOKSPOT_PROJECT=proj_... make dev
+HOOKSPOT_CLI_KEY=hk_... HOOKSPOT_ORGANIZATION_SLUG=acme \
+  HOOKSPOT_PROJECT_SLUG=payments make dev
 make dev ARGS="listen --help"
 ```
 
 ### Stage releases
 
-Every push to the `stage` branch runs the stage release workflow. It
-tests the project, builds Linux, macOS, and Windows archives with GoReleaser,
-and publishes them as a GitHub prerelease with SHA-256 checksums. Release tags
-use the repository commit count, for example `stage_42`.
+Stage releases are run from a local checkout using the pinned official
+GoReleaser Docker image; they do not require a local Go or GoReleaser install.
+The command tests the project, builds Linux, macOS, and Windows archives, and
+publishes a GitHub prerelease with SHA-256 checksums:
 
-Create GitHub Environments named after the release branches (`stage` and,
-later, `main`) and add a `SERVER_URL` environment variable to each one. The
-workflow selects the environment from its branch name, so stage and production
-binaries can use different API URLs without repository-level URL variables.
+```bash
+git switch stage
+git pull --ff-only
+GITHUB_TOKEN=github_pat_... \
+  make stage-release SERVER_URL=https://api.hookspot.dev
+```
+
+`GITHUB_TOKEN` must have permission to create releases in this repository. The
+working tree must be clean, and the stage branch and its tags must be up to
+date. The command creates and pushes a SemVer-compatible tag from the repository
+commit count and short commit hash, for example `v0.0.42-stage.g1a2b3c4`, then
+GoReleaser builds and publishes the release from inside its Docker container.
+
+Validate `.goreleaser.yaml` without publishing anything with:
+
+```bash
+make release-check
+```

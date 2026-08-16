@@ -22,17 +22,23 @@ func New(targetBaseURL string) *Forwarder {
 	}
 }
 
+// ForwardURL returns the exact URL used to forward a delivery to targetBaseURL
+// and its destination path.
+func ForwardURL(targetBaseURL, destinationPath string) string {
+	if !strings.HasPrefix(destinationPath, "/") {
+		destinationPath = "/" + destinationPath
+	}
+	return strings.TrimRight(targetBaseURL, "/") + destinationPath
+}
+
 // Forward replays a request to targetBaseURL+path with the given method, raw
 // query string, body, and headers. An empty method defaults to POST.
 func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
 	if method == "" {
 		method = http.MethodPost
 	}
 
-	target := f.targetBaseURL + path
+	target := ForwardURL(f.targetBaseURL, path)
 	if query != "" {
 		target += "?" + query
 	}
