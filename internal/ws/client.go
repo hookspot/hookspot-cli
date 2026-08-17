@@ -20,14 +20,16 @@ const (
 )
 
 // Delivery is the payload of a delivery event: a captured webhook request to
-// replay against the local target. AttemptUID correlates the delivery with the
-// delivery_response sent back after forwarding.
+// replay against the local target. AttemptUID is internal protocol correlation;
+// RequestUID identifies the captured request and SourceUID selects its label.
 //
 // Body is base64-encoded on the wire; encoding/json base64-decodes it
 // automatically when unmarshaling into the []byte field, so delivery.Body
 // holds the raw request body.
 type Delivery struct {
 	AttemptUID string      `json:"attempt_uid"`
+	RequestUID string      `json:"request_uid"`
+	SourceUID  string      `json:"source_uid"`
 	Method     string      `json:"method"`
 	Path       string      `json:"path"`
 	Headers    http.Header `json:"headers"`
@@ -36,11 +38,13 @@ type Delivery struct {
 }
 
 // Response is the local target's reply to a forwarded delivery. Body is
-// base64-encoded on the wire by encoding/json.
+// base64-encoded on the wire by encoding/json, and LatencyMS is the complete
+// local HTTP operation duration sent in the delivery_response event.
 type Response struct {
-	Status  int         `json:"status"`
-	Headers http.Header `json:"headers"`
-	Body    []byte      `json:"body"`
+	Status    int         `json:"status"`
+	Headers   http.Header `json:"headers"`
+	Body      []byte      `json:"body"`
+	LatencyMS int64       `json:"latency_ms"`
 }
 
 // Handler responds to a webhook delivery.
@@ -53,6 +57,7 @@ type deliveryResponse struct {
 	Status     int         `json:"status"`
 	Headers    http.Header `json:"headers"`
 	Body       []byte      `json:"body"`
+	LatencyMS  int64       `json:"latency_ms"`
 }
 
 // Client connects to a hookspot Phoenix Channel and streams events.
@@ -174,6 +179,7 @@ func (c *Client) handleDelivery(writer *connWriter, payload []byte, handler func
 		Status:     resp.Status,
 		Headers:    resp.Headers,
 		Body:       resp.Body,
+		LatencyMS:  resp.LatencyMS,
 	})
 	if err != nil {
 		return fmt.Errorf("encode delivery response: %w", err)

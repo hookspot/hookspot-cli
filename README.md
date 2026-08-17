@@ -41,13 +41,19 @@ export HOOKSPOT_PROJECT_SLUG=payments
 # Print all deliveries in the active project to the terminal
 hookspot listen
 
-# Only specific sources, including request bodies
-hookspot listen my-source --print-body
+# Inspect only specific sources. Request metadata and bodies are shown by default.
+hookspot listen my-source
 
 # Forward deliveries to a local server; each delivery keeps its own path,
 # e.g. /webhooks/stripe -> http://localhost:3000/webhooks/stripe
 hookspot listen --forward-to localhost:3000
 ```
+
+Inspect mode redacts authorization and cookie headers by default. Use
+`--show-sensitive-headers` to reveal them. Output can be tuned with
+`--max-body-lines`, `--max-headers`, and `--max-value-chars`; set any limit to
+zero to disable it. In forward mode, press Enter to replay the latest request
+to the local target when running interactively.
 
 ## Configuration
 

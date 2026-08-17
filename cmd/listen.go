@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"hookspot/internal/api"
 	"hookspot/internal/config"
@@ -19,8 +23,11 @@ import (
 const reconnectDelay = 2 * time.Second
 
 var (
-	forwardTo string
-	printBody bool
+	forwardTo            string
+	showSensitiveHeaders bool
+	maxBodyLines         int
+	maxHeaders           int
+	maxValueChars        int
 )
 
 var listenCmd = &cobra.Command{
@@ -29,6 +36,9 @@ var listenCmd = &cobra.Command{
 	Args:  cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sourceNames := args
+		if maxBodyLines < 0 || maxHeaders < 0 || maxValueChars < 0 {
+			return fmt.Errorf("rendering limits must be zero or greater")
+		}
 
 		cfg := config.Load(v)
 		if cfg.CLIKey == "" {
@@ -65,35 +75,36 @@ var listenCmd = &cobra.Command{
 			return err
 		}
 
-		p := printer.New(cmd.OutOrStdout(), printBody)
+		mode := printer.ModeInspect
+		if forwardTo != "" {
+			mode = printer.ModeForward
+		}
+		p := printer.New(cmd.OutOrStdout(), printer.Options{
+			Mode:                 mode,
+			Sources:              sourceNamesByUID(sources),
+			ShowSensitiveHeaders: showSensitiveHeaders,
+			Color:                printer.SupportsColor(cmd.OutOrStdout()),
+			Limits: printer.Limits{
+				MaxBodyLines:  maxBodyLines,
+				MaxHeaders:    maxHeaders,
+				MaxValueChars: maxValueChars,
+			},
+		})
 		var handler ws.Handler = p.Handle
 		target := ""
+		var session *forwardSession
+		replayEnabled := false
 		if forwardTo != "" {
 			target = forwardBaseURL(forwardTo)
-			forwarder := proxy.New(target)
-			handler = p.Wrap(func(d ws.Delivery) (ws.Response, error) {
-				resp, err := forwarder.Forward(cmd.Context(), d.Method, d.Path, d.Query, d.Body, d.Headers)
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "forward error: %v\n", err)
-					return ws.Response{Status: http.StatusBadGateway}, nil
-				}
-				defer resp.Body.Close()
-
-				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "read response body: %v\n", err)
-					return ws.Response{Status: http.StatusBadGateway}, nil
-				}
-
-				return ws.Response{
-					Status:  resp.StatusCode,
-					Headers: resp.Header,
-					Body:    body,
-				}, nil
-			})
+			session = newForwardSession(cmd.Context(), proxy.New(target), target, p)
+			handler = session.Handle
+			replayEnabled = isTerminalReader(cmd.InOrStdin())
 		}
 
-		printListenInfo(cmd.OutOrStdout(), sources, target)
+		printListenInfoWithReplay(cmd.OutOrStdout(), sources, target, replayEnabled)
+		if replayEnabled {
+			go replayInput(cmd.Context(), cmd.InOrStdin(), session.Replay)
+		}
 
 		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?vsn=2.0.0"
 		topic := "project:" + project.UID
@@ -160,7 +171,19 @@ func sourcesWithConnections(sources []api.Source) []api.Source {
 	return selected
 }
 
+func sourceNamesByUID(sources []api.Source) map[string]string {
+	names := make(map[string]string, len(sources))
+	for _, source := range sources {
+		names[source.UID] = source.Name
+	}
+	return names
+}
+
 func printListenInfo(out io.Writer, sources []api.Source, target string) {
+	printListenInfoWithReplay(out, sources, target, false)
+}
+
+func printListenInfoWithReplay(out io.Writer, sources []api.Source, target string, replay bool) {
 	connectionCount := 0
 	for _, source := range sources {
 		connectionCount += len(source.Connections)
@@ -199,9 +222,12 @@ func printListenInfo(out io.Writer, sources []api.Source, target string) {
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Events ────────────────────────────────────────")
+	fmt.Fprintln(out, "Requests ──────────────────────────────────────")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Waiting for events...")
+	if replay {
+		fmt.Fprintln(out, "↵ replay last request")
+	}
+	fmt.Fprintln(out, "Waiting for requests...")
 }
 
 func connectionLabel(connection api.Connection) string {
@@ -219,8 +245,160 @@ func forwardBaseURL(s string) string {
 	return s
 }
 
+type forwardSession struct {
+	ctx       context.Context
+	forwarder deliveryForwarder
+	target    string
+	printer   *printer.Printer
+	cache     replayCache
+	now       func() time.Time
+}
+
+type deliveryForwarder interface {
+	Forward(context.Context, string, string, string, []byte, http.Header) (*http.Response, error)
+}
+
+func newForwardSession(ctx context.Context, forwarder deliveryForwarder, target string, output *printer.Printer) *forwardSession {
+	return &forwardSession{
+		ctx:       ctx,
+		forwarder: forwarder,
+		target:    target,
+		printer:   output,
+		now:       time.Now,
+	}
+}
+
+func (s *forwardSession) Handle(delivery ws.Delivery) (ws.Response, error) {
+	s.cache.Store(delivery)
+	outcome := s.forward(delivery, false)
+	if outcome.Failure != nil {
+		return ws.Response{
+			Status:    http.StatusBadGateway,
+			LatencyMS: latencyMilliseconds(outcome.Latency),
+		}, nil
+	}
+	return outcome.Response, nil
+}
+
+func (s *forwardSession) Replay() {
+	delivery, ok := s.cache.Load()
+	if !ok {
+		return
+	}
+	s.forward(delivery, true)
+}
+
+func (s *forwardSession) forward(delivery ws.Delivery, replay bool) printer.ForwardOutcome {
+	started := s.now()
+	response, err := s.forwarder.Forward(
+		s.ctx,
+		delivery.Method,
+		delivery.Path,
+		delivery.Query,
+		delivery.Body,
+		delivery.Headers,
+	)
+	if err != nil {
+		outcome := printer.ForwardOutcome{
+			Latency:   s.now().Sub(started),
+			Failure:   proxy.Failure(err),
+			TargetURL: s.target,
+			Replay:    replay,
+		}
+		s.printer.PrintForward(delivery, outcome)
+		return outcome
+	}
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	latency := s.now().Sub(started)
+	if err != nil {
+		outcome := printer.ForwardOutcome{
+			Latency:   latency,
+			Failure:   proxy.Failure(err),
+			TargetURL: s.target,
+			Replay:    replay,
+		}
+		s.printer.PrintForward(delivery, outcome)
+		return outcome
+	}
+
+	outcome := printer.ForwardOutcome{
+		Response: ws.Response{
+			Status:    response.StatusCode,
+			Headers:   response.Header.Clone(),
+			Body:      body,
+			LatencyMS: latencyMilliseconds(latency),
+		},
+		Latency:   latency,
+		TargetURL: s.target,
+		Replay:    replay,
+	}
+	s.printer.PrintForward(delivery, outcome)
+	return outcome
+}
+
+func latencyMilliseconds(latency time.Duration) int64 {
+	if latency <= 0 {
+		return 0
+	}
+	rounded := latency.Round(time.Millisecond)
+	if rounded < time.Millisecond {
+		return 1
+	}
+	return rounded.Milliseconds()
+}
+
+type replayCache struct {
+	mu       sync.RWMutex
+	delivery *ws.Delivery
+}
+
+func (c *replayCache) Store(delivery ws.Delivery) {
+	copy := cloneDelivery(delivery)
+	c.mu.Lock()
+	c.delivery = &copy
+	c.mu.Unlock()
+}
+
+func (c *replayCache) Load() (ws.Delivery, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.delivery == nil {
+		return ws.Delivery{}, false
+	}
+	return cloneDelivery(*c.delivery), true
+}
+
+func cloneDelivery(delivery ws.Delivery) ws.Delivery {
+	delivery.Body = append([]byte(nil), delivery.Body...)
+	delivery.Headers = delivery.Headers.Clone()
+	return delivery
+}
+
+func replayInput(ctx context.Context, input io.Reader, replay func()) {
+	scanner := bufio.NewScanner(input)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if scanner.Text() == "" {
+			replay()
+		}
+	}
+}
+
+func isTerminalReader(input io.Reader) bool {
+	fd, ok := input.(interface{ Fd() uintptr })
+	return ok && term.IsTerminal(int(fd.Fd()))
+}
+
 func init() {
 	listenCmd.Flags().StringVar(&forwardTo, "forward-to", "", "base URL to forward events to, e.g. localhost:3000 (deliveries keep their own path; omit to only print)")
-	listenCmd.Flags().BoolVar(&printBody, "print-body", false, "print request bodies, not just summary lines")
+	listenCmd.Flags().BoolVar(&showSensitiveHeaders, "show-sensitive-headers", false, "show authorization and cookie header values")
+	listenCmd.Flags().IntVar(&maxBodyLines, "max-body-lines", 12, "maximum body lines to print (0 for unlimited)")
+	listenCmd.Flags().IntVar(&maxHeaders, "max-headers", 20, "maximum headers to print (0 for unlimited)")
+	listenCmd.Flags().IntVar(&maxValueChars, "max-value-chars", 160, "maximum characters per value or body line (0 for unlimited)")
 	rootCmd.AddCommand(listenCmd)
 }

@@ -2,9 +2,14 @@ package proxy
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 )
 
@@ -125,5 +130,67 @@ func TestForwardURL(t *testing.T) {
 				t.Fatalf("ForwardURL(%q, %q) = %q, want %q", tt.base, tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timed out" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+func TestClassifyTransportErrorWalksWrappedNetworkErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want TransportErrorKind
+	}{
+		{
+			name: "connection refused",
+			err:  fmt.Errorf("request failed: %w", &net.OpError{Op: "dial", Err: syscall.ECONNREFUSED}),
+			want: TransportConnectionRefused,
+		},
+		{
+			name: "timeout",
+			err:  fmt.Errorf("request failed: %w", timeoutError{}),
+			want: TransportTimeout,
+		},
+		{
+			name: "DNS",
+			err:  fmt.Errorf("request failed: %w", &net.DNSError{Name: "missing.invalid", Err: "no such host"}),
+			want: TransportDNS,
+		},
+		{
+			name: "TLS",
+			err: fmt.Errorf("request failed: %w", x509.HostnameError{
+				Certificate: &x509.Certificate{},
+				Host:        "localhost",
+			}),
+			want: TransportTLS,
+		},
+		{
+			name: "other",
+			err:  errors.New("broken response body"),
+			want: TransportOther,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ClassifyTransportError(test.err); got != test.want {
+				t.Fatalf("ClassifyTransportError() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestFailureRetainsOriginalError(t *testing.T) {
+	original := fmt.Errorf("wrapped: %w", syscall.ECONNREFUSED)
+	failure := Failure(original)
+	if failure.Kind != TransportConnectionRefused {
+		t.Fatalf("kind = %q, want %q", failure.Kind, TransportConnectionRefused)
+	}
+	if !errors.Is(failure, syscall.ECONNREFUSED) {
+		t.Fatal("failure does not retain wrapped original error")
 	}
 }

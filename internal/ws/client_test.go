@@ -78,6 +78,8 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 
 		deliveryPayload, _ := json.Marshal(Delivery{
 			AttemptUID: "att_1",
+			RequestUID: "req_1",
+			SourceUID:  "src_1",
 			Method:     "POST",
 			Path:       "/webhooks/stripe",
 			Headers:    http.Header{"Content-Type": []string{"application/json"}},
@@ -123,9 +125,10 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 		_ = client.Listen(ctx, func(d Delivery) (Response, error) {
 			gotDelivery <- d
 			return Response{
-				Status:  201,
-				Headers: http.Header{"X-Foo": []string{"bar"}},
-				Body:    []byte("ok"),
+				Status:    201,
+				Headers:   http.Header{"X-Foo": []string{"bar"}},
+				Body:      []byte("ok"),
+				LatencyMS: 38,
 			}, nil
 		})
 	}()
@@ -134,6 +137,12 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	case d := <-gotDelivery:
 		if d.AttemptUID != "att_1" {
 			t.Fatalf("attempt_uid = %q, want att_1", d.AttemptUID)
+		}
+		if d.RequestUID != "req_1" {
+			t.Fatalf("request_uid = %q, want req_1", d.RequestUID)
+		}
+		if d.SourceUID != "src_1" {
+			t.Fatalf("source_uid = %q, want src_1", d.SourceUID)
 		}
 		if d.Method != "POST" {
 			t.Fatalf("method = %q, want POST", d.Method)
@@ -168,8 +177,24 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 		if string(dr.Body) != "ok" {
 			t.Fatalf("body = %q, want %q", dr.Body, "ok")
 		}
+		if dr.LatencyMS != 38 {
+			t.Fatalf("latency_ms = %d, want 38", dr.LatencyMS)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for delivery_response")
+	}
+}
+
+func TestDelivery_UnmarshalRemainsCompatibleWithoutRequestUID(t *testing.T) {
+	var delivery Delivery
+	if err := json.Unmarshal([]byte(`{"attempt_uid":"att_1","source_uid":"src_1","body":""}`), &delivery); err != nil {
+		t.Fatalf("unmarshal delivery: %v", err)
+	}
+	if delivery.RequestUID != "" {
+		t.Fatalf("request_uid = %q, want empty", delivery.RequestUID)
+	}
+	if delivery.SourceUID != "src_1" {
+		t.Fatalf("source_uid = %q, want src_1", delivery.SourceUID)
 	}
 }
 
