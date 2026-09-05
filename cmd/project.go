@@ -24,7 +24,7 @@ var projectListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Load(v)
 		if cfg.CLIKey == "" {
-			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
+			return loginRequiredError()
 		}
 
 		url, err := requireServerURL()
@@ -54,7 +54,7 @@ var projectUseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := config.Load(v)
 		if cfg.CLIKey == "" {
-			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
+			return loginRequiredError()
 		}
 
 		url, err := requireServerURL()

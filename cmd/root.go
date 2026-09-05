@@ -33,21 +33,23 @@ func requireServerURL() (string, error) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "hookspot",
-	Short: "Forward hookspot webhook events to your local machine",
+	Use:           "hookspot",
+	Short:         "Forward hookspot webhook events to your local machine",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `hookspot connects to your hookspot project over a websocket
 and proxies incoming webhook events to a local host and port.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 		v, err = config.New(cfgFile)
 		if err != nil {
-			return err
+			return wrapCommandError(commandErrorConfiguration, "load configuration", "Check the config file path and TOML syntax.", err)
 		}
 
 		for _, name := range []string{"cli-key", "project", "log-level"} {
 			key := strings.ReplaceAll(name, "-", "_")
 			if err := v.BindPFlag(key, cmd.Flags().Lookup(name)); err != nil {
-				return err
+				return wrapCommandError(commandErrorConfiguration, "bind command configuration", "Check the command flags and try again.", err)
 			}
 		}
 

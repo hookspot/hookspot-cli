@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -235,5 +236,58 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 	err := client.Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	if err == nil {
 		t.Fatal("Listen error = nil, want join error")
+	}
+	var sessionErr *SessionError
+	if !errors.As(err, &sessionErr) {
+		t.Fatalf("Listen error = %T %v, want *SessionError", err, err)
+	}
+	if sessionErr.Kind != SessionAuthentication {
+		t.Fatalf("session error kind = %v, want authentication", sessionErr.Kind)
+	}
+	if sessionErr.Retryable() {
+		t.Fatal("authentication error is retryable")
+	}
+}
+
+func TestClient_Listen_HandshakeAuthenticationErrorReturns(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
+	err := New(wsURL, "bad-key", "project:proj_1", nil).Listen(
+		context.Background(),
+		func(Delivery) (Response, error) { return Response{}, nil },
+	)
+
+	var sessionErr *SessionError
+	if !errors.As(err, &sessionErr) {
+		t.Fatalf("Listen error = %T %v, want *SessionError", err, err)
+	}
+	if sessionErr.Kind != SessionAuthentication {
+		t.Fatalf("session error kind = %v, want authentication", sessionErr.Kind)
+	}
+	if sessionErr.Retryable() {
+		t.Fatal("authentication error is retryable")
+	}
+}
+
+func TestSessionErrorRetryPolicy(t *testing.T) {
+	tests := []struct {
+		kind      SessionErrorKind
+		retryable bool
+	}{
+		{SessionConnect, true},
+		{SessionDisconnected, true},
+		{SessionAuthentication, false},
+		{SessionProtocol, false},
+		{SessionHandler, false},
+	}
+	for _, test := range tests {
+		err := &SessionError{Kind: test.kind, Err: errors.New("failure")}
+		if got := err.Retryable(); got != test.retryable {
+			t.Errorf("kind %v retryable = %v, want %v", test.kind, got, test.retryable)
+		}
 	}
 }

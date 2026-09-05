@@ -298,6 +298,94 @@ type fakeForwarder struct {
 	err      error
 }
 
+type scriptedWebSocketListener struct {
+	errors []error
+	calls  int
+}
+
+func (l *scriptedWebSocketListener) Listen(context.Context, ws.Handler) error {
+	l.calls++
+	if len(l.errors) == 0 {
+		return nil
+	}
+	err := l.errors[0]
+	l.errors = l.errors[1:]
+	return err
+}
+
+func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 1")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 2")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 3")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+		Delay:              0,
+		MaxInitialAttempts: 3,
+	})
+	if err == nil {
+		t.Fatal("superviseListen error = nil")
+	}
+	var commandErr *commandError
+	if !errors.As(err, &commandErr) || commandErr.kind != commandErrorRuntime {
+		t.Fatalf("error = %#v, want runtime command error", err)
+	}
+	if listener.calls != 3 {
+		t.Fatalf("Listen calls = %d, want 3", listener.calls)
+	}
+	if got := strings.Count(stderr.String(), "reconnecting"); got != 2 {
+		t.Fatalf("reconnect notices = %d, want 2:\n%s", got, stderr.String())
+	}
+}
+
+func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")},
+		&ws.SessionError{Kind: ws.SessionHandler, Connected: true, Err: errors.New("handler failed")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+		Delay:              0,
+		MaxInitialAttempts: 1,
+	})
+	var sessionErr *ws.SessionError
+	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionHandler {
+		t.Fatalf("error = %#v, want handler session error", err)
+	}
+	if listener.calls != 3 {
+		t.Fatalf("Listen calls = %d, want 3", listener.calls)
+	}
+	if got := strings.Count(stderr.String(), "reconnecting"); got != 2 {
+		t.Fatalf("reconnect notices = %d, want 2:\n%s", got, stderr.String())
+	}
+}
+
+func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionAuthentication, Err: errors.New("unauthorized")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+		Delay:              0,
+		MaxInitialAttempts: 10,
+	})
+	var sessionErr *ws.SessionError
+	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionAuthentication {
+		t.Fatalf("error = %#v, want authentication session error", err)
+	}
+	if listener.calls != 1 {
+		t.Fatalf("Listen calls = %d, want 1", listener.calls)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected reconnect notice: %s", stderr.String())
+	}
+}
+
 func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
 	f.calls = append(f.calls, forwardCall{
 		method:  method,

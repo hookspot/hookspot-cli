@@ -4,10 +4,39 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+const maxErrorBodyBytes = 64 * 1024
+
+// Error is a non-success response from the Hookspot API. It keeps the status
+// code available for global presentation without requiring string matching.
+type Error struct {
+	StatusCode int
+	Method     string
+	URL        string
+	Message    string
+}
+
+func (e *Error) Error() string {
+	status := e.Status()
+	if e.Message != "" {
+		return fmt.Sprintf("%s %s: %s: %s", e.Method, e.URL, status, e.Message)
+	}
+	return fmt.Sprintf("%s %s: %s", e.Method, e.URL, status)
+}
+
+// Status returns the numeric and semantic HTTP status when available.
+func (e *Error) Status() string {
+	text := http.StatusText(e.StatusCode)
+	if text == "" {
+		return fmt.Sprintf("HTTP %d", e.StatusCode)
+	}
+	return fmt.Sprintf("%d %s", e.StatusCode, text)
+}
 
 // Client is a small REST client for the hookspot API.
 type Client struct {
@@ -141,8 +170,63 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s %s: unexpected status %d", req.Method, req.URL, resp.StatusCode)
+		return decodeErrorResponse(req, resp)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func decodeErrorResponse(req *http.Request, resp *http.Response) error {
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	if readErr != nil {
+		return fmt.Errorf("read Hookspot API error response: %w", readErr)
+	}
+
+	return &Error{
+		StatusCode: resp.StatusCode,
+		Method:     req.Method,
+		URL:        req.URL.String(),
+		Message:    apiErrorMessage(body),
+	}
+}
+
+func apiErrorMessage(body []byte) string {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return ""
+	}
+
+	var payload struct {
+		Message string          `json:"message"`
+		Error   json.RawMessage `json:"error"`
+		Reason  string          `json:"reason"`
+	}
+	if json.Unmarshal(body, &payload) == nil {
+		if payload.Message != "" {
+			return payload.Message
+		}
+		if payload.Reason != "" {
+			return payload.Reason
+		}
+		if len(payload.Error) > 0 {
+			var message string
+			if json.Unmarshal(payload.Error, &message) == nil && message != "" {
+				return message
+			}
+			var nested struct {
+				Message string `json:"message"`
+				Reason  string `json:"reason"`
+			}
+			if json.Unmarshal(payload.Error, &nested) == nil {
+				if nested.Message != "" {
+					return nested.Message
+				}
+				if nested.Reason != "" {
+					return nested.Reason
+				}
+			}
+		}
+	}
+
+	return trimmed
 }

@@ -29,7 +29,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		if cliKey == "" {
-			return fmt.Errorf("no CLI key provided")
+			return newCommandError(commandErrorAuthentication, "no CLI key provided", "Pass a CLI key when prompted or set HOOKSPOT_CLI_KEY.")
 		}
 
 		url, err := requireServerURL()

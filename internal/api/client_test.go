@@ -3,11 +3,61 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestClientReturnsStructuredAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"error":{"message":"CLI key expired"}}`)
+	}))
+	defer server.Close()
+
+	_, err := New(server.URL, "expired-key").Me(context.Background())
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %T %v, want *api.Error", err, err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", apiErr.StatusCode)
+	}
+	if apiErr.Method != http.MethodGet || apiErr.URL != server.URL+"/cli/me" {
+		t.Fatalf("request context = %s %s", apiErr.Method, apiErr.URL)
+	}
+	if apiErr.Message != "CLI key expired" {
+		t.Fatalf("message = %q, want CLI key expired", apiErr.Message)
+	}
+	if got, want := apiErr.Status(), "401 Unauthorized"; got != want {
+		t.Fatalf("Status() = %q, want %q", got, want)
+	}
+}
+
+func TestAPIErrorMessageFormats(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "message", body: `{"message":"bad request"}`, want: "bad request"},
+		{name: "reason", body: `{"reason":"missing project"}`, want: "missing project"},
+		{name: "string error", body: `{"error":"forbidden"}`, want: "forbidden"},
+		{name: "nested reason", body: `{"error":{"reason":"expired"}}`, want: "expired"},
+		{name: "plain text", body: "upstream unavailable", want: "upstream unavailable"},
+		{name: "empty", body: "", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := apiErrorMessage([]byte(test.body)); got != test.want {
+				t.Fatalf("apiErrorMessage() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func TestClient_Me_ReturnsUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

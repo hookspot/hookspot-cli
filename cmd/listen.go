@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 
 const reconnectDelay = 2 * time.Second
 
+const maxInitialConnectAttempts = 10
+
 var (
 	forwardTo            string
 	showSensitiveHeaders bool
@@ -37,18 +40,26 @@ var listenCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sourceNames := args
 		if maxBodyLines < 0 || maxHeaders < 0 || maxValueChars < 0 {
-			return fmt.Errorf("rendering limits must be zero or greater")
+			return newCommandError(commandErrorUsage, "rendering limits must be zero or greater", "Use zero for an unlimited value, or provide a positive limit.")
 		}
 
 		cfg := config.Load(v)
 		if cfg.CLIKey == "" {
-			return fmt.Errorf("not logged in: run 'hookspot login' or set HOOKSPOT_CLI_KEY")
+			return loginRequiredError()
 		}
 		if (cfg.OrganizationSlug == "") != (cfg.ProjectSlug == "") {
-			return fmt.Errorf("project selection requires both HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG")
+			return newCommandError(
+				commandErrorConfiguration,
+				"project selection requires both HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG",
+				"Set both variables, or unset them and run 'hookspot project use'.",
+			)
 		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
-			return fmt.Errorf("no active project: run 'hookspot project use <project>' or set HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG")
+			return newCommandError(
+				commandErrorConfiguration,
+				"no active project",
+				"Run 'hookspot project use <project>' or set HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.",
+			)
 		}
 
 		srvURL, err := requireServerURL()
@@ -111,16 +122,78 @@ var listenCmd = &cobra.Command{
 
 		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sourceUIDs)
 
-		for {
-			err := wsClient.Listen(cmd.Context(), handler)
-			if cmd.Context().Err() != nil {
-				return cmd.Context().Err()
-			}
-
-			fmt.Fprintf(cmd.ErrOrStderr(), "connection error: %v, reconnecting in %s...\n", err, reconnectDelay)
-			time.Sleep(reconnectDelay)
-		}
+		return superviseListen(cmd.Context(), cmd.ErrOrStderr(), wsClient, handler, reconnectPolicy{
+			Delay:              reconnectDelay,
+			MaxInitialAttempts: maxInitialConnectAttempts,
+		})
 	},
+}
+
+type websocketListener interface {
+	Listen(context.Context, ws.Handler) error
+}
+
+type reconnectPolicy struct {
+	Delay              time.Duration
+	MaxInitialAttempts int
+}
+
+// superviseListen keeps transient WebSocket failures inside the long-running
+// command. Authentication, protocol, and handler failures are fatal; an
+// initial connection is bounded, while a session that connected once retries
+// until cancellation.
+func superviseListen(ctx context.Context, errOut io.Writer, listener websocketListener, handler ws.Handler, policy reconnectPolicy) error {
+	initialAttempts := 0
+	connectedOnce := false
+
+	for {
+		err := listener.Listen(ctx, handler)
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return nil
+		}
+		if err == nil {
+			return nil
+		}
+
+		var sessionErr *ws.SessionError
+		if errors.As(err, &sessionErr) {
+			if sessionErr.Connected {
+				connectedOnce = true
+				initialAttempts = 0
+			}
+			if !sessionErr.Retryable() {
+				return fmt.Errorf("listen: %w", err)
+			}
+		}
+
+		if !connectedOnce {
+			initialAttempts++
+			if policy.MaxInitialAttempts > 0 && initialAttempts >= policy.MaxInitialAttempts {
+				return wrapCommandError(
+					commandErrorRuntime,
+					fmt.Sprintf("could not connect to Hookspot after %d attempts", initialAttempts),
+					"Check your network connection and the Hookspot server URL, then try again.",
+					err,
+				)
+			}
+		}
+
+		fmt.Fprintf(errOut, "connection error: %v, reconnecting in %s...\n", err, policy.Delay)
+		if !waitForReconnect(ctx, policy.Delay) {
+			return nil
+		}
+	}
+}
+
+func waitForReconnect(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func formatProjectLabel(project *api.Project) string {

@@ -3,9 +3,11 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +20,59 @@ const (
 	deliveryEvent     = "delivery"
 	responseEvent     = "delivery_response"
 )
+
+// SessionErrorKind identifies which WebSocket failures can be retried by the
+// listen supervisor and which require the command to stop.
+type SessionErrorKind uint8
+
+const (
+	SessionConnect SessionErrorKind = iota
+	SessionDisconnected
+	SessionAuthentication
+	SessionProtocol
+	SessionHandler
+)
+
+// SessionError retains the original failure and whether the session completed
+// its channel join before failing.
+type SessionError struct {
+	Kind      SessionErrorKind
+	Connected bool
+	Err       error
+}
+
+func (e *SessionError) Error() string {
+	if e == nil || e.Err == nil {
+		return "WebSocket session error"
+	}
+	return e.Err.Error()
+}
+
+func (e *SessionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// Retryable reports whether reconnecting can reasonably recover this failure.
+func (e *SessionError) Retryable() bool {
+	return e != nil && (e.Kind == SessionConnect || e.Kind == SessionDisconnected)
+}
+
+func sessionError(kind SessionErrorKind, connected bool, err error) error {
+	if err == nil {
+		return nil
+	}
+	var existing *SessionError
+	if errors.As(err, &existing) {
+		if connected {
+			existing.Connected = true
+		}
+		return existing
+	}
+	return &SessionError{Kind: kind, Connected: connected, Err: err}
+}
 
 // Delivery is the payload of a delivery event: a captured webhook request to
 // replay against the local target. AttemptUID is internal protocol correlation;
@@ -109,14 +164,20 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 		header.Set("X-CLI-KEY", c.cliKey)
 	}
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, c.url, header)
+	conn, response, err := websocket.DefaultDialer.DialContext(ctx, c.url, header)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", c.url, err)
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
+			return sessionError(SessionAuthentication, false, fmt.Errorf("connect to %s: server returned %s", c.url, response.Status))
+		}
+		return sessionError(SessionConnect, false, fmt.Errorf("connect to %s: %w", c.url, err))
 	}
 	defer conn.Close()
 
 	if err := c.join(conn); err != nil {
-		return err
+		return sessionError(SessionConnect, false, err)
 	}
 
 	writer := &connWriter{conn: conn}
@@ -140,12 +201,14 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return fmt.Errorf("read message: %w", err)
+			return sessionError(SessionDisconnected, true, fmt.Errorf("read message: %w", err))
 		}
 
 		msg, err := decode(data)
 		if err != nil {
-			return err
+			// A malformed frame is isolated to that server message. Dropping it is
+			// safer than disrupting every in-flight delivery by reconnecting.
+			continue
 		}
 
 		switch msg.Event {
@@ -155,7 +218,7 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 			}
 		case "phx_error", "phx_close":
 			if msg.Topic == c.topic {
-				return fmt.Errorf("channel %s: received %s", c.topic, msg.Event)
+				return sessionError(SessionDisconnected, true, fmt.Errorf("channel %s: received %s", c.topic, msg.Event))
 			}
 		}
 	}
@@ -166,12 +229,12 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 func (c *Client) handleDelivery(writer *connWriter, payload []byte, handler func(Delivery) (Response, error)) error {
 	var delivery Delivery
 	if err := json.Unmarshal(payload, &delivery); err != nil {
-		return fmt.Errorf("decode delivery: %w", err)
+		return sessionError(SessionProtocol, true, fmt.Errorf("decode delivery: %w", err))
 	}
 
 	resp, err := handler(delivery)
 	if err != nil {
-		return err
+		return sessionError(SessionHandler, true, err)
 	}
 
 	responsePayload, err := json.Marshal(deliveryResponse{
@@ -182,7 +245,7 @@ func (c *Client) handleDelivery(writer *connWriter, payload []byte, handler func
 		LatencyMS:  resp.LatencyMS,
 	})
 	if err != nil {
-		return fmt.Errorf("encode delivery response: %w", err)
+		return sessionError(SessionHandler, true, fmt.Errorf("encode delivery response: %w", err))
 	}
 
 	jr := joinRef
@@ -192,7 +255,7 @@ func (c *Client) handleDelivery(writer *connWriter, payload []byte, handler func
 		Event:   responseEvent,
 		Payload: responsePayload,
 	}); err != nil {
-		return fmt.Errorf("send delivery response: %w", err)
+		return sessionError(SessionDisconnected, true, fmt.Errorf("send delivery response: %w", err))
 	}
 	return nil
 }
@@ -233,20 +296,27 @@ func (c *Client) join(conn *websocket.Conn) error {
 		}
 		msg, err := decode(data)
 		if err != nil {
-			return err
+			return sessionError(SessionProtocol, false, fmt.Errorf("decode join reply: %w", err))
 		}
 		if msg.Event != "phx_reply" || msg.Ref == nil || *msg.Ref != joinRef {
 			continue
 		}
 
 		var reply struct {
-			Status string `json:"status"`
+			Status   string `json:"status"`
+			Response struct {
+				Reason string `json:"reason"`
+			} `json:"response"`
 		}
 		if err := json.Unmarshal(msg.Payload, &reply); err != nil {
-			return fmt.Errorf("decode join reply: %w", err)
+			return sessionError(SessionProtocol, false, fmt.Errorf("decode join reply: %w", err))
 		}
 		if reply.Status != "ok" {
-			return fmt.Errorf("join %s rejected: %s", c.topic, msg.Payload)
+			err := fmt.Errorf("join %s rejected: %s", c.topic, msg.Payload)
+			if strings.EqualFold(reply.Response.Reason, "unauthorized") || strings.EqualFold(reply.Response.Reason, "forbidden") {
+				return sessionError(SessionAuthentication, false, err)
+			}
+			return sessionError(SessionProtocol, false, err)
 		}
 		return nil
 	}

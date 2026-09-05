@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"hookspot/cmd"
@@ -9,7 +8,8 @@ import (
 
 func main() {
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		if exitCode := cmd.HandleError(os.Stderr, err); exitCode != 0 {
+			os.Exit(exitCode)
+		}
 	}
 }
