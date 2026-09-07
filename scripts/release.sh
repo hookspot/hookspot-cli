@@ -173,8 +173,9 @@ safe_repository_view() {
 }
 
 require_clean_tree() {
-  tree_status=$(GIT_NO_REPLACE_OBJECTS=1 git -c core.fsmonitor=false status --porcelain --untracked-files=normal) || die "cannot inspect worktree cleanliness"
-  [ -z "$tree_status" ] || die "snapshot/build requires a clean worktree; commit changes on a temporary branch"
+  cd "$REPOSITORY_ROOT"
+  tree_status=$(publication_git status --porcelain --untracked-files=normal) || die "cannot inspect worktree cleanliness"
+  [ -z "$tree_status" ] || die "working tree has uncommitted changes; commit or stash staged, unstaged, and untracked changes, then retry"
 }
 
 valid_ref_input() {
@@ -964,7 +965,19 @@ if [ "$command" = _make ]; then
   esac
 fi
 
+# Source commands check cleanliness after rejecting unsafe Git source views.
+# These other mutating commands do not select release source.
 case "$command" in
+  tools|acceptance-template|native-requirements|native-review-template|native-manual|native-evidence)
+    require_clean_tree
+    ;;
+esac
+
+case "$command" in
+  _require-clean-tree)
+    [ "$#" -eq 0 ] || usage
+    require_clean_tree
+    ;;
   _toolchain-value)
     toolchain_value "$@"
     ;;
@@ -1015,11 +1028,23 @@ case "$command" in
       esac
     done
     require_environment "$environment"
-    [ -n "$tag" ] || die "build requires --tag naming an existing local tag"
+    [ -n "$tag" ] || die "build requires --tag naming the release version"
     safe_repository_view
     require_clean_tree
+    validate_tag_name "$environment" "$tag"
+    if ! publication_git show-ref --verify --quiet "refs/tags/$tag"; then
+      selected_commit=$(resolve_commit HEAD)
+      prepare_source "$selected_commit"
+      inspect_release_image
+      run_check "$source_checkout" "$environment"
+      require_clean_tree
+      publication_git tag -a "$tag" "$selected_commit" -m "$tag" || die "cannot create local annotated release tag"
+      rm -rf "$SOURCE_TEMP"
+      SOURCE_TEMP=
+    fi
     validate_tag "$environment" "$tag"
     selected_commit=$tag_commit
+    echo "release tag: $tag ($selected_commit)"
     prepare_source "$selected_commit" "$tag_object"
     inspect_release_image
     run_build release "$environment" "$tag"
@@ -1064,9 +1089,9 @@ case "$command" in
       die "stage publication does not accept production promotion inputs"
     fi
     safe_repository_view
+    require_clean_tree
     acquire_publication_lock
     if [ -z "$dist" ]; then
-      require_clean_tree
       selected_commit=$(resolve_commit "$ref")
       tag_object=
       prepare_source "$selected_commit"
@@ -1112,6 +1137,7 @@ case "$command" in
     [ -n "$tag" ] && [ -n "$dist" ] || usage
     [ -n "${GITHUB_TOKEN-}" ] || die "resume requires GITHUB_TOKEN before release work begins"
     safe_repository_view
+    require_clean_tree
     acquire_publication_lock
     load_toolchain "$REPOSITORY_ROOT/release/toolchain.env"
     CONTROL_ROOT=$REPOSITORY_ROOT

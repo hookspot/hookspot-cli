@@ -5,9 +5,9 @@ and can forward them to a local HTTP server. Production releases use the
 `hookspot` executable. Staging releases use the separate `hookspot-stage`
 executable, configuration, and credentials.
 
-Approved public stage and production service URLs have not been committed yet,
-so publication remains blocked. Do not treat a development or `.invalid`
-example endpoint as a live Hookspot service.
+Stage and production service URLs are committed in `release/environments.json`
+and embedded during release builds. Development or `.invalid` example
+endpoints are not live Hookspot services.
 
 ## Install
 
@@ -149,6 +149,11 @@ make run SERVER_URL=https://api.example.invalid ARGS='version --json'
 make run SERVER_URL=https://api.example.invalid ARGS='--help'
 ```
 
+`make build`, `make tidy`, and `make get` require a clean checkout: staged,
+unstaged, and untracked changes all block the command before it starts work.
+Review and commit changes first. `make test`, `make vet`, `make run`, and
+`make dev` remain available while editing.
+
 `make run` keeps stdin open for interactive or piped login and allocates a TTY
 only when stdin and stdout are terminals. `make run` and `make dev` use the
 dedicated `hookspot-dev-config` volume, so development login and project
@@ -171,12 +176,26 @@ docker compose --env-file release/toolchain.env run --rm cli listen \
 
 ## Release operators
 
-Bootstrap the locked release tool image with the supported command; do not
-maintain a second Docker build recipe in documentation:
+From a clean checkout, build a stage release with the locked tool image.
+Choose the intended version before running `release-build`:
 
 ```sh
 make release-tools
+make release-check ENV=stage
+make release-build ENV=stage TAG=v1.2.3-stage.1
 ```
+
+`release-build` creates a missing annotated local tag at committed `HEAD` after
+validating the selected source, tools, and environment. An existing tag selects
+its own commit, even when `HEAD` differs; the command prints the tag and full
+commit and never moves or converts it. Building does not fetch, push, publish,
+or need a GitHub token.
+A newly created tag remains if the build later fails; use a new candidate tag
+when fixing source changes.
+
+Release tool builds, snapshot/tagged builds, publishing (including with
+`DIST`), resume, and operator-record creation require the same clean checkout.
+Release checks, verification, and status remain available while editing.
 
 `make release-verify ENV=stage DIST=/absolute/retained-parent` proves retained
 artifact and immutable receipt integrity. It does not prove complete native

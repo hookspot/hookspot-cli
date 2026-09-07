@@ -2,9 +2,10 @@
 
 Release publication always uploads the seven files with the exact bytes recorded by a verified tagged build. It never rebuilds during resume, moves a tag, replaces an asset, or publishes through GoReleaser.
 
-Before the first real release, fill and review the stage and production URLs in
-`release/environments.json`. Use one active release coordinator. Configure
-ordinary Git push access/authentication separately. Inject `GITHUB_TOKEN` from
+Review the committed stage and production URLs in `release/environments.json`
+for the selected source before a real release. Use one active release
+coordinator. Configure ordinary Git push access/authentication separately.
+Inject `GITHUB_TOKEN` from
 a secret manager only into status, publish, and
 resume: status needs read access (including to a private repository), while
 publish and resume need repository Contents write access. Never persist the
@@ -20,9 +21,23 @@ Keep the checkout clean, with full Git history and the intended public origin.
 The tooling isolates and neutralizes inherited source hooks and smudge filters
 so they cannot execute, and rejects replacement objects, lazy promisor fetches,
 and a dirty selected source. Resolve the selected branch/tag to one full commit
-and review the committed environment manifest before continuing. Until
-approved stage and production URLs are committed, release publication is
-blocked.
+and review the committed environment manifest before continuing. Empty or
+invalid endpoint values block release validation.
+
+Commands that build or change release state fail before starting work if the
+invoking checkout has staged, unstaged, or untracked changes. This covers
+`tools`, `snapshot`, `build`, `publish` (including with `--dist`), `resume`,
+`native-requirements`, `native-review-template`, `native-manual`,
+`native-evidence`, and `acceptance-template`, through both the script and Make
+wrappers. `make build`, `make tidy`, and `make get` use the same guard. Review
+and commit changes before retrying; keep release notes and external operator
+records outside the source tree, and retain generated records at their
+documented output paths.
+
+`check`, `verify`, and `status`, plus `make test`, `make vet`, `make run`, and
+`make dev`, remain available in a dirty checkout. Native collectors
+`scripts/smoke.sh` and `scripts/smoke.ps1` stay portable and do not require a Git
+checkout.
 
 Bootstrap and inspect only the locked release image:
 
@@ -55,10 +70,20 @@ env -u GITHUB_TOKEN -u GH_TOKEN make release-snapshot ENV=stage REF="$FULL_COMMI
 env -u GITHUB_TOKEN -u GH_TOKEN \
   make release-verify ENV=stage DIST=/absolute/retained-parent
 
-# Build only an already-reviewed local release tag; this does not publish it.
+# Choose the intended version. Create a missing local tag, then build it.
 env -u GITHUB_TOKEN -u GH_TOKEN \
   make release-build ENV=stage TAG=v1.2.3-stage.1
 ```
+
+`release-build` validates the tag format and environment. If the tag is missing,
+it resolves committed `HEAD` once, validates that source and its release tools
+and environment, then creates an annotated local tag at that exact commit.
+If the tag already exists, it builds the tag's commit, even when it differs
+from `HEAD`; it never moves, converts, or replaces the tag. The selected tag
+and full commit are printed before packaging. This command does not fetch,
+push, publish, or require a GitHub token. A newly created tag remains if a
+later build step fails. Fix and commit the source, then choose a new candidate
+tag instead of retargeting the old one.
 
 Each fresh retained parent contains exactly six platform archives and one
 checksum file under `artifacts/`, plus `receipt.json`, `build-info.json`, the
@@ -313,6 +338,12 @@ Resume only from the original retained parent:
 make release-resume ENV=stage TAG=v1.2.3-stage.1 DIST=/absolute/retained-parent
 ```
 
+Resume requires a clean invoking checkout, but its `HEAD` and the remote branch
+tip may have advanced. Recovery still uses the recorded release's exact commit
+and retained bytes; cleanliness does not require returning to the old branch
+tip. A fresh publish without recorded recovery state must satisfy the current
+branch policy.
+
 | Observed state | Action |
 | --- | --- |
 | Validation or build failed | Fix the cause and use a new candidate tag if source changed. Preserve the failed parent for diagnosis. |
@@ -335,7 +366,8 @@ The local lock and immediate latest recheck reduce races but are not a distribut
 Before authorizing the first publication, record decisions for every item below.
 None is claimed complete by this repository change:
 
-- approved public stage and production URLs;
+- confirmation that the selected source's committed public stage and production
+  URLs are the intended release destinations;
 - final repository identity and first release version;
 - disposition and revocation assessment for the removed historical credential
   literal, without copying that value into notes or logs;

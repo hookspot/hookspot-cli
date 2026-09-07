@@ -20,12 +20,14 @@ DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 .PHONY: tidy build test vet run get dev release-tools release-check release-snapshot release-build release-verify release-status release-resume stage-release prod-release
 
 tidy:
+	@./scripts/release.sh _require-clean-tree
 	$(RUN) go mod tidy
 
 build:
 ifndef SERVER_URL
 	$(error SERVER_URL is required, e.g. make build SERVER_URL=https://api.example.invalid)
 endif
+	@./scripts/release.sh _require-clean-tree
 	$(RUN) go build -ldflags "$(LDFLAGS)" ./...
 
 test:
@@ -42,6 +44,7 @@ endif
 	$(DOCKER_RUN) -i $$tty_flag -v "$(DEV_CONFIG_VOLUME)":/root/.config/hookspot $(RUN_ENV) $(GO_IMAGE) go run -ldflags "$(LDFLAGS)" . $(ARGS)
 
 get:
+	@./scripts/release.sh _require-clean-tree
 	$(RUN) go get $(PKG)
 
 # Live-reload dev loop: rebuilds and restarts the command on every file change.

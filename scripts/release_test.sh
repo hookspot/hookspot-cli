@@ -206,7 +206,10 @@ case "$*" in
     ;;
   *'--entrypoint release-helper-check'*) [ "${FAKE_HELPER_INVALID-}" != 1 ] || exit 23 ;;
   *'--entrypoint /out/tools/releasecheck-linux-'*) touch "$FAKE_RETAINED_HELPER_MARKER" ;;
-  *'env-url'*) printf '%s\n' 'https://stage.example.invalid' ;;
+  *'env-url'*)
+    if [ -n "${FAKE_DIRTY_SOURCE-}" ]; then printf '%s\n' dirty >>"$FAKE_DIRTY_SOURCE"; fi
+    printf '%s\n' 'https://stage.example.invalid'
+    ;;
   *'releasecheck repository'*) printf '%s\n' 'example/release-fixture' ;;
   *'goreleaser release'*)
     [ "${FAKE_BUILD_FAILURE-}" != 1 ] || exit 19
@@ -224,7 +227,12 @@ if [ -f "$TMP_ROOT/source-temp-retarget-request" ] && [ ! -e "$TMP_ROOT/source-t
   rm -f "$TMP_ROOT/source-temp-alias"
   ln -s "$TMP_ROOT/source-temp-victim" "$TMP_ROOT/source-temp-alias"
 fi
-case "\$*" in *'status --porcelain'*) if [ "\${FAKE_GIT_STATUS_FAILURE-}" = 1 ]; then exit 42; fi ;; esac
+case "\$*" in
+  *'status --porcelain'*)
+    if [ -n "\${GITHUB_TOKEN-}\${GH_TOKEN-}" ]; then printf '%s\\n' 'status received publisher token' >>"$git_log"; fi
+    if [ "\${FAKE_GIT_STATUS_FAILURE-}" = 1 ]; then exit 42; fi
+    ;;
+esac
 exec "$REAL_GIT" "\$@"
 EOF
 chmod 755 "$fixture/fake-bin/git"
@@ -392,11 +400,122 @@ expect_failure make-function env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG=
 test ! -e "$make_marker" || fail "Make executed operator data"
 test ! -e "$fixture/MAKE_FUNCTION_EXECUTED" || fail "Make evaluated an original command-line variable while exporting it"
 
-"$REAL_GIT" -C "$fixture" tag v0.1.0-stage.1 HEAD
+clean_payload="$TMP_ROOT/clean-payload"
+cp "$fixture/payload" "$clean_payload"
+dirty_notes="$TMP_ROOT/dirty-release-notes.md"
+printf '%s\n' 'Fixture release notes' >"$dirty_notes"
+for dirty_kind in unstaged staged untracked; do
+  case "$dirty_kind" in
+    unstaged) printf '%s\n' dirty >>"$fixture/payload" ;;
+    staged)
+      printf '%s\n' dirty >>"$fixture/payload"
+      "$REAL_GIT" -C "$fixture" add payload
+      ;;
+    untracked) printf '%s\n' dirty >"$fixture/untracked-change" ;;
+  esac
+  refs_before=$("$REAL_GIT" -C "$fixture" for-each-ref --format='%(refname) %(objectname)')
+  for mutation in tools snapshot build publish resume acceptance-template native-requirements native-review-template native-manual native-evidence; do
+    set -- "$fixture/scripts/release.sh" "$mutation"
+    case "$mutation" in
+      tools) ;;
+      snapshot) set -- "$@" --environment stage ;;
+      build) set -- "$@" --environment stage --tag v0.2.0-stage.1 ;;
+      publish) set -- "$@" --environment stage --tag v0.2.0-stage.1 --notes "$dirty_notes" --dist "$retained" ;;
+      resume) set -- "$@" --environment stage --tag v0.2.0-stage.1 --dist "$retained" ;;
+      acceptance-template) set -- "$@" --dist "$retained" --output "$TMP_ROOT/blocked-acceptance.json" ;;
+      native-review-template) set -- "$@" --environment stage --dist "$retained" --baseline-dist "$retained" --output "$TMP_ROOT/blocked-review.json" ;;
+      native-manual) set -- "$@" --environment stage --dist "$retained" --target linux/amd64 --check network --result pass --operator fixture --procedure network_release_v1 ;;
+      *) set -- "$@" --environment stage --dist "$retained" ;;
+    esac
+    : >"$docker_log"
+    : >"$git_log"
+    expect_failure "$dirty_kind-$mutation" env PATH="$fixture/fake-bin:$PATH" \
+      FAKE_DOCKER_LOG="$docker_log" GITHUB_TOKEN=TOKEN_BOUNDARY_SENTINEL GH_TOKEN=TOKEN_BOUNDARY_SENTINEL "$@"
+    grep -Fq 'uncommitted changes' "$TMP_ROOT/$dirty_kind-$mutation.err" || fail "$mutation did not explain the $dirty_kind checkout"
+    test ! -s "$docker_log" || fail "$mutation reached Docker with $dirty_kind changes"
+    if grep -Fq 'status received publisher token' "$git_log"; then fail "$mutation exposed publisher credentials to Git status"; fi
+    test ! -e "$fixture/.git/hookspot-publication.lock" || fail "$mutation created a lock with $dirty_kind changes"
+    test "$("$REAL_GIT" -C "$fixture" for-each-ref --format='%(refname) %(objectname)')" = "$refs_before" || fail "$mutation changed refs with $dirty_kind changes"
+  done
+  for mutation in build tidy get release-tools release-snapshot release-build stage-release prod-release release-resume; do
+    mutation_environment=stage
+    mutation_tag=v0.2.0-stage.1
+    if [ "$mutation" = prod-release ]; then mutation_environment=prod; mutation_tag=v0.2.0; fi
+    : >"$docker_log"
+    : >"$git_log"
+    expect_failure "$dirty_kind-make-$mutation" env PATH="$fixture/fake-bin:$PATH" \
+      FAKE_DOCKER_LOG="$docker_log" GITHUB_TOKEN=TOKEN_BOUNDARY_SENTINEL GH_TOKEN=TOKEN_BOUNDARY_SENTINEL \
+      make -C "$fixture" "$mutation" ENV="$mutation_environment" TAG="$mutation_tag" \
+      FROM_STAGE_TAG=v0.2.0-stage.1 STAGE_ACCEPTANCE="$dirty_notes" \
+      NOTES_FILE="$dirty_notes" DIST="$retained" SERVER_URL=https://stage.example.invalid PKG=example.invalid/module
+    grep -Fq 'uncommitted changes' "$TMP_ROOT/$dirty_kind-make-$mutation.err" || fail "make $mutation did not explain the $dirty_kind checkout"
+    test ! -s "$docker_log" || fail "make $mutation reached Docker with $dirty_kind changes"
+    if grep -Fq 'status received publisher token' "$git_log"; then fail "make $mutation exposed publisher credentials to Git status"; fi
+  done
+  expect_success "$dirty_kind-check" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    "$fixture/scripts/release.sh" check --environment stage
+  expect_success "$dirty_kind-verify" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    FAKE_RETAINED_HELPER_MARKER="$retained_marker" "$fixture/scripts/release.sh" verify --environment stage --dist "$retained"
+  case "$dirty_kind" in
+    staged) "$REAL_GIT" -C "$fixture" reset -q HEAD -- payload ;;
+    untracked) rm "$fixture/untracked-change" ;;
+  esac
+  cp "$clean_payload" "$fixture/payload"
+done
+test ! -e "$TMP_ROOT/blocked-acceptance.json" || fail "dirty checkout created stage acceptance"
+test ! -e "$TMP_ROOT/blocked-review.json" || fail "dirty checkout created a native review"
+
+for mutation in build tidy get; do
+  : >"$docker_log"
+  expect_success "clean-make-$mutation" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    make -C "$fixture" "$mutation" SERVER_URL=https://stage.example.invalid PKG=example.invalid/module
+  expected_operation="go $mutation"
+  [ "$mutation" != tidy ] || expected_operation='go mod tidy'
+  grep -Fq "$expected_operation" "$docker_log" || fail "clean make $mutation did not reach its operation"
+done
+
+for tag_environment in stage prod; do
+  created_tag=v0.2.0
+  [ "$tag_environment" != stage ] || created_tag=v0.2.0-stage.1
+  expected_commit=$("$REAL_GIT" -C "$fixture" rev-parse HEAD)
+  : >"$docker_log"
+  : >"$git_log"
+  expect_success "create-$tag_environment-tag" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    make -C "$fixture" release-build ENV="$tag_environment" TAG="$created_tag"
+  test "$("$REAL_GIT" -C "$fixture" cat-file -t "refs/tags/$created_tag")" = tag || fail "new $tag_environment tag was not annotated"
+  test "$("$REAL_GIT" -C "$fixture" rev-parse "$created_tag^{commit}")" = "$expected_commit" || fail "new tag did not select committed HEAD"
+  grep -Fq "$created_tag ($expected_commit)" "$TMP_ROOT/create-$tag_environment-tag.out" || fail "build did not identify the selected tag and commit"
+  if grep -Eq '(^| )(push|fetch|ls-remote)( |$)' "$git_log"; then fail "build contacted a remote"; fi
+  tag_object_before=$("$REAL_GIT" -C "$fixture" rev-parse "refs/tags/$created_tag")
+  expect_success "reuse-$tag_environment-tag" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    "$fixture/scripts/release.sh" build --environment "$tag_environment" --tag "$created_tag"
+  test "$("$REAL_GIT" -C "$fixture" rev-parse "refs/tags/$created_tag")" = "$tag_object_before" || fail "build recreated an existing tag"
+done
+
+: >"$docker_log"
+expect_failure new-tag-preflight env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" FAKE_WRONG_LABEL=1 \
+  "$fixture/scripts/release.sh" build --environment stage --tag v0.2.0-stage.2
+if "$REAL_GIT" -C "$fixture" show-ref --verify --quiet refs/tags/v0.2.0-stage.2; then fail "failed preflight created a tag"; fi
+
+expect_failure new-tag-dirty-during-preflight env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+  FAKE_DIRTY_SOURCE="$fixture/payload" "$fixture/scripts/release.sh" build --environment stage --tag v0.2.0-stage.2
+grep -Fq 'uncommitted changes' "$TMP_ROOT/new-tag-dirty-during-preflight.err" || fail "tag creation ignored changes made during preflight"
+if "$REAL_GIT" -C "$fixture" show-ref --verify --quiet refs/tags/v0.2.0-stage.2; then fail "dirty preflight created a tag"; fi
+cp "$clean_payload" "$fixture/payload"
+
+expect_failure new-tag-build-failure env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" FAKE_BUILD_FAILURE=1 \
+  "$fixture/scripts/release.sh" build --environment stage --tag v0.2.0-stage.2
+test "$("$REAL_GIT" -C "$fixture" cat-file -t refs/tags/v0.2.0-stage.2)" = tag || fail "failed build did not preserve its new annotated tag"
+test "$("$REAL_GIT" -C "$fixture" rev-parse 'v0.2.0-stage.2^{commit}')" = "$("$REAL_GIT" -C "$fixture" rev-parse HEAD)" || fail "failed build tag lost its commit identity"
+
+"$REAL_GIT" -C "$fixture" tag v0.1.0-stage.1 HEAD~2
 "$REAL_GIT" -C "$fixture" tag v0.1.0-stage.2 HEAD
 : >"$docker_log"
+existing_tag_object=$("$REAL_GIT" -C "$fixture" rev-parse refs/tags/v0.1.0-stage.1)
 PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" "$fixture/scripts/release.sh" build --environment stage --tag v0.1.0-stage.1 >"$TMP_ROOT/build.out"
-grep -q -- '-e RELEASE_TAG=v0.1.0-stage.1' "$docker_log" || fail "tagged build did not use the explicit same-commit tag"
+grep -q -- '-e RELEASE_TAG=v0.1.0-stage.1' "$docker_log" || fail "tagged build did not use the explicit tag"
+test "$("$REAL_GIT" -C "$fixture" rev-parse refs/tags/v0.1.0-stage.1)" = "$existing_tag_object" || fail "build moved an existing tag"
+grep -Fq "v0.1.0-stage.1 ($existing_tag_object)" "$TMP_ROOT/build.out" || fail "build did not select the older tagged commit"
 expect_failure wrong-channel env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" "$fixture/scripts/release.sh" build --environment prod --tag v0.1.0-stage.1
 
 printf '%s\n' dirty >>"$fixture/payload"
@@ -415,6 +534,21 @@ test ! -s "$docker_log" || fail "replacement source reached Docker"
 "$REAL_GIT" -C "$fixture" config extensions.worktreeConfig true
 "$REAL_GIT" -C "$fixture" config --worktree remote.fixture.promisor true
 expect_failure promisor env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" FAKE_GIT_LOG="$git_log" "$fixture/scripts/release.sh" check --environment stage
+for mutation in snapshot build publish resume; do
+  set -- "$fixture/scripts/release.sh" "$mutation" --environment stage
+  case "$mutation" in
+    build) set -- "$@" --tag v0.2.0-stage.1 ;;
+    publish) set -- "$@" --tag v0.2.0-stage.1 --notes "$dirty_notes" --dist "$retained" ;;
+    resume) set -- "$@" --tag v0.2.0-stage.1 --dist "$retained" ;;
+  esac
+  : >"$git_log"
+  : >"$docker_log"
+  expect_failure "promisor-$mutation" env PATH="$fixture/fake-bin:$PATH" FAKE_DOCKER_LOG="$docker_log" \
+    GITHUB_TOKEN=TOKEN_BOUNDARY_SENTINEL "$@"
+  grep -Fq 'partial or promisor checkout' "$TMP_ROOT/promisor-$mutation.err" || fail "$mutation did not reject partial source"
+  if grep -Fq 'status --porcelain' "$git_log"; then fail "$mutation inspected partial checkout files before rejecting it"; fi
+  test ! -s "$docker_log" || fail "$mutation reached Docker in a partial checkout"
+done
 "$REAL_GIT" -C "$fixture" config --worktree --unset remote.fixture.promisor
 
 linked="$TMP_ROOT/linked"
@@ -612,12 +746,15 @@ integration_git -C "$integration_repo" show HEAD:release/environments.json | gre
 integration_git -C "$integration_repo" show HEAD:release/environments.json | grep -q '"https://prod.release.invalid"' || \
   fail "production integration endpoint was not committed"
 
-expect_success integration-stage-snapshot "$integration_repo/scripts/release.sh" snapshot --environment stage
+expect_success integration-stage-build "$integration_repo/scripts/release.sh" build --environment stage --tag v0.3.0-stage.1
+test "$(integration_git -C "$integration_repo" cat-file -t refs/tags/v0.3.0-stage.1)" = tag || fail "integration build did not create an annotated tag"
+test "$(integration_git -C "$integration_repo" rev-parse 'v0.3.0-stage.1^{commit}')" = "$(integration_git -C "$integration_repo" rev-parse HEAD)" || \
+  fail "integration tag did not select committed HEAD"
 expect_success integration-prod-snapshot "$integration_repo/scripts/release.sh" snapshot --environment prod
-integration_stage_dist=$(sed -n 's/^release output: //p' "$TMP_ROOT/integration-stage-snapshot.out")
+integration_stage_dist=$(sed -n 's/^release output: //p' "$TMP_ROOT/integration-stage-build.out")
 integration_prod_dist=$(sed -n 's/^release output: //p' "$TMP_ROOT/integration-prod-snapshot.out")
 [ -d "$integration_stage_dist/artifacts" ] && [ -d "$integration_prod_dist/artifacts" ] || \
-  fail "retained binary integration snapshots were not created"
+  fail "retained binary integration builds were not created"
 integration_evidence="$TMP_ROOT/binary-integration-evidence"
 mkdir -p "$integration_evidence"
 integration_cidfile="$TMP_ROOT/binary-integration.cid"
