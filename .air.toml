@@ -6,12 +6,12 @@ tmp_dir = "tmp"
 [build]
   # SERVER_URL comes from the dev container's environment. Rebuild the binary
   # on every change, baking in the server URL the same way the Dockerfile does.
-  cmd = "go build -ldflags \"-X hookspot/cmd.serverURL=$SERVER_URL\" -o ./tmp/hookspot ."
+  cmd = "go build -trimpath -ldflags \"-X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$SERVER_URL -X hookspot/cmd.buildEnvironment=dev -X hookspot/cmd.commit=$COMMIT -X hookspot/cmd.sourceDate=$SOURCE_DATE -X hookspot/cmd.buildKind=dev\" -o ./tmp/hookspot ."
   entrypoint = "./tmp/hookspot"
   # The command to (re)run is passed by `make dev` (default: `listen`).
   # Override it with ARGS, for example: make dev ARGS="listen --help".
   include_ext = ["go", "mod"]
-  exclude_dir = ["tmp", ".git", "docs"]
+  exclude_dir = ["tmp", ".git", ".superpowers", "docs"]
   stop_on_error = true
   delay = 500
   # Poll for changes: Docker Desktop bind mounts on macOS/Windows don't reliably

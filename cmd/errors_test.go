@@ -5,10 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"hookspot/internal/api"
+	"hookspot/internal/endpoint"
 	"hookspot/internal/ws"
 )
 
@@ -41,7 +46,7 @@ func TestHandleError(t *testing.T) {
 			name:     "command guidance",
 			err:      loginRequiredError(),
 			wantCode: 1,
-			want:     "not logged in\n\nRun 'hookspot login' or set HOOKSPOT_CLI_KEY.\n",
+			want:     "not logged in\n\nRun 'hookspot login' or set HOOKSPOT_DEV_CLI_KEY.\n",
 		},
 		{
 			name: "wrapped unauthorized API response",
@@ -52,7 +57,7 @@ func TestHandleError(t *testing.T) {
 				Message:    "invalid key",
 			}),
 			wantCode: 1,
-			want:     "authentication failed: the Hookspot CLI key was rejected\n\nCheck the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
+			want:     "authentication failed: the Hookspot CLI key was rejected\n\nCheck the key, then run 'hookspot login' again or update HOOKSPOT_DEV_CLI_KEY.\n",
 		},
 		{
 			name:     "API rate limit",
@@ -100,7 +105,7 @@ func TestHandleError(t *testing.T) {
 				Err:  errors.New("unauthorized"),
 			},
 			wantCode: 1,
-			want:     "authentication failed: the WebSocket session was rejected\n\nRun 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
+			want:     "authentication failed: the WebSocket session was rejected\n\nRun 'hookspot login' again or update HOOKSPOT_DEV_CLI_KEY.\n",
 		},
 		{
 			name:     "generic error",
@@ -124,6 +129,65 @@ func TestHandleError(t *testing.T) {
 			}
 			if got := output.String(); got != test.want {
 				t.Fatalf("output = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSafeDisplayTextEscapesLayoutAndTerminalControls(t *testing.T) {
+	got := safeDisplayText("line\ncolumn\t\x1b")
+	if got != `line\ncolumn\t\x1b` {
+		t.Fatalf("safe display = %q", got)
+	}
+}
+
+func TestHandleErrorExplainsBlockedAPIClientRedirect(t *testing.T) {
+	for _, status := range []int{http.StatusFound, http.StatusTemporaryRedirect} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var redirectedRequests atomic.Int32
+			destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				redirectedRequests.Add(1)
+				fmt.Fprint(w, "location-sentinel")
+			}))
+			defer destination.Close()
+
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Location", destination.URL+"/location-sentinel")
+				w.WriteHeader(status)
+				fmt.Fprint(w, "<html>html-body-sentinel</html>")
+			}))
+			defer origin.Close()
+
+			base, err := endpoint.Parse(origin.URL, "dev")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = api.New(base, "key-sentinel").Me(context.Background())
+			if err == nil {
+				t.Fatal("API client accepted redirect")
+			}
+
+			var output bytes.Buffer
+			if code := HandleError(&output, err); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			want := fmt.Sprintf(
+				"Hookspot API redirect blocked: GET %s/cli/me returned %d %s\n\n"+
+					"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release for this environment.\n",
+				origin.URL,
+				status,
+				http.StatusText(status),
+			)
+			if output.String() != want {
+				t.Fatalf("output = %q, want %q", output.String(), want)
+			}
+			for _, sentinel := range []string{"html-body-sentinel", "location-sentinel", "key-sentinel", destination.URL} {
+				if strings.Contains(output.String(), sentinel) {
+					t.Fatalf("output leaked %q: %s", sentinel, output.String())
+				}
+			}
+			if got := redirectedRequests.Load(); got != 0 {
+				t.Fatalf("redirect destination requests = %d, want 0", got)
 			}
 		})
 	}

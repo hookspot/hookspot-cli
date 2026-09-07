@@ -14,19 +14,9 @@ import (
 	"hookspot/internal/ws"
 )
 
-type commandErrorKind uint8
-
-const (
-	commandErrorUsage commandErrorKind = iota
-	commandErrorAuthentication
-	commandErrorConfiguration
-	commandErrorRuntime
-)
-
 // commandError carries user-facing recovery guidance through wrapped errors.
 // Commands return it; only HandleError decides how it is presented.
 type commandError struct {
-	kind    commandErrorKind
 	message string
 	hint    string
 	cause   error
@@ -44,22 +34,21 @@ func (e *commandError) Error() string {
 
 func (e *commandError) Unwrap() error { return e.cause }
 
-func newCommandError(kind commandErrorKind, message, hint string) error {
-	return &commandError{kind: kind, message: message, hint: hint}
+func newCommandError(message, hint string) error {
+	return &commandError{message: message, hint: hint}
 }
 
-func wrapCommandError(kind commandErrorKind, message, hint string, cause error) error {
+func wrapCommandError(message, hint string, cause error) error {
 	if cause == nil {
 		return nil
 	}
-	return &commandError{kind: kind, message: message, hint: hint, cause: cause}
+	return &commandError{message: message, hint: hint, cause: cause}
 }
 
 func loginRequiredError() error {
 	return newCommandError(
-		commandErrorAuthentication,
 		"not logged in",
-		"Run 'hookspot login' or set HOOKSPOT_CLI_KEY.",
+		fmt.Sprintf("Run '%s login' or set %s.", executableName(), scopedVariable("CLI_KEY")),
 	)
 }
 
@@ -89,8 +78,11 @@ func fatalErrorMessage(err error) (string, string) {
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
 		switch {
+		case apiErr.StatusCode >= 300 && apiErr.StatusCode < 400:
+			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
+				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release for this environment."
 		case apiErr.StatusCode == http.StatusUnauthorized:
-			return "authentication failed: the Hookspot CLI key was rejected", "Check the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
+			return "authentication failed: the Hookspot CLI key was rejected", fmt.Sprintf("Check the key, then run '%s login' again or update %s.", executableName(), scopedVariable("CLI_KEY"))
 		case apiErr.StatusCode == http.StatusForbidden:
 			return "authorization failed: the Hookspot CLI key cannot access this resource", "Check that the key belongs to the selected project and has the required access."
 		case apiErr.StatusCode == http.StatusTooManyRequests:
@@ -106,7 +98,7 @@ func fatalErrorMessage(err error) (string, string) {
 	if errors.As(err, &sessionErr) {
 		switch sessionErr.Kind {
 		case ws.SessionAuthentication:
-			return "authentication failed: the WebSocket session was rejected", "Run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
+			return "authentication failed: the WebSocket session was rejected", fmt.Sprintf("Run '%s login' again or update %s.", executableName(), scopedVariable("CLI_KEY"))
 		case ws.SessionProtocol:
 			return err.Error(), "The server sent an invalid WebSocket message. Retry the command; if it continues, report the error."
 		case ws.SessionHandler:
@@ -132,6 +124,29 @@ func safeErrorText(value string) string {
 		switch {
 		case r == '\n' || r == '\t':
 			safe.WriteRune(r)
+		case r == '\r':
+			safe.WriteString("\\r")
+		case unicode.IsControl(r):
+			if r <= 0xff {
+				fmt.Fprintf(&safe, "\\x%02x", r)
+			} else {
+				fmt.Fprintf(&safe, "\\u%04x", r)
+			}
+		default:
+			safe.WriteRune(r)
+		}
+	}
+	return safe.String()
+}
+
+func safeDisplayText(value string) string {
+	var safe strings.Builder
+	for _, r := range value {
+		switch {
+		case r == '\n':
+			safe.WriteString("\\n")
+		case r == '\t':
+			safe.WriteString("\\t")
 		case r == '\r':
 			safe.WriteString("\\r")
 		case unicode.IsControl(r):

@@ -1,25 +1,37 @@
 version: 2
 
 project_name: hookspot
+dist: /out/artifacts
+
+env:
+  - GOTOOLCHAIN=local
+  - GOFLAGS=-mod=readonly
 
 before:
   hooks:
+    - go run ./tools/releasecheck env --environment={{ .Env.RELEASE_ENV }} --server-url={{ .Env.SERVER_URL }}
     - go mod download
     - go test ./...
+    - go run ./tools/releasecheck metadata --version={{ .Version }} --commit={{ .FullCommit }} --source-date={{ .CommitDate }} --kind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }} --output=/src/build-info.json
 
 builds:
   - id: hookspot
     main: .
-    binary: hookspot
+    binary: '{{ if eq .Env.RELEASE_ENV "stage" }}hookspot-stage{{ else }}hookspot{{ end }}'
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+      - -buildvcs=true
     ldflags:
       - >-
         -s -w
         -X hookspot/cmd.version={{ .Version }}
         -X hookspot/cmd.serverURL={{ .Env.SERVER_URL }}
+        -X hookspot/cmd.buildEnvironment={{ .Env.RELEASE_ENV }}
+        -X hookspot/cmd.commit={{ .FullCommit }}
+        -X hookspot/cmd.sourceDate={{ .CommitDate }}
+        -X hookspot/cmd.buildKind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}
     goos:
       - darwin
       - linux
@@ -27,9 +39,15 @@ builds:
     goarch:
       - amd64
       - arm64
+    goamd64:
+      - v1
+    goarm64:
+      - v8.0
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
-  - ids:
+  - id: cli
+    ids:
       - hookspot
     formats:
       - tar.gz
@@ -37,25 +55,26 @@ archives:
       - goos: windows
         formats:
           - zip
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- .Version }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else }}{{ .Arch }}{{ end }}
+    name_template: 'hookspot_{{ .Env.RELEASE_ENV }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    builds_info:
+      mode: 0755
+    files:
+      - README.md
+      - src: docs/releases/INSTALL.md
+        strip_parent: true
+      - src: docs/releases/THIRD_PARTY_NOTICES.txt
+        strip_parent: true
+      - build-info.json
 
 checksum:
-  name_template: checksums.txt
+  name_template: 'hookspot_{{ .Env.RELEASE_ENV }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
 
-release:
-  prerelease: auto
+snapshot:
+  version_template: '0.0.0-snapshot.{{ .ShortCommit }}'
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "Merge pull request"
-      - "Merge branch"
+  disable: true
+
+release:
+  disable: true

@@ -1,169 +1,185 @@
-# hookspot
+# Hookspot CLI
 
-A companion CLI for hookspot. Connects to your hookspot project over a
-websocket, prints incoming webhook events to the terminal, and optionally
-forwards them to a local server.
+Hookspot CLI connects to a Hookspot project, prints incoming webhook requests,
+and can forward them to a local HTTP server. Production releases use the
+`hookspot` executable. Staging releases use the separate `hookspot-stage`
+executable, configuration, and credentials.
 
-## Usage
+Approved public stage and production service URLs have not been committed yet,
+so publication remains blocked. Do not treat a development or `.invalid`
+example endpoint as a live Hookspot service.
 
-### Authenticate
+## Install
 
-Generate a CLI key from the hookspot UI, then either:
+Choose a production archive from the stable-latest GitHub release, or a staging
+archive from its explicit reviewed stage tag/release page. `darwin` means
+macOS, `amd64` means Intel/AMD 64-bit, and `arm64` means Apple Silicon or
+another ARM64 system.
 
-```bash
+Every release contains exactly six platform archives and one checksum file.
+Verify the exact archive entry before extracting it, then install `hookspot`
+or `hookspot.exe` for production, or `hookspot-stage` or
+`hookspot-stage.exe` for staging. In a downloaded archive, follow the adjacent
+`INSTALL.md`. In the repository, see the [installation guide](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/INSTALL.md)
+for shell and PowerShell commands, updating, macOS verification, and uninstalling.
+
+Confirm the installed binary before logging in:
+
+```sh
+hookspot version --json
+# or
+hookspot-stage version --json
+```
+
+The JSON identifies the version, source commit, environment, compiled endpoint,
+Go version, and target platform. The endpoint is part of the executable and
+cannot be changed at runtime.
+
+## Log in and select a project
+
+Create a CLI key in the matching Hookspot environment, then use the minimal
+interactive flow:
+
+```sh
 hookspot login
+hookspot project use
+hookspot listen
 ```
 
-or set it via environment variable (recommended for Docker / CI):
+Listing projects and selecting one explicit UID are optional alternatives:
 
-```bash
-export HOOKSPOT_CLI_KEY=hk_...
-```
-
-### Select a project
-
-```bash
+```sh
 hookspot project list
-hookspot project use               # select interactively
-hookspot project use <project-id>  # optional non-interactive form
+hookspot project use PROJECT_UID
 ```
 
-Or select it by organization and project slug:
+Use `hookspot-stage` for the same staging flow. For a noninteractive production
+process, pass only the scoped variables it needs:
 
-```bash
-export HOOKSPOT_ORGANIZATION_SLUG=acme
-export HOOKSPOT_PROJECT_SLUG=payments
+```sh
+export HOOKSPOT_PROD_CLI_KEY='...'
+export HOOKSPOT_PROD_ORGANIZATION_SLUG='acme'
+export HOOKSPOT_PROD_PROJECT_SLUG='payments'
 ```
 
-### Listen for events
+Staging uses `HOOKSPOT_STAGE_*`; development builds use `HOOKSPOT_DEV_*`.
+Organization and project slug variables must be set together. A saved CLI key
+and selected project are stored separately for each environment.
 
-```bash
-# Print all deliveries in the active project to the terminal
+## Listen and forward
+
+```sh
+# Print deliveries for every source with a connection.
 hookspot listen
 
-# Inspect only specific sources. Request metadata and bodies are shown by default.
-hookspot listen my-source
+# Select sources by name.
+hookspot listen orders billing
 
-# Forward deliveries to a local server; each delivery keeps its own path,
-# e.g. /webhooks/stripe -> http://localhost:3000/webhooks/stripe
-hookspot listen --forward-to localhost:3000
+# Preserve each delivery path while forwarding to a local server.
+hookspot listen orders --forward-to http://localhost:3000
 ```
 
-Inspect mode redacts authorization and cookie headers by default. Use
-`--show-sensitive-headers` to reveal them. Output can be tuned with
-`--max-body-lines`, `--max-headers`, and `--max-value-chars`; set any limit to
-zero to disable it. In forward mode, press Enter to replay the latest request
-to the local target when running interactively.
+Inspect mode redacts authorization and cookie headers unless
+`--show-sensitive-headers` is set. `--max-body-lines`, `--max-headers`, and
+`--max-value-chars` bound terminal output; zero disables an individual display
+limit. The deprecated `--log-level` flag is accepted for compatibility but has
+no effect.
 
-## Configuration
+When forwarding from an interactive terminal, press Enter to replay the last
+request. Replay requires a real terminal; piped input does not enable it. The
+first response from the local server is reported as-is, including a redirect,
+and redirects are not followed.
 
-Settings are resolved in this order: command-line flags, environment
-variables (`HOOKSPOT_CLI_KEY`, `HOOKSPOT_ORGANIZATION_SLUG`,
-`HOOKSPOT_PROJECT_SLUG`, `HOOKSPOT_LOG_LEVEL`), the config file
-(`~/.config/hookspot/config.toml` by default, override with `--config`), then
-built-in defaults. The organization and project slug variables must be set
-together.
+API redirects are also blocked so a Hookspot CLI key is never forwarded to a
+different endpoint. Incoming delivery bodies may use padded or unpadded
+standard Base64; responses sent back over Phoenix Channels use padded Base64.
 
-The hookspot server URL is not user-configurable: it is baked into the
-binary at build time via `-ldflags "-X hookspot/cmd.serverURL=https://..."`
-and is required — a binary built without it will error on any command that
-talks to the hookspot server. See [Development](#development) for how to
-set it when building.
+## Configuration and logout
 
-## Running in Docker
+Default configuration lives at:
 
-Build the image with the hookspot server URL baked in:
-
-```bash
-docker build -t hookspot:dev --build-arg SERVER_URL=https://api.hookspot.dev .
+```text
+~/.config/hookspot/prod/config.toml
+~/.config/hookspot/stage/config.toml
+~/.config/hookspot/dev/config.toml
 ```
 
-Then run it:
+Resolution order is an explicit flag, then an environment-scoped variable,
+then the matching configuration file. An explicit missing `--config` path is
+an error for ordinary commands; login may create a new file at an unused path.
+Legacy generic variables require a matching `HOOKSPOT_ENVIRONMENT` assertion.
+A legacy shared file is never imported implicitly. Review the exact migration
+command first:
 
-```bash
-docker run --rm \
-  -e HOOKSPOT_CLI_KEY=hk_... \
-  -e HOOKSPOT_ORGANIZATION_SLUG=acme \
-  -e HOOKSPOT_PROJECT_SLUG=payments \
-  --network host \
-  hookspot:dev listen --forward-to localhost:3000
+```sh
+hookspot config migrate --help
+hookspot-stage config migrate --help
 ```
 
-`--network host` is Linux-only and isn't available on Docker Desktop for
-Mac/Windows. On those platforms, omit `--network host` and instead forward
-to `host.docker.internal` so the container can reach a server running on
-your host machine:
+`hookspot logout` removes the saved production key but does not unset an active
+`HOOKSPOT_PROD_CLI_KEY`. Staging behaves the same with its scoped variable.
 
-```bash
-docker run --rm \
-  -e HOOKSPOT_CLI_KEY=hk_... \
-  -e HOOKSPOT_ORGANIZATION_SLUG=acme \
-  -e HOOKSPOT_PROJECT_SLUG=payments \
-  --add-host host.docker.internal:host-gateway \
-  hookspot:dev listen --forward-to host.docker.internal:3000
-```
+## Client limits and cancellation
 
-## Running with Docker Compose
+The CLI enforces a 32 MiB WebSocket frame limit, a 16 MiB local response-body
+limit, and a 1 MiB successful API JSON limit. These are CLI safeguards, not
+claims about deployed backend or infrastructure limits. WebSocket join and
+write operations have 10-second bounds, heartbeats run every 30 seconds, and
+90 seconds without qualifying receive activity closes the session. A valid
+serial delivery renews the receive window after it finishes processing.
 
-A `docker-compose.yml` is provided for building and running `hookspot`
-without a local Go toolchain.
-
-```bash
-docker compose build
-
-# Set credentials via env vars (or a .env file) before running
-export HOOKSPOT_CLI_KEY=hk_...
-export HOOKSPOT_ORGANIZATION_SLUG=acme
-export HOOKSPOT_PROJECT_SLUG=payments
-
-docker compose run --rm hookspot login
-docker compose run --rm hookspot project list
-docker compose run --rm hookspot listen --forward-to host.docker.internal:3000
-```
-
-`host.docker.internal` (mapped via `extra_hosts` in `docker-compose.yml`)
-lets the container reach services running on your host machine — use it in
-`--forward-to` when the target server (e.g. `localhost:3000`) runs outside
-the container.
+Output and forwarding remain synchronous to preserve order. The first Ctrl-C
+starts graceful cancellation of dialing, TLS/HTTP upgrade, proxy CONNECT,
+joining, and in-flight network work. An operating-system write to an unread
+pipe can still block graceful completion. After normal signal handling is
+restored, a later Ctrl-C can force exit and may interrupt cleanup.
 
 ## Development
 
-All builds/tests run via Docker through the Makefile. `build` and `run`
-require `SERVER_URL`, which is baked into the binary at build time:
+All Go build and test commands run in the pinned Docker toolchain:
 
-```bash
-make build SERVER_URL=https://api.hookspot.dev   # compile-check
-make test                                        # run tests
-make run SERVER_URL=https://api.hookspot.dev ARGS="listen --help"
+```sh
+# api.example.invalid is reserved and intentionally not a live default.
+make build SERVER_URL=https://api.example.invalid
+make test
+make vet
 
-# Live reload (runs `listen` by default)
-HOOKSPOT_CLI_KEY=hk_... HOOKSPOT_ORGANIZATION_SLUG=acme \
-  HOOKSPOT_PROJECT_SLUG=payments make dev
-make dev ARGS="listen --help"
+# Offline examples; use Compose below for the mapped developer backend.
+make run SERVER_URL=https://api.example.invalid ARGS='version --json'
+make run SERVER_URL=https://api.example.invalid ARGS='--help'
 ```
 
-### Stage releases
+`make run` keeps stdin open for interactive or piped login and allocates a TTY
+only when stdin and stdout are terminals. `make run` and `make dev` use the
+dedicated `hookspot-dev-config` volume, so development login and project
+selection survive disposable containers. Build, test, and release containers
+do not mount that application configuration volume.
 
-Stage releases are run from a local checkout using the pinned official
-GoReleaser Docker image; they do not require a local Go or GoReleaser install.
-The command tests the project, builds Linux, macOS, and Windows archives, and
-publishes a GitHub prerelease with SHA-256 checksums:
+Docker Compose provides the same development-only image and maps
+`hookspot.localhost` and `host.docker.internal` back to the host:
 
-```bash
-git switch stage
-git pull --ff-only
-GITHUB_TOKEN=github_pat_... \
-  make stage-release SERVER_URL=https://api.hookspot.dev
+```sh
+docker compose --env-file release/toolchain.env build cli
+export HOOKSPOT_DEV_CLI_KEY='...'
+docker compose --env-file release/toolchain.env run --rm cli login
+docker compose --env-file release/toolchain.env run --rm cli project list
+: "${PROJECT_UID:?set PROJECT_UID to one UID listed above}"
+docker compose --env-file release/toolchain.env run --rm cli project use "$PROJECT_UID"
+docker compose --env-file release/toolchain.env run --rm cli listen \
+  --forward-to http://host.docker.internal:3000
 ```
 
-`GITHUB_TOKEN` must have permission to create releases in this repository. The
-working tree must be clean, and the stage branch and its tags must be up to
-date. The command creates and pushes a SemVer-compatible tag from the repository
-commit count and short commit hash, for example `v0.0.42-stage.g1a2b3c4`, then
-GoReleaser builds and publishes the release from inside its Docker container.
+## Release operators
 
-Validate `.goreleaser.yaml` without publishing anything with:
+Bootstrap the locked release tool image with the supported command; do not
+maintain a second Docker build recipe in documentation:
 
-```bash
-make release-check
+```sh
+make release-tools
 ```
+
+`make release-verify ENV=stage DIST=/absolute/retained-parent` proves retained
+artifact and immutable receipt integrity. It does not prove complete native
+evidence or publication eligibility. The [release runbook](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
+contains the token-free build flow, native requirements/reports/manual checks,
+stage acceptance, trusted publisher boundary, and exact recovery commands.

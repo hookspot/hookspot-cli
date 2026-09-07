@@ -8,11 +8,14 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"hookspot/internal/api"
 	"hookspot/internal/printer"
+	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
 )
 
@@ -28,6 +31,21 @@ func TestFormatProjectLabel_UsesSlugs(t *testing.T) {
 
 	if got, want := formatProjectLabel(project), "acme/payments"; got != want {
 		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatProjectLabelEscapesBackendControls(t *testing.T) {
+	project := &api.Project{
+		Slug:         "payments\nInjected\x1b",
+		Organization: api.Organization{Slug: "acme\tPrompt"},
+	}
+	want := `acme\tPrompt/payments\nInjected\x1b`
+	if got := formatProjectLabel(project); got != want {
+		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
+	}
+	_, _, err := resolveSources(project, nil, []string{"missing"})
+	if err == nil || !strings.Contains(err.Error(), want) || strings.ContainsRune(err.Error(), '\x1b') {
+		t.Fatalf("missing-source error = %q", err)
 	}
 }
 
@@ -121,7 +139,13 @@ func TestPrintListenInfo_ShowsSourceURLsAndConnections(t *testing.T) {
 		},
 	}
 
-	printListenInfo(&buf, sources, "http://localhost:3000")
+	forwarder, err := proxy.New("http://localhost:3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := printListenInfoWithReplay(&buf, sources, forwarder, false); err != nil {
+		t.Fatal(err)
+	}
 
 	want := "Listening on 1 source • 1 connection\n" +
 		"\n" +
@@ -133,7 +157,7 @@ func TestPrintListenInfo_ShowsSourceURLsAndConnections(t *testing.T) {
 		"\n" +
 		"Waiting for requests...\n"
 	if got := buf.String(); got != want {
-		t.Fatalf("printListenInfo() output:\n%q\nwant:\n%q", got, want)
+		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
 	}
 }
 
@@ -147,7 +171,9 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		},
 	}
 
-	printListenInfo(&buf, sources, "")
+	if err := printListenInfoWithReplay(&buf, sources, nil, false); err != nil {
+		t.Fatal(err)
+	}
 
 	want := "Listening on 1 source • 1 connection\n" +
 		"\n" +
@@ -159,7 +185,47 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		"\n" +
 		"Waiting for requests...\n"
 	if got := buf.String(); got != want {
-		t.Fatalf("printListenInfo() output:\n%q\nwant:\n%q", got, want)
+		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestPrintListenInfoReturnsWriterAndShortWriteFailures(t *testing.T) {
+	sources := []api.Source{{Name: "shopify", URL: "https://events.example.invalid", Connections: []api.Connection{{UID: "conn_1"}}}}
+	wantErr := errors.New("stdout unavailable")
+	if err := printListenInfoWithReplay(failingWriter{err: wantErr}, sources, nil, false); !errors.Is(err, wantErr) {
+		t.Fatalf("writer error = %v, want output failure", err)
+	}
+	if err := printListenInfoWithReplay(shortWriter{}, sources, nil, false); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short write error = %v, want io.ErrShortWrite", err)
+	}
+}
+
+func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
+	sources := []api.Source{{
+		Name: "source\nInjected\x1b",
+		URL:  "https://example.invalid/path\tPrompt\x1b",
+		Connections: []api.Connection{{
+			Destination: api.Destination{Path: "/webhook"},
+		}},
+	}}
+	forwarder, err := proxy.New("http://localhost:3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, selectedForwarder := range []*proxy.Forwarder{nil, forwarder} {
+		var output bytes.Buffer
+		if err := printListenInfoWithReplay(&output, sources, selectedForwarder, false); err != nil {
+			t.Fatal(err)
+		}
+		text := output.String()
+		for _, want := range []string{`source\nInjected\x1b`, `path\tPrompt\x1b`} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("escaped field %q missing from %q", want, text)
+			}
+		}
+		if strings.ContainsRune(text, '\x1b') || strings.Contains(text, "source\nInjected") {
+			t.Fatalf("hostile field remained active in %q", text)
+		}
 	}
 }
 
@@ -178,26 +244,6 @@ func TestConnectionLabel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := connectionLabel(tt.connection); got != tt.want {
 				t.Fatalf("connectionLabel() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestForwardBaseURL(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"bare host and port", "localhost:3000", "http://localhost:3000"},
-		{"http url kept", "http://localhost:3000", "http://localhost:3000"},
-		{"https url kept", "https://example.com/hooks", "https://example.com/hooks"},
-		{"host only", "host.docker.internal", "http://host.docker.internal"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := forwardBaseURL(tt.in); got != tt.want {
-				t.Errorf("forwardBaseURL(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -224,7 +270,13 @@ func TestPrintListenInfo_ShowsReplayHintOnlyWhenEnabled(t *testing.T) {
 		}},
 	}}
 
-	printListenInfoWithReplay(&output, sources, "http://localhost:3000", true)
+	forwarder, err := proxy.New("http://localhost:3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := printListenInfoWithReplay(&output, sources, forwarder, true); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(output.String(), "└─ Forwards to → http://localhost:3000/api/webhooks") {
 		t.Fatalf("exact forwarding URL missing:\n%s", output.String())
 	}
@@ -233,7 +285,9 @@ func TestPrintListenInfo_ShowsReplayHintOnlyWhenEnabled(t *testing.T) {
 	}
 
 	output.Reset()
-	printListenInfoWithReplay(&output, sources, "http://localhost:3000", false)
+	if err := printListenInfoWithReplay(&output, sources, forwarder, false); err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(output.String(), "replay last request") {
 		t.Fatalf("replay hint shown for non-interactive input:\n%s", output.String())
 	}
@@ -298,6 +352,15 @@ type fakeForwarder struct {
 	err      error
 }
 
+type shortWriter struct{}
+
+func (shortWriter) Write(value []byte) (int, error) {
+	if len(value) == 0 {
+		return 0, nil
+	}
+	return len(value) - 1, nil
+}
+
 type scriptedWebSocketListener struct {
 	errors []error
 	calls  int
@@ -314,10 +377,11 @@ func (l *scriptedWebSocketListener) Listen(context.Context, ws.Handler) error {
 }
 
 func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
+	finalCause := errors.New("offline 3")
 	listener := &scriptedWebSocketListener{errors: []error{
 		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 1")},
 		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 2")},
-		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 3")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: finalCause},
 	}}
 	var stderr bytes.Buffer
 
@@ -328,15 +392,49 @@ func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
 	if err == nil {
 		t.Fatal("superviseListen error = nil")
 	}
-	var commandErr *commandError
-	if !errors.As(err, &commandErr) || commandErr.kind != commandErrorRuntime {
-		t.Fatalf("error = %#v, want runtime command error", err)
+	if !errors.Is(err, finalCause) {
+		t.Fatalf("error = %#v, want final connection cause", err)
 	}
 	if listener.calls != 3 {
 		t.Fatalf("Listen calls = %d, want 3", listener.calls)
 	}
 	if got := strings.Count(stderr.String(), "reconnecting"); got != 2 {
 		t.Fatalf("reconnect notices = %d, want 2:\n%s", got, stderr.String())
+	}
+	var output bytes.Buffer
+	if got := HandleError(&output, err); got != 1 {
+		t.Fatalf("HandleError exit code = %d, want 1", got)
+	}
+	wantOutput := "could not connect to Hookspot after 3 attempts: offline 3\n\nCheck your network connection and the Hookspot server URL, then try again.\n"
+	if output.String() != wantOutput {
+		t.Fatalf("HandleError output = %q, want %q", output.String(), wantOutput)
+	}
+}
+
+func TestSuperviseListenStopsWhenReconnectNoticeFails(t *testing.T) {
+	wantErr := errors.New("stderr unavailable")
+	tests := []struct {
+		name   string
+		writer io.Writer
+		want   error
+	}{
+		{name: "writer error", writer: failingWriter{err: wantErr}, want: wantErr},
+		{name: "short write", writer: shortWriter{}, want: io.ErrShortWrite},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			listener := &scriptedWebSocketListener{errors: []error{
+				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")},
+				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not retry")},
+			}}
+			err := superviseListen(context.Background(), test.writer, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+			if !errors.Is(err, test.want) {
+				t.Fatalf("superviseListen error = %v, want %v", err, test.want)
+			}
+			if listener.calls != 1 {
+				t.Fatalf("Listen calls = %d, want 1", listener.calls)
+			}
+		})
 	}
 }
 
@@ -364,6 +462,26 @@ func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
 	}
 }
 
+func TestSuperviseListenEscapesReconnectErrorControls(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped\nInjected\t\x1b")},
+		&ws.SessionError{Kind: ws.SessionHandler, Connected: true, Err: errors.New("stop")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	if err == nil {
+		t.Fatal("superviseListen returned nil")
+	}
+	output := stderr.String()
+	if !strings.Contains(output, `connection lost: dropped\nInjected\t\x1b; reconnecting`) {
+		t.Fatalf("reconnect notice = %q", output)
+	}
+	if strings.ContainsRune(output, '\x1b') || strings.Contains(output, "dropped\nInjected") {
+		t.Fatalf("reconnect notice retained active controls: %q", output)
+	}
+}
+
 func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	listener := &scriptedWebSocketListener{errors: []error{
 		&ws.SessionError{Kind: ws.SessionAuthentication, Err: errors.New("unauthorized")},
@@ -383,6 +501,23 @@ func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("unexpected reconnect notice: %s", stderr.String())
+	}
+}
+
+func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionProtocol, Connected: true, Err: errors.New("invalid delivery payload")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not be reached")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
+	var sessionErr *ws.SessionError
+	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
+		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("fatal protocol error printed reconnect notice: %q", stderr.String())
 	}
 }
 
@@ -407,7 +542,6 @@ func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, b
 func TestForwardSessionReplayIsLocalOnlyAndReusesRequestUID(t *testing.T) {
 	var output bytes.Buffer
 	p := printer.New(&output, printer.Options{
-		Mode:    printer.ModeForward,
 		Sources: map[string]string{"src_1": "stripe"},
 	})
 	forwarder := &fakeForwarder{
@@ -467,7 +601,6 @@ func TestForwardSessionReplayIsLocalOnlyAndReusesRequestUID(t *testing.T) {
 func TestForwardSessionReturnsUpstream502ForTransportFailure(t *testing.T) {
 	var output bytes.Buffer
 	p := printer.New(&output, printer.Options{
-		Mode:    printer.ModeForward,
 		Sources: map[string]string{"src_1": "stripe"},
 	})
 	forwarder := &fakeForwarder{err: errors.New("network unavailable")}
@@ -497,14 +630,181 @@ func TestForwardSessionReturnsUpstream502ForTransportFailure(t *testing.T) {
 	}
 }
 
-func TestReplayInputRespondsOnlyToEnter(t *testing.T) {
+func TestForwardSessionPreservesCompletedRedirectWhenDisplayFails(t *testing.T) {
+	wantErr := errors.New("output unavailable")
+	p := printer.New(failingWriter{err: wantErr}, printer.Options{})
+	forwarder := &fakeForwarder{
+		status:   http.StatusTemporaryRedirect,
+		body:     "redirect response",
+		response: http.Header{"Location": []string{"/next"}},
+	}
+	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
+	session.now = func() time.Time { return time.Unix(0, 0) }
+
+	response, err := session.Handle(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Path: "/hook"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Handle error = %v, want display failure", err)
+	}
+	if response.Status != http.StatusTemporaryRedirect || response.Headers.Get("Location") != "/next" || string(response.Body) != "redirect response" {
+		t.Fatalf("completed response changed after display failure: %#v", response)
+	}
+}
+
+func TestForwardSessionRejectsOversizedResponseWithoutAcknowledgement(t *testing.T) {
+	var output bytes.Buffer
+	p := printer.New(&output, printer.Options{})
+	forwarder := &fakeForwarder{
+		status: http.StatusOK,
+		body:   strings.Repeat("x", 16*1024*1024+1),
+	}
+	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
+
+	response, err := session.Handle(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Path: "/hook"})
+	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") {
+		t.Fatalf("Handle error = %v, want response limit error", err)
+	}
+	if response.Status != 0 {
+		t.Fatalf("response status = %d, want no acknowledgement", response.Status)
+	}
+	if strings.Contains(output.String(), strings.Repeat("x", 64)) {
+		t.Fatal("oversized local response was printed")
+	}
+}
+
+func TestReplayInputRespondsOnlyToEnterAndPropagatesFailure(t *testing.T) {
+	wantErr := errors.New("replay output unavailable")
 	count := 0
-	replayInput(context.Background(), strings.NewReader("\nnot enter\n\n"), func() { count++ })
+	canceled := make(chan struct{})
+	session := startReplayInput(context.Background(), io.NopCloser(strings.NewReader("\nnot enter\n\n")), func() error {
+		count++
+		if count == 2 {
+			return wantErr
+		}
+		return nil
+	}, func() { close(canceled) })
+	<-canceled
+	if err := session.Stop(); !errors.Is(err, wantErr) {
+		t.Fatalf("Stop error = %v, want replay failure", err)
+	}
 	if count != 2 {
 		t.Fatalf("replay count = %d, want 2", count)
 	}
 	if isTerminalReader(strings.NewReader("")) {
 		t.Fatal("plain reader was treated as a terminal")
+	}
+}
+
+func TestReplayInputClosesAndJoinsOwnedReaderOnCancellation(t *testing.T) {
+	reader, writer := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	session := startReplayInput(ctx, reader, func() error { return nil }, func() {})
+	cancel()
+	done := make(chan error, 1)
+	go func() { done <- session.Stop() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Stop error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("owned replay input did not stop")
+	}
+	if _, err := writer.Write([]byte("\n")); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("write after stop error = %v, want closed pipe", err)
+	}
+}
+
+func TestReplayInputStopsAfterBlockedFallbackReadResumes(t *testing.T) {
+	reader := newGatedReplayReader("ignored\nstill ignored\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	session := startReplayInput(ctx, reader, func() error {
+		t.Fatal("nonempty input triggered replay")
+		return nil
+	}, func() {})
+	<-reader.started
+	cancel()
+	close(reader.release)
+	select {
+	case <-session.producerDone:
+	case <-time.After(time.Second):
+		t.Fatal("fallback replay reader did not stop after its read resumed")
+	}
+	if got := reader.readCount(); got != 1 {
+		t.Fatalf("read count after cancellation = %d, want 1", got)
+	}
+	if err := session.Stop(); err != nil {
+		t.Fatalf("Stop error = %v", err)
+	}
+}
+
+func TestReplayInputDoesNotRunQueuedReplayAfterCancellation(t *testing.T) {
+	for iteration := 0; iteration < 50; iteration++ {
+		firstStarted := make(chan struct{})
+		releaseFirst := make(chan struct{})
+		var count atomic.Int32
+		ctx, cancel := context.WithCancel(context.Background())
+		session := startReplayInput(ctx, io.NopCloser(strings.NewReader("\n\n")), func() error {
+			if count.Add(1) == 1 {
+				close(firstStarted)
+				<-releaseFirst
+			}
+			return nil
+		}, func() {})
+		<-firstStarted
+		cancel()
+		close(releaseFirst)
+		if err := session.Stop(); err != nil {
+			t.Fatalf("iteration %d: Stop error = %v", iteration, err)
+		}
+		if got := count.Load(); got != 1 {
+			t.Fatalf("iteration %d: replay count after cancellation = %d, want 1", iteration, got)
+		}
+	}
+}
+
+type gatedReplayReader struct {
+	started chan struct{}
+	release chan struct{}
+	data    []byte
+	mu      sync.Mutex
+	reads   int
+}
+
+func newGatedReplayReader(value string) *gatedReplayReader {
+	return &gatedReplayReader{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		data:    []byte(value),
+	}
+}
+
+func (r *gatedReplayReader) Read(buffer []byte) (int, error) {
+	r.mu.Lock()
+	r.reads++
+	read := r.reads
+	r.mu.Unlock()
+	if read == 1 {
+		close(r.started)
+		<-r.release
+		return copy(buffer, r.data), nil
+	}
+	return 0, io.EOF
+}
+
+func (r *gatedReplayReader) readCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reads
+}
+
+func TestForwardSessionReplayReturnsDisplayFailure(t *testing.T) {
+	wantErr := errors.New("output unavailable")
+	p := printer.New(failingWriter{err: wantErr}, printer.Options{})
+	forwarder := &fakeForwarder{status: http.StatusOK, body: "ok"}
+	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
+	session.cache.Store(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Method: http.MethodPost, Path: "/hook"})
+	if err := session.Replay(); !errors.Is(err, wantErr) {
+		t.Fatalf("Replay error = %v, want display failure", err)
 	}
 }
 

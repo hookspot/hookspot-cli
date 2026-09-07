@@ -1,5 +1,7 @@
 # hookspot-cli Skeleton Implementation Plan
 
+> **Superseded:** This document preserves the original implementation history. See the current [README](../../../README.md) and governing [CLI releases plan](2026-09-05-cli-releases.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the initial Cobra-based skeleton for `hookspot-cli`: `login`/`logout` (PAT auth), `project list`/`project use`, and `listen <port> [source...]` which opens a websocket to hookspot and proxies events to a local port.

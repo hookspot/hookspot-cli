@@ -1,85 +1,36 @@
+// Package config owns environment-specific Hookspot configuration.
 package config
 
-import (
-	"errors"
-	"os"
-	"path/filepath"
+// Options select the immutable environment and configuration file.
+type Options struct {
+	Environment     string
+	ExplicitPath    string
+	ExplicitPathSet bool
+	Intent          Intent
+}
 
-	"github.com/spf13/viper"
+// Intent describes why a command opens a store. Ordinary commands read an
+// existing explicitly selected file; login and migration may create one.
+type Intent uint8
+
+const (
+	Read Intent = iota
+	LoginCreate
+	MigrationCreate
 )
 
-// Config holds the resolved hookspot settings.
+// Overrides are command flags. Nil means the flag was not supplied; a pointer
+// to an empty string is an explicit empty value and does not fall through.
+type Overrides struct {
+	CLIKey      *string
+	Project     *string
+	NeedProject bool
+}
+
+// Config contains resolved values for one command invocation.
 type Config struct {
 	CLIKey           string
 	Project          string
 	OrganizationSlug string
 	ProjectSlug      string
-	LogLevel         string
-}
-
-// New returns a viper instance configured with hookspot's defaults,
-// environment variable bindings, and config file location. If configFile
-// is empty, it defaults to $HOME/.config/hookspot/config.toml.
-func New(configFile string) (*viper.Viper, error) {
-	v := viper.New()
-	v.SetEnvPrefix("HOOKSPOT")
-	for _, key := range []string{"cli_key", "organization_slug", "project_slug", "log_level"} {
-		if err := v.BindEnv(key); err != nil {
-			return nil, err
-		}
-	}
-	v.SetDefault("log_level", "info")
-
-	if configFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		configFile = filepath.Join(home, ".config", "hookspot", "config.toml")
-	}
-
-	v.SetConfigFile(configFile)
-	v.SetConfigType("toml")
-
-	if err := v.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) && !os.IsNotExist(err) {
-			return nil, err
-		}
-	}
-
-	return v, nil
-}
-
-// Load resolves the current configuration from v.
-func Load(v *viper.Viper) Config {
-	return Config{
-		CLIKey:           v.GetString("cli_key"),
-		Project:          v.GetString("project"),
-		OrganizationSlug: v.GetString("organization_slug"),
-		ProjectSlug:      v.GetString("project_slug"),
-		LogLevel:         v.GetString("log_level"),
-	}
-}
-
-// Save writes v's settings to configFile (or the default location if
-// empty), creating parent directories as needed.
-func Save(v *viper.Viper, configFile string) error {
-	if configFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		configFile = filepath.Join(home, ".config", "hookspot", "config.toml")
-	}
-
-	if err := os.MkdirAll(filepath.Dir(configFile), 0o700); err != nil {
-		return err
-	}
-
-	if err := v.WriteConfigAs(configFile); err != nil {
-		return err
-	}
-
-	return os.Chmod(configFile, 0o600)
 }

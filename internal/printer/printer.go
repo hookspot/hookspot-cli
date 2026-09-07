@@ -24,19 +24,6 @@ import (
 	"hookspot/internal/ws"
 )
 
-// Mode controls the level and shape of delivery output.
-type Mode uint8
-
-const (
-	ModeInspect Mode = iota
-	ModeForward
-
-	// These aliases read naturally at call sites and preserve both common
-	// naming conventions for consumers of the package.
-	InspectMode = ModeInspect
-	ForwardMode = ModeForward
-)
-
 // Limits controls smart truncation. A zero value disables that limit.
 type Limits struct {
 	MaxBodyLines  int
@@ -46,7 +33,6 @@ type Limits struct {
 
 // Options configures a Printer.
 type Options struct {
-	Mode                 Mode
 	Sources              map[string]string
 	Limits               Limits
 	ShowSensitiveHeaders bool
@@ -113,19 +99,21 @@ func (p *Printer) Handle(d ws.Delivery) (ws.Response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.renderInspect(d)
+	if err := p.renderInspect(d); err != nil {
+		return ws.Response{}, err
+	}
 	return ws.Response{Status: http.StatusOK}, nil
 }
 
 // PrintForward prints one local forwarding result atomically.
-func (p *Printer) PrintForward(d ws.Delivery, outcome ForwardOutcome) {
+func (p *Printer) PrintForward(d ws.Delivery, outcome ForwardOutcome) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.renderForward(d, outcome)
+	return p.renderForward(d, outcome)
 }
 
-func (p *Printer) renderInspect(d ws.Delivery) {
+func (p *Printer) renderInspect(d ws.Delivery) error {
 	var output strings.Builder
 	fmt.Fprintf(
 		&output,
@@ -146,10 +134,10 @@ func (p *Printer) renderInspect(d ws.Delivery) {
 	p.renderInspectBody(&output, d.Body, d.Headers)
 	output.WriteByte('\n')
 
-	_, _ = io.WriteString(p.out, output.String())
+	return writeOutput(p.out, output.String())
 }
 
-func (p *Printer) renderForward(d ws.Delivery, outcome ForwardOutcome) {
+func (p *Printer) renderForward(d ws.Delivery, outcome ForwardOutcome) error {
 	var output strings.Builder
 	status := responseStatus(outcome.Response.Status)
 	statusColor := statusANSIColor(outcome.Response.Status)
@@ -183,14 +171,12 @@ func (p *Printer) renderForward(d ws.Delivery, outcome ForwardOutcome) {
 			"└─ target      %s\n\n",
 			p.transportHint(outcome.TargetURL, outcome.Failure),
 		)
-		_, _ = io.WriteString(p.out, output.String())
-		return
+		return writeOutput(p.out, output.String())
 	}
 
 	if outcome.Response.Status >= 200 && outcome.Response.Status < 300 {
 		fmt.Fprintf(&output, "  %s\n", p.summary(d.Body, d.Headers))
-		_, _ = io.WriteString(p.out, output.String())
-		return
+		return writeOutput(p.out, output.String())
 	}
 
 	output.WriteByte('\n')
@@ -198,7 +184,18 @@ func (p *Printer) renderForward(d ws.Delivery, outcome ForwardOutcome) {
 	output.WriteString("│\n")
 	p.renderForwardBody(&output, "response", true, outcome.Response.Body, outcome.Response.Headers)
 	output.WriteByte('\n')
-	_, _ = io.WriteString(p.out, output.String())
+	return writeOutput(p.out, output.String())
+}
+
+func writeOutput(out io.Writer, value string) error {
+	written, err := io.WriteString(out, value)
+	if err != nil {
+		return err
+	}
+	if written != len(value) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func (p *Printer) renderHeaders(output *strings.Builder, headers http.Header) {
@@ -414,7 +411,8 @@ func ansiColor(code int, value string) string {
 
 func sensitiveHeader(key string) bool {
 	switch strings.ToLower(key) {
-	case "authorization", "proxy-authorization", "cookie", "set-cookie":
+	case "authorization", "proxy-authorization", "cookie", "set-cookie",
+		"x-cli-key", "x-api-key", "api-key", "x-hookspot-cli-key":
 		return true
 	default:
 		return false

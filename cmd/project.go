@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/api"
-	"hookspot/internal/config"
 )
 
 var projectCmd = &cobra.Command{
@@ -19,20 +18,19 @@ var projectCmd = &cobra.Command{
 }
 
 var projectListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List projects accessible to your account",
+	Use:         "list",
+	Short:       "List projects accessible to your account",
+	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load(v)
+		cfg, err := resolveCommandConfig(cmd, false)
+		if err != nil {
+			return wrapCommandError("resolve project configuration", configRecoveryHint(), err)
+		}
 		if cfg.CLIKey == "" {
 			return loginRequiredError()
 		}
 
-		url, err := requireServerURL()
-		if err != nil {
-			return err
-		}
-
-		client := api.New(url, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey)
 		projects, err := client.ListProjects(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("list projects: %w", err)
@@ -41,28 +39,27 @@ var projectListCmd = &cobra.Command{
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "UID\tOrganization\tProject")
 		for _, p := range projects {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", p.UID, p.Organization.Name, p.Name)
+			fmt.Fprintf(w, "%s\t%s\t%s\n", safeDisplayText(p.UID), safeDisplayText(p.Organization.Name), safeDisplayText(p.Name))
 		}
 		return w.Flush()
 	},
 }
 
 var projectUseCmd = &cobra.Command{
-	Use:   "use [project-uid]",
-	Short: "Set the active hookspot project",
-	Args:  cobra.MaximumNArgs(1),
+	Use:         "use [project-uid]",
+	Short:       "Set the active hookspot project",
+	Args:        cobra.MaximumNArgs(1),
+	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load(v)
+		cfg, err := resolveCommandConfig(cmd, len(args) == 0)
+		if err != nil {
+			return wrapCommandError("resolve project configuration", configRecoveryHint(), err)
+		}
 		if cfg.CLIKey == "" {
 			return loginRequiredError()
 		}
 
-		url, err := requireServerURL()
-		if err != nil {
-			return err
-		}
-
-		client := api.New(url, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey)
 		var project *api.Project
 		if len(args) == 1 {
 			project, err = client.GetProject(cmd.Context(), args[0])
@@ -84,8 +81,7 @@ var projectUseCmd = &cobra.Command{
 			}
 		}
 
-		v.Set("project", project.UID)
-		if err := config.Save(v, cfgFile); err != nil {
+		if err := store.SaveProject(project.UID); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 
@@ -135,7 +131,7 @@ func selectProject(projects []api.Project, currentUID string, prompt func([]stri
 }
 
 func projectDisplayName(project api.Project) string {
-	return project.Organization.Name + " | " + project.Name
+	return safeDisplayText(project.Organization.Name) + " | " + safeDisplayText(project.Name)
 }
 
 func init() {

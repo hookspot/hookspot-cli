@@ -1,5 +1,7 @@
 # `hookspot listen`: move port from positional arg to `--port` flag
 
+> **Superseded:** This document preserves the original design history. See the current [README](../../../README.md) and governing [CLI releases plan](../plans/2026-09-05-cli-releases.md).
+
 Date: 2026-07-12
 Status: approved
 

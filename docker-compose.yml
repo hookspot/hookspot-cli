@@ -3,31 +3,44 @@ services:
     build:
       context: .
       args:
+        GO_IMAGE: ${GO_ALPINE_IMAGE}
+        RUNTIME_IMAGE: ${RUNTIME_IMAGE}
         SERVER_URL: ${SERVER_URL:-https://hookspot.localhost}
+        VERSION: dev
+        BUILD_ENVIRONMENT: dev
+        COMMIT: ${COMMIT:-unknown}
+        SOURCE_DATE: ${SOURCE_DATE:-unknown}
+        BUILD_KIND: dev
     image: hookspot:dev
     environment:
-      - HOOKSPOT_CLI_KEY
-      - HOOKSPOT_ORGANIZATION_SLUG
-      - HOOKSPOT_PROJECT_SLUG
-      - HOOKSPOT_LOG_LEVEL
+      - HOOKSPOT_DEV_CLI_KEY
+      - HOOKSPOT_DEV_ORGANIZATION_SLUG
+      - HOOKSPOT_DEV_PROJECT_SLUG
+      - HOOKSPOT_DEV_CONFIG_FILE
     extra_hosts:
+      - "host.docker.internal:host-gateway"
       - "hookspot.localhost:host-gateway"
+    volumes:
+      - hookspot-config:/home/hookspot/.config/hookspot
 
   dev:
-    image: golang:1.26.5
+    image: ${GO_IMAGE}
     working_dir: /src
     init: true
-    command: go run github.com/air-verse/air@v1.67.3 -- listen
+    command: go run github.com/air-verse/air@${AIR_VERSION} -- listen
     volumes:
       - .:/src
       - hookspot-gomod:/go/pkg/mod
       - hookspot-gocache:/root/.cache/go-build
+      - hookspot-dev-config:/root/.config/hookspot
     environment:
       - SERVER_URL=${SERVER_URL:-https://hookspot.localhost}
-      - HOOKSPOT_CLI_KEY=cTupesvm3CpnZmKixddAWfPAlh6LFfIcuFiCvjvr5uczvJTHpD
-      - HOOKSPOT_ORGANIZATION_SLUG=asd1-1
-      - HOOKSPOT_PROJECT_SLUG=default-project
-      - HOOKSPOT_LOG_LEVEL
+      - COMMIT=${COMMIT:-unknown}
+      - SOURCE_DATE=${SOURCE_DATE:-unknown}
+      - HOOKSPOT_DEV_CLI_KEY
+      - HOOKSPOT_DEV_ORGANIZATION_SLUG
+      - HOOKSPOT_DEV_PROJECT_SLUG
+      - HOOKSPOT_DEV_CONFIG_FILE
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "hookspot.localhost:host-gateway"
@@ -35,3 +48,6 @@ services:
 volumes:
   hookspot-gomod:
   hookspot-gocache:
+  hookspot-config:
+  hookspot-dev-config:
+    name: ${DEV_CONFIG_VOLUME:-hookspot-dev-config}

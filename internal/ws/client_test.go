@@ -199,6 +199,50 @@ func TestDelivery_UnmarshalRemainsCompatibleWithoutRequestUID(t *testing.T) {
 	}
 }
 
+func TestDeliveryUnmarshalAcceptsBackendBase64Bodies(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []byte
+	}{
+		{name: "empty", body: "", want: []byte{}},
+		{name: "one byte unpadded", body: "AA", want: []byte{0x00}},
+		{name: "two bytes unpadded", body: "AP8", want: []byte{0x00, 0xff}},
+		{name: "three bytes unpadded", body: "AP+A", want: []byte{0x00, 0xff, 0x80}},
+		{name: "one byte padded", body: "AA==", want: []byte{0x00}},
+		{name: "two bytes padded", body: "AP8=", want: []byte{0x00, 0xff}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := `{"attempt_uid":"att_1","request_uid":"req_1","source_uid":"src_1","method":"POST","path":"/hook","headers":{"content-type":["application/octet-stream"]},"query":"a=1","body":"` + test.body + `"}`
+			var delivery Delivery
+			if err := json.Unmarshal([]byte(fixture), &delivery); err != nil {
+				t.Fatalf("unmarshal backend delivery: %v", err)
+			}
+			if string(delivery.Body) != string(test.want) {
+				t.Fatalf("body = %x, want %x", delivery.Body, test.want)
+			}
+		})
+	}
+}
+
+func TestDeliveryUnmarshalRejectsMalformedBodyWithoutEchoingIt(t *testing.T) {
+	const malformed = "not-base64-body-sentinel!"
+	fixture := `{"attempt_uid":"att_1","body":"` + malformed + `"}`
+	delivery := Delivery{AttemptUID: "preserved", Body: []byte("preserved")}
+	err := json.Unmarshal([]byte(fixture), &delivery)
+	if err == nil {
+		t.Fatal("malformed delivery body was accepted")
+	}
+	if strings.Contains(err.Error(), malformed) {
+		t.Fatalf("decode error exposed the webhook body: %v", err)
+	}
+	if delivery.AttemptUID != "preserved" || string(delivery.Body) != "preserved" {
+		t.Fatalf("failed decode changed destination: %#v", delivery)
+	}
+}
+
 func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 

@@ -1,54 +1,51 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/api"
-	"hookspot/internal/config"
 )
 
 var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Authenticate hookspot with a CLI key",
+	Use:         "login",
+	Short:       "Authenticate hookspot with a CLI key",
+	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load(v)
+		cfg, err := resolveCommandConfig(cmd, false)
+		if err != nil {
+			return wrapCommandError("resolve login configuration", configRecoveryHint(), err)
+		}
 
 		cliKey := cfg.CLIKey
 		if cliKey == "" {
-			fmt.Fprint(cmd.OutOrStdout(), "Enter your hookspot CLI key: ")
-			reader := bufio.NewReader(cmd.InOrStdin())
-			line, err := reader.ReadString('\n')
+			line, err := readLoginKey(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+			_, newlineErr := fmt.Fprintln(cmd.OutOrStdout())
 			if err != nil {
 				return fmt.Errorf("read CLI key: %w", err)
 			}
-			cliKey = strings.TrimSpace(line)
+			if newlineErr != nil {
+				return fmt.Errorf("write CLI key prompt: %w", newlineErr)
+			}
+			cliKey = line
 		}
 
 		if cliKey == "" {
-			return newCommandError(commandErrorAuthentication, "no CLI key provided", "Pass a CLI key when prompted or set HOOKSPOT_CLI_KEY.")
+			return newCommandError("no CLI key provided", "Pass a CLI key when prompted or set "+scopedVariable("CLI_KEY")+".")
 		}
 
-		url, err := requireServerURL()
-		if err != nil {
-			return err
-		}
-
-		client := api.New(url, cliKey)
+		client := api.New(activeEndpoint, cliKey)
 		user, err := client.Me(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("validate CLI key: %w", err)
 		}
 
-		v.Set("cli_key", cliKey)
-		if err := config.Save(v, cfgFile); err != nil {
+		if err := store.SaveCLIKey(cliKey); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s\n", user.Email)
+		fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s\n", safeDisplayText(user.Email))
 		return nil
 	},
 }

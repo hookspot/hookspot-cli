@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"golang.org/x/term"
 
 	"hookspot/internal/api"
-	"hookspot/internal/config"
 	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
@@ -24,6 +24,10 @@ import (
 const reconnectDelay = 2 * time.Second
 
 const maxInitialConnectAttempts = 10
+
+const maxLocalResponseBodyBytes = 16 * 1024 * 1024
+
+var errLocalResponseBodyTooLarge = errors.New("local response body exceeds 16 MiB limit")
 
 var (
 	forwardTo            string
@@ -34,40 +38,45 @@ var (
 )
 
 var listenCmd = &cobra.Command{
-	Use:   "listen [source...]",
-	Short: "Print hookspot webhook events, optionally forwarding them to a local server",
-	Args:  cobra.ArbitraryArgs,
+	Use:         "listen [source...]",
+	Short:       "Print hookspot webhook events, optionally forwarding them to a local server",
+	Args:        cobra.ArbitraryArgs,
+	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sourceNames := args
 		if maxBodyLines < 0 || maxHeaders < 0 || maxValueChars < 0 {
-			return newCommandError(commandErrorUsage, "rendering limits must be zero or greater", "Use zero for an unlimited value, or provide a positive limit.")
+			return newCommandError("rendering limits must be zero or greater", "Use zero for an unlimited value, or provide a positive limit.")
+		}
+		var forwarder *proxy.Forwarder
+		if forwardTo != "" {
+			var err error
+			forwarder, err = proxy.New(forwardTo)
+			if err != nil {
+				return wrapCommandError("invalid --forward-to value", "Use an HTTP(S) host with an optional path prefix.", err)
+			}
 		}
 
-		cfg := config.Load(v)
+		cfg, err := resolveCommandConfig(cmd, true)
+		if err != nil {
+			return wrapCommandError("resolve listen configuration", configRecoveryHint(), err)
+		}
 		if cfg.CLIKey == "" {
 			return loginRequiredError()
 		}
 		if (cfg.OrganizationSlug == "") != (cfg.ProjectSlug == "") {
 			return newCommandError(
-				commandErrorConfiguration,
-				"project selection requires both HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG",
-				"Set both variables, or unset them and run 'hookspot project use'.",
+				fmt.Sprintf("project selection requires both %s and %s", scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
+				fmt.Sprintf("Set both variables, or unset them and run '%s project use'.", executableName()),
 			)
 		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
-				commandErrorConfiguration,
 				"no active project",
-				"Run 'hookspot project use <project>' or set HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.",
+				fmt.Sprintf("Run '%s project use <project>' or set %s and %s.", executableName(), scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
 			)
 		}
 
-		srvURL, err := requireServerURL()
-		if err != nil {
-			return err
-		}
-
-		client := api.New(srvURL, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey)
 		var project *api.Project
 		if cfg.OrganizationSlug != "" {
 			project, err = client.GetProjectBySlugs(cmd.Context(), cfg.OrganizationSlug, cfg.ProjectSlug)
@@ -86,12 +95,7 @@ var listenCmd = &cobra.Command{
 			return err
 		}
 
-		mode := printer.ModeInspect
-		if forwardTo != "" {
-			mode = printer.ModeForward
-		}
 		p := printer.New(cmd.OutOrStdout(), printer.Options{
-			Mode:                 mode,
 			Sources:              sourceNamesByUID(sources),
 			ShowSensitiveHeaders: showSensitiveHeaders,
 			Color:                printer.SupportsColor(cmd.OutOrStdout()),
@@ -105,27 +109,41 @@ var listenCmd = &cobra.Command{
 		target := ""
 		var session *forwardSession
 		replayEnabled := false
-		if forwardTo != "" {
-			target = forwardBaseURL(forwardTo)
-			session = newForwardSession(cmd.Context(), proxy.New(target), target, p)
+		listenContext, stopListening := context.WithCancel(cmd.Context())
+		defer stopListening()
+		if forwarder != nil {
+			target = forwarder.String()
+			session = newForwardSession(listenContext, forwarder, target, p)
 			handler = session.Handle
 			replayEnabled = isTerminalReader(cmd.InOrStdin())
 		}
 
-		printListenInfoWithReplay(cmd.OutOrStdout(), sources, target, replayEnabled)
-		if replayEnabled {
-			go replayInput(cmd.Context(), cmd.InOrStdin(), session.Replay)
+		wsURL := activeEndpoint.WebSocket()
+		if wsURL == nil {
+			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
 		}
-
-		wsURL := strings.Replace(srvURL, "http", "ws", 1) + "/cli/websocket?vsn=2.0.0"
+		if err := printListenInfoWithReplay(cmd.OutOrStdout(), sources, forwarder, replayEnabled); err != nil {
+			return err
+		}
+		var replay *replayInputSession
+		if replayEnabled {
+			replay = startReplayInput(listenContext, cmd.InOrStdin(), session.Replay, stopListening)
+		}
 		topic := "project:" + project.UID
 
-		wsClient := ws.New(wsURL, cfg.CLIKey, topic, sourceUIDs)
+		wsClient := ws.New(wsURL.String(), cfg.CLIKey, topic, sourceUIDs)
 
-		return superviseListen(cmd.Context(), cmd.ErrOrStderr(), wsClient, handler, reconnectPolicy{
+		listenErr := superviseListen(listenContext, cmd.ErrOrStderr(), wsClient, handler, reconnectPolicy{
 			Delay:              reconnectDelay,
 			MaxInitialAttempts: maxInitialConnectAttempts,
 		})
+		stopListening()
+		if replay != nil {
+			if replayErr := replay.Stop(); replayErr != nil {
+				return fmt.Errorf("replay input: %w", replayErr)
+			}
+		}
+		return listenErr
 	},
 }
 
@@ -170,7 +188,6 @@ func superviseListen(ctx context.Context, errOut io.Writer, listener websocketLi
 			initialAttempts++
 			if policy.MaxInitialAttempts > 0 && initialAttempts >= policy.MaxInitialAttempts {
 				return wrapCommandError(
-					commandErrorRuntime,
 					fmt.Sprintf("could not connect to Hookspot after %d attempts", initialAttempts),
 					"Check your network connection and the Hookspot server URL, then try again.",
 					err,
@@ -178,7 +195,10 @@ func superviseListen(ctx context.Context, errOut io.Writer, listener websocketLi
 			}
 		}
 
-		fmt.Fprintf(errOut, "connection error: %v, reconnecting in %s...\n", err, policy.Delay)
+		notice := fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(err.Error()), policy.Delay)
+		if err := writeCommandText(errOut, notice); err != nil {
+			return fmt.Errorf("write reconnect notice: %w", err)
+		}
 		if !waitForReconnect(ctx, policy.Delay) {
 			return nil
 		}
@@ -197,7 +217,7 @@ func waitForReconnect(ctx context.Context, delay time.Duration) bool {
 }
 
 func formatProjectLabel(project *api.Project) string {
-	return project.Organization.Slug + "/" + project.Slug
+	return safeDisplayText(project.Organization.Slug) + "/" + safeDisplayText(project.Slug)
 }
 
 func resolveSources(project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, error) {
@@ -252,11 +272,8 @@ func sourceNamesByUID(sources []api.Source) map[string]string {
 	return names
 }
 
-func printListenInfo(out io.Writer, sources []api.Source, target string) {
-	printListenInfoWithReplay(out, sources, target, false)
-}
-
-func printListenInfoWithReplay(out io.Writer, sources []api.Source, target string, replay bool) {
+func printListenInfoWithReplay(out io.Writer, sources []api.Source, forwarder *proxy.Forwarder, replay bool) error {
+	var output strings.Builder
 	connectionCount := 0
 	for _, source := range sources {
 		connectionCount += len(source.Connections)
@@ -270,37 +287,53 @@ func printListenInfoWithReplay(out io.Writer, sources []api.Source, target strin
 	if connectionCount == 1 {
 		connectionSuffix = ""
 	}
-	fmt.Fprintf(out, "Listening on %d source%s • %d connection%s\n", len(sources), sourceSuffix, connectionCount, connectionSuffix)
+	fmt.Fprintf(&output, "Listening on %d source%s • %d connection%s\n", len(sources), sourceSuffix, connectionCount, connectionSuffix)
 
 	for _, source := range sources {
-		fmt.Fprintln(out)
-		fmt.Fprintln(out, source.Name)
-		if target == "" {
-			fmt.Fprintf(out, "├ Requests to → %s\n", source.URL)
-			fmt.Fprintln(out, "└ Output      → terminal")
+		fmt.Fprintln(&output)
+		fmt.Fprintln(&output, safeDisplayText(source.Name))
+		if forwarder == nil {
+			fmt.Fprintf(&output, "├ Requests to → %s\n", safeDisplayText(source.URL))
+			fmt.Fprintln(&output, "└ Output      → terminal")
 		} else {
-			fmt.Fprintf(out, "│  Requests to → %s\n", source.URL)
+			fmt.Fprintf(&output, "│  Requests to → %s\n", safeDisplayText(source.URL))
 			for i, connection := range source.Connections {
 				branch := "├─"
 				if i == len(source.Connections)-1 {
 					branch = "└─"
 				}
-				label := connectionLabel(connection)
+				label := safeDisplayText(connectionLabel(connection))
 				if label != "" {
 					label = " (" + label + ")"
 				}
-				fmt.Fprintf(out, "%s Forwards to → %s%s\n", branch, proxy.ForwardURL(target, connection.Destination.Path), label)
+				destination, err := forwarder.DestinationURL(connection.Destination.Path, "")
+				if err != nil {
+					return fmt.Errorf("resolve forwarding destination: %w", err)
+				}
+				fmt.Fprintf(&output, "%s Forwards to → %s%s\n", branch, destination.String(), label)
 			}
 		}
 	}
 
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Requests ──────────────────────────────────────")
-	fmt.Fprintln(out)
+	fmt.Fprintln(&output)
+	fmt.Fprintln(&output, "Requests ──────────────────────────────────────")
+	fmt.Fprintln(&output)
 	if replay {
-		fmt.Fprintln(out, "↵ replay last request")
+		fmt.Fprintln(&output, "↵ replay last request")
 	}
-	fmt.Fprintln(out, "Waiting for requests...")
+	fmt.Fprintln(&output, "Waiting for requests...")
+	return writeCommandText(out, output.String())
+}
+
+func writeCommandText(out io.Writer, value string) error {
+	written, err := io.WriteString(out, value)
+	if err != nil {
+		return err
+	}
+	if written != len(value) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func connectionLabel(connection api.Connection) string {
@@ -308,14 +341,6 @@ func connectionLabel(connection api.Connection) string {
 		return *connection.Name
 	}
 	return ""
-}
-
-// forwardBaseURL defaults a scheme-less --forward-to value to http.
-func forwardBaseURL(s string) string {
-	if !strings.Contains(s, "://") {
-		return "http://" + s
-	}
-	return s
 }
 
 type forwardSession struct {
@@ -343,25 +368,26 @@ func newForwardSession(ctx context.Context, forwarder deliveryForwarder, target 
 
 func (s *forwardSession) Handle(delivery ws.Delivery) (ws.Response, error) {
 	s.cache.Store(delivery)
-	outcome := s.forward(delivery, false)
+	outcome, outputErr := s.forward(delivery, false)
 	if outcome.Failure != nil {
 		return ws.Response{
 			Status:    http.StatusBadGateway,
 			LatencyMS: latencyMilliseconds(outcome.Latency),
-		}, nil
+		}, outputErr
 	}
-	return outcome.Response, nil
+	return outcome.Response, outputErr
 }
 
-func (s *forwardSession) Replay() {
+func (s *forwardSession) Replay() error {
 	delivery, ok := s.cache.Load()
 	if !ok {
-		return
+		return nil
 	}
-	s.forward(delivery, true)
+	_, err := s.forward(delivery, true)
+	return err
 }
 
-func (s *forwardSession) forward(delivery ws.Delivery, replay bool) printer.ForwardOutcome {
+func (s *forwardSession) forward(delivery ws.Delivery, replay bool) (printer.ForwardOutcome, error) {
 	started := s.now()
 	response, err := s.forwarder.Forward(
 		s.ctx,
@@ -378,12 +404,14 @@ func (s *forwardSession) forward(delivery ws.Delivery, replay bool) printer.Forw
 			TargetURL: s.target,
 			Replay:    replay,
 		}
-		s.printer.PrintForward(delivery, outcome)
-		return outcome
+		return outcome, s.printer.PrintForward(delivery, outcome)
 	}
-	body, err := io.ReadAll(response.Body)
+	body, err := readLocalResponseBody(response.Body)
 	_ = response.Body.Close()
 	latency := s.now().Sub(started)
+	if errors.Is(err, errLocalResponseBodyTooLarge) {
+		return printer.ForwardOutcome{}, err
+	}
 	if err != nil {
 		outcome := printer.ForwardOutcome{
 			Latency:   latency,
@@ -391,8 +419,7 @@ func (s *forwardSession) forward(delivery ws.Delivery, replay bool) printer.Forw
 			TargetURL: s.target,
 			Replay:    replay,
 		}
-		s.printer.PrintForward(delivery, outcome)
-		return outcome
+		return outcome, s.printer.PrintForward(delivery, outcome)
 	}
 
 	outcome := printer.ForwardOutcome{
@@ -406,8 +433,18 @@ func (s *forwardSession) forward(delivery ws.Delivery, replay bool) printer.Forw
 		TargetURL: s.target,
 		Replay:    replay,
 	}
-	s.printer.PrintForward(delivery, outcome)
-	return outcome
+	return outcome, s.printer.PrintForward(delivery, outcome)
+}
+
+func readLocalResponseBody(body io.Reader) ([]byte, error) {
+	contents, err := io.ReadAll(io.LimitReader(body, maxLocalResponseBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(contents) > maxLocalResponseBodyBytes {
+		return nil, errLocalResponseBodyTooLarge
+	}
+	return contents, nil
 }
 
 func latencyMilliseconds(latency time.Duration) int64 {
@@ -448,18 +485,118 @@ func cloneDelivery(delivery ws.Delivery) ws.Delivery {
 	return delivery
 }
 
-func replayInput(ctx context.Context, input io.Reader, replay func()) {
-	scanner := bufio.NewScanner(input)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+type replayInputSession struct {
+	cancel       context.CancelFunc
+	closeInput   io.Closer
+	producerDone <-chan struct{}
+	consumerDone <-chan error
+	once         sync.Once
+	err          error
+}
+
+func startReplayInput(parent context.Context, input io.Reader, replay func() error, onError func()) *replayInputSession {
+	ctx, cancel := context.WithCancel(parent)
+	events := make(chan struct{}, 1)
+	producerResult := make(chan error, 1)
+	producerDone := make(chan struct{})
+	closer, owned := ownedReplayInput(input)
+
+	go func() {
+		defer close(producerDone)
+		defer close(events)
+		scanner := bufio.NewScanner(input)
+		for scanner.Scan() {
+			if ctx.Err() != nil {
+				producerResult <- nil
+				return
+			}
+			if scanner.Text() != "" {
+				continue
+			}
+			select {
+			case events <- struct{}{}:
+			case <-ctx.Done():
+				producerResult <- nil
+				return
+			}
 		}
-		if scanner.Text() == "" {
-			replay()
+		err := scanner.Err()
+		if ctx.Err() != nil {
+			err = nil
 		}
+		producerResult <- err
+	}()
+
+	consumerDone := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				consumerDone <- nil
+				return
+			case _, ok := <-events:
+				if !ok {
+					err := <-producerResult
+					if err != nil {
+						onError()
+					}
+					consumerDone <- err
+					return
+				}
+				if ctx.Err() != nil {
+					consumerDone <- nil
+					return
+				}
+				if err := replay(); err != nil {
+					onError()
+					consumerDone <- err
+					return
+				}
+			}
+		}
+	}()
+
+	session := &replayInputSession{
+		cancel:       cancel,
+		producerDone: producerDone,
+		consumerDone: consumerDone,
 	}
+	if owned {
+		session.closeInput = closer
+	}
+	return session
+}
+
+func ownedReplayInput(input io.Reader) (io.Closer, bool) {
+	closer, ok := input.(io.Closer)
+	if !ok {
+		return nil, false
+	}
+	if file, ok := input.(*os.File); ok && file == os.Stdin {
+		// The console reader may remain blocked until process exit. It owns no
+		// callback work, is started once for the command, and global stdin is
+		// never closed.
+		return nil, false
+	}
+	return closer, true
+}
+
+func (s *replayInputSession) Stop() error {
+	s.once.Do(func() {
+		s.cancel()
+		var closeErr error
+		if s.closeInput != nil {
+			closeErr = s.closeInput.Close()
+		}
+		s.err = <-s.consumerDone
+		if s.closeInput != nil {
+			<-s.producerDone
+		}
+		if s.err == nil {
+			s.err = closeErr
+		}
+	})
+	return s.err
 }
 
 func isTerminalReader(input io.Reader) bool {

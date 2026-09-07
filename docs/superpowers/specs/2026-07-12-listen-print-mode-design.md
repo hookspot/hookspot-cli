@@ -1,5 +1,7 @@
 # `hookspot listen`: print-only default, forwarding via `--forward-to`
 
+> **Superseded:** This document preserves the original design history. See the current [README](../../../README.md) and governing [CLI releases plan](../plans/2026-09-05-cli-releases.md).
+
 Date: 2026-07-12
 Status: approved
 Supersedes: 2026-07-12-listen-port-flag-design.md

@@ -14,6 +14,10 @@ import (
 	"hookspot/internal/ws"
 )
 
+type errorWriter struct{ err error }
+
+func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
+
 func fixed(t *testing.T, p *Printer) {
 	t.Helper()
 	p.now = func() time.Time {
@@ -38,10 +42,9 @@ func delivery() ws.Delivery {
 	}
 }
 
-func newTestPrinter(t *testing.T, out *bytes.Buffer, mode Mode, limits Limits) *Printer {
+func newTestPrinter(t *testing.T, out *bytes.Buffer, limits Limits) *Printer {
 	t.Helper()
 	p := New(out, Options{
-		Mode: mode,
 		Sources: map[string]string{
 			"src_stripe":  "stripe",
 			"src_shopify": "shopify",
@@ -54,7 +57,7 @@ func newTestPrinter(t *testing.T, out *bytes.Buffer, mode Mode, limits Limits) *
 
 func TestInspectGolden(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeInspect, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 
 	response, err := p.Handle(d)
@@ -88,10 +91,30 @@ func TestInspectGolden(t *testing.T) {
 	}
 }
 
+func TestInspectReturnsWriterFailureWithoutAcknowledgement(t *testing.T) {
+	wantErr := errors.New("output unavailable")
+	p := New(errorWriter{err: wantErr}, Options{})
+	response, err := p.Handle(delivery())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Handle error = %v, want writer failure", err)
+	}
+	if response.Status != 0 {
+		t.Fatalf("response status = %d, want no acknowledgement", response.Status)
+	}
+}
+
+func TestForwardReturnsWriterFailure(t *testing.T) {
+	wantErr := errors.New("output unavailable")
+	p := New(errorWriter{err: wantErr}, Options{})
+	err := p.PrintForward(delivery(), ForwardOutcome{Response: ws.Response{Status: http.StatusTemporaryRedirect}})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("PrintForward error = %v, want writer failure", err)
+	}
+}
+
 func TestInspectShowsSensitiveHeadersOnRequest(t *testing.T) {
 	var output bytes.Buffer
 	p := New(&output, Options{
-		Mode:                 ModeInspect,
 		Sources:              map[string]string{"src_stripe": "stripe"},
 		ShowSensitiveHeaders: true,
 	})
@@ -113,9 +136,32 @@ func TestInspectShowsSensitiveHeadersOnRequest(t *testing.T) {
 	}
 }
 
+func TestInspectRedactsCredentialHeaderNamesByDefault(t *testing.T) {
+	var output bytes.Buffer
+	p := newTestPrinter(t, &output, Limits{})
+	d := delivery()
+	d.Body = nil
+	d.Headers = http.Header{
+		"X-CLI-Key":          []string{"cli-sentinel"},
+		"X-API-Key":          []string{"api-sentinel"},
+		"X-Hookspot-CLI-Key": []string{"hookspot-sentinel"},
+	}
+	if _, err := p.Handle(d); err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{"cli-sentinel", "api-sentinel", "hookspot-sentinel"} {
+		if strings.Contains(output.String(), sentinel) {
+			t.Fatalf("output exposed credential header value %q", sentinel)
+		}
+	}
+	if got := strings.Count(output.String(), "(redacted)"); got != 3 {
+		t.Fatalf("redacted header count = %d, want 3:\n%s", got, output.String())
+	}
+}
+
 func TestInspectEmptyHeadersAndBinaryBody(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeInspect, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Query = ""
 	d.Headers = http.Header{"Content-Type": []string{"application/octet-stream"}}
@@ -142,7 +188,7 @@ func TestInspectEmptyHeadersAndBinaryBody(t *testing.T) {
 
 func TestInspectTruncatesHeadersValuesQueryAndBody(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeInspect, Limits{
+	p := newTestPrinter(t, &output, Limits{
 		MaxBodyLines:  2,
 		MaxHeaders:    1,
 		MaxValueChars: 4,
@@ -174,7 +220,7 @@ func TestInspectTruncatesHeadersValuesQueryAndBody(t *testing.T) {
 
 func TestZeroLimitsAreUnlimited(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeInspect, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Query = "token=abcdefgh"
 	d.Headers = http.Header{"A": []string{"abcdefgh"}, "B": []string{"second"}}
@@ -188,7 +234,7 @@ func TestZeroLimitsAreUnlimited(t *testing.T) {
 
 func TestInspectEscapesTerminalControlsAndPreservesTabs(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeInspect, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Query = ""
 	d.Headers = nil
@@ -202,7 +248,7 @@ func TestInspectEscapesTerminalControlsAndPreservesTabs(t *testing.T) {
 
 func TestForwardSuccessGoldenAndSummaryPriority(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeForward, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Body = []byte(`{"action":"fallback","event_type":"third","event":"second","type":"first"}`)
 
@@ -222,7 +268,7 @@ func TestForwardSuccessGoldenAndSummaryPriority(t *testing.T) {
 
 func TestForwardSuccessUsesMIMEFallbackAndCompactLongLatency(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeForward, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Body = []byte(`{"id":"evt_1"}`)
 
@@ -241,7 +287,7 @@ func TestForwardSuccessUsesMIMEFallbackAndCompactLongLatency(t *testing.T) {
 
 func TestForwardHTTPFailureGolden(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeForward, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 	d.Query = ""
 	d.Body = []byte(`{"type":"invoice.payment_failed"}`)
@@ -277,7 +323,7 @@ func TestForwardHTTPFailureGolden(t *testing.T) {
 
 func TestForwardTransportFailureGolden(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeForward, Limits{})
+	p := newTestPrinter(t, &output, Limits{})
 	d := delivery()
 
 	p.PrintForward(d, ForwardOutcome{
@@ -301,7 +347,7 @@ func TestForwardTransportFailureGolden(t *testing.T) {
 
 func TestForwardReplayTagAndSummaryLimit(t *testing.T) {
 	var output bytes.Buffer
-	p := newTestPrinter(t, &output, ModeForward, Limits{MaxValueChars: 5})
+	p := newTestPrinter(t, &output, Limits{MaxValueChars: 5})
 	d := delivery()
 
 	p.PrintForward(d, ForwardOutcome{
@@ -330,7 +376,6 @@ func TestSourceTokensAlignAndUseStableColor(t *testing.T) {
 
 	var output bytes.Buffer
 	p := New(&output, Options{
-		Mode:  ModeInspect,
 		Color: true,
 		Sources: map[string]string{
 			"src_stripe":  "stripe",
@@ -394,7 +439,6 @@ func TestForwardStatusesUseSemanticColors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var output bytes.Buffer
 			p := New(&output, Options{
-				Mode:    ModeForward,
 				Color:   true,
 				Sources: map[string]string{"src_stripe": "stripe"},
 			})
@@ -416,7 +460,6 @@ func TestNoColorDisablesANSI(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var output bytes.Buffer
 	p := New(&output, Options{
-		Mode:    ModeInspect,
 		Color:   true,
 		Sources: map[string]string{"src_stripe": "stripe"},
 	})

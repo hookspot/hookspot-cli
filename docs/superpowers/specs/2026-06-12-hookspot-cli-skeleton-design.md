@@ -1,5 +1,7 @@
 # hookspot-cli skeleton design
 
+> **Superseded:** This document preserves the original design history. See the current [README](../../../README.md) and governing [CLI releases plan](../plans/2026-09-05-cli-releases.md).
+
 ## Purpose
 
 `hookspot-cli` is a companion CLI for the hookspot project. Its core job: open a

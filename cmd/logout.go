@@ -4,20 +4,21 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"hookspot/internal/config"
 )
 
 var logoutCmd = &cobra.Command{
-	Use:   "logout",
-	Short: "Remove the stored hookspot CLI key",
+	Use:         "logout",
+	Short:       "Remove the stored hookspot CLI key",
+	Annotations: commandAnnotations(false),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		v.Set("cli_key", "")
-		if err := config.Save(v, cfgFile); err != nil {
+		if err := store.ClearCLIKey(); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "Logged out.")
+		if store.EnvironmentCLIKeyActive() {
+			fmt.Fprintln(cmd.OutOrStdout(), "An environment-provided CLI key is still active; unset it to finish logging out.")
+		}
 		return nil
 	},
 }

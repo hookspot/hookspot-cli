@@ -126,3 +126,14 @@ func TestProjectDisplayName_OnlyShowsOrganizationAndProject(t *testing.T) {
 		t.Fatalf("projectDisplayName() = %q, want %q", got, want)
 	}
 }
+
+func TestProjectDisplayNameEscapesBackendControls(t *testing.T) {
+	project := api.Project{
+		Name:         "Payments\nInjected\x1b",
+		Organization: api.Organization{Name: "Acme\tPrompt"},
+	}
+	want := `Acme\tPrompt | Payments\nInjected\x1b`
+	if got := projectDisplayName(project); got != want {
+		t.Fatalf("projectDisplayName() = %q, want %q", got, want)
+	}
+}

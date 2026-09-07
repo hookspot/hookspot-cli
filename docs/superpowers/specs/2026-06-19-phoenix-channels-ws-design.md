@@ -1,5 +1,7 @@
 # Phoenix Channels support in the websocket client
 
+> **Superseded:** This document preserves the original design history. See the current [README](../../../README.md) and governing [CLI releases plan](../plans/2026-09-05-cli-releases.md).
+
 ## Problem
 
 `internal/ws/client.go` dials a websocket, sets `X-CLI-KEY`, and reads raw text

@@ -1,23 +1,30 @@
-GO_VERSION := 1.26.5
-GO_IMAGE := golang:$(GO_VERSION)
-AIR_VERSION := v1.67.3
-GORELEASER_VERSION := v2.17.1
-GORELEASER_IMAGE := goreleaser/goreleaser:$(GORELEASER_VERSION)
-RUN := docker run --rm -v "$(CURDIR)":/src -w /src -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build $(GO_IMAGE)
-GORELEASER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build -e GITHUB_TOKEN -e SERVER_URL -e GORELEASER_CURRENT_TAG $(GORELEASER_IMAGE)
-LDFLAGS = -X hookspot/cmd.serverURL=$(SERVER_URL)
+TOOLCHAIN_VALUE = ./scripts/release.sh _toolchain-value
+unexport ENV REF TAG DIST NOTES_FILE FROM_STAGE_TAG STAGE_ACCEPTANCE
+GO_VERSION = $(shell $(TOOLCHAIN_VALUE) GO_VERSION)
+GO_IMAGE = $(shell $(TOOLCHAIN_VALUE) GO_IMAGE)
+AIR_VERSION = $(shell $(TOOLCHAIN_VALUE) AIR_VERSION)
+
+DOCKER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build
+RUN := $(DOCKER_RUN) $(GO_IMAGE)
+RUN_ENV := -e HOOKSPOT_DEV_CLI_KEY -e HOOKSPOT_DEV_ORGANIZATION_SLUG -e HOOKSPOT_DEV_PROJECT_SLUG -e HOOKSPOT_DEV_CONFIG_FILE
+DEV_CONFIG_VOLUME ?= hookspot-dev-config
+VERSION ?= dev
+BUILD_ENVIRONMENT ?= dev
+COMMIT ?= $(shell git rev-parse HEAD)
+SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
+BUILD_KIND ?= dev
+LDFLAGS = -X hookspot/cmd.version=$(VERSION) -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.buildEnvironment=$(BUILD_ENVIRONMENT) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=$(BUILD_KIND)
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
-STAGE_RELEASE_TAG = v0.0.$(shell git rev-list --count HEAD)-stage.g$(shell git rev-parse --short=7 HEAD)
 
-.PHONY: tidy build test vet run get dev release-check stage-release
+.PHONY: tidy build test vet run get dev release-tools release-check release-snapshot release-build release-verify release-status release-resume stage-release prod-release
 
 tidy:
 	$(RUN) go mod tidy
 
 build:
 ifndef SERVER_URL
-	$(error SERVER_URL is required, e.g. make build SERVER_URL=https://api.hookspot.dev)
+	$(error SERVER_URL is required, e.g. make build SERVER_URL=https://api.example.invalid)
 endif
 	$(RUN) go build -ldflags "$(LDFLAGS)" ./...
 
@@ -29,42 +36,69 @@ vet:
 
 run:
 ifndef SERVER_URL
-	$(error SERVER_URL is required, e.g. make run SERVER_URL=https://api.hookspot.dev ARGS="version")
+	$(error SERVER_URL is required, e.g. make run SERVER_URL=https://api.example.invalid ARGS="version")
 endif
-	$(RUN) go run -ldflags "$(LDFLAGS)" . $(ARGS)
+	@tty_flag=; if test -t 0 && test -t 1; then tty_flag=-t; fi; \
+	$(DOCKER_RUN) -i $$tty_flag -v "$(DEV_CONFIG_VOLUME)":/root/.config/hookspot $(RUN_ENV) $(GO_IMAGE) go run -ldflags "$(LDFLAGS)" . $(ARGS)
 
 get:
 	$(RUN) go get $(PKG)
 
 # Live-reload dev loop: rebuilds and restarts the command on every file change.
 # Pass credentials inline, e.g.
-#   HOOKSPOT_ORGANIZATION_SLUG=acme HOOKSPOT_PROJECT_SLUG=payments HOOKSPOT_CLI_KEY=xxx make dev
+#   HOOKSPOT_DEV_ORGANIZATION_SLUG=acme HOOKSPOT_DEV_PROJECT_SLUG=payments HOOKSPOT_DEV_CLI_KEY=xxx make dev
 # Override the command run on reload with ARGS, e.g. make dev ARGS="listen --help".
 dev:
-	docker compose down --remove-orphans && docker compose run --rm dev go run github.com/air-verse/air@$(AIR_VERSION) -- $(DEV_ARGS)
+	COMMIT="$(COMMIT)" SOURCE_DATE="$(SOURCE_DATE)" docker compose --env-file release/toolchain.env run --rm dev go run github.com/air-verse/air@$(AIR_VERSION) -- $(DEV_ARGS)
 
+release-check: export RELEASE_MAKE_ENV := $(value ENV)
 release-check:
-	$(GORELEASER_RUN) check
+	@./scripts/release.sh _make check
 
-# Build and publish a GitHub prerelease from the stage branch. The tag is pushed
-# first because GoReleaser publishes releases for existing Git tags.
+release-tools:
+	@./scripts/release.sh tools
+
+release-snapshot: export RELEASE_MAKE_ENV := $(value ENV)
+release-snapshot: export RELEASE_MAKE_REF := $(value REF)
+release-snapshot:
+	@./scripts/release.sh _make snapshot
+
+release-build: export RELEASE_MAKE_ENV := $(value ENV)
+release-build: export RELEASE_MAKE_TAG := $(value TAG)
+release-build:
+	@./scripts/release.sh _make build
+
+release-verify: export RELEASE_MAKE_ENV := $(value ENV)
+release-verify: export RELEASE_MAKE_DIST := $(value DIST)
+release-verify:
+	@./scripts/release.sh _make verify
+
+release-status: export RELEASE_MAKE_ENV := $(value ENV)
+release-status: export RELEASE_MAKE_TAG := $(value TAG)
+release-status: export RELEASE_MAKE_DIST := $(value DIST)
+release-status:
+	@./scripts/release.sh _make status
+
+release-resume: export RELEASE_MAKE_ENV := $(value ENV)
+release-resume: export RELEASE_MAKE_TAG := $(value TAG)
+release-resume: export RELEASE_MAKE_DIST := $(value DIST)
+release-resume:
+	@./scripts/release.sh _make resume
+
+stage-release: export RELEASE_MAKE_ENV := $(value ENV)
+stage-release: export RELEASE_MAKE_TAG := $(value TAG)
+stage-release: export RELEASE_MAKE_REF := $(value REF)
+stage-release: export RELEASE_MAKE_NOTES_FILE := $(value NOTES_FILE)
+stage-release: export RELEASE_MAKE_DIST := $(value DIST)
 stage-release:
-ifndef SERVER_URL
-	$(error SERVER_URL is required, e.g. make stage-release SERVER_URL=https://api.hookspot.dev)
-endif
-ifndef GITHUB_TOKEN
-	$(error GITHUB_TOKEN is required and must have permission to publish releases)
-endif
-	@test "$$(git branch --show-current)" = "stage" || (echo "stage-release must be run from the stage branch" >&2; exit 1)
-	@test -z "$$(git status --porcelain)" || (echo "stage-release requires a clean working tree" >&2; exit 1)
-	git fetch origin --tags
-	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/stage)" || (echo "stage must match origin/stage before releasing" >&2; exit 1)
-	$(GORELEASER_RUN) check
-	@tag_commit="$$(git rev-list -n 1 "$(STAGE_RELEASE_TAG)" 2>/dev/null || true)"; \
-	if [ -n "$$tag_commit" ]; then \
-		test "$$tag_commit" = "$$(git rev-parse HEAD)" || (echo "$(STAGE_RELEASE_TAG) already points to another commit" >&2; exit 1); \
-	else \
-		git tag "$(STAGE_RELEASE_TAG)"; \
-	fi
-	git push origin "refs/tags/$(STAGE_RELEASE_TAG)"
-	GORELEASER_CURRENT_TAG="$(STAGE_RELEASE_TAG)" $(GORELEASER_RUN) release --clean
+	@./scripts/release.sh _make stage-release
+
+prod-release: export RELEASE_MAKE_ENV := $(value ENV)
+prod-release: export RELEASE_MAKE_TAG := $(value TAG)
+prod-release: export RELEASE_MAKE_REF := $(value REF)
+prod-release: export RELEASE_MAKE_NOTES_FILE := $(value NOTES_FILE)
+prod-release: export RELEASE_MAKE_FROM_STAGE_TAG := $(value FROM_STAGE_TAG)
+prod-release: export RELEASE_MAKE_STAGE_ACCEPTANCE := $(value STAGE_ACCEPTANCE)
+prod-release: export RELEASE_MAKE_DIST := $(value DIST)
+prod-release:
+	@./scripts/release.sh _make prod-release

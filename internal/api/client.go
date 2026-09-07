@@ -3,14 +3,20 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"hookspot/internal/endpoint"
 )
 
-const maxErrorBodyBytes = 64 * 1024
+const (
+	maxErrorBodyBytes   = 64 * 1024
+	maxSuccessBodyBytes = 1 * 1024 * 1024
+)
 
 // Error is a non-success response from the Hookspot API. It keeps the status
 // code available for global presentation without requiring string matching.
@@ -40,17 +46,22 @@ func (e *Error) Status() string {
 
 // Client is a small REST client for the hookspot API.
 type Client struct {
-	baseURL string
-	cliKey  string
-	http    *http.Client
+	base   endpoint.Base
+	cliKey string
+	http   *http.Client
 }
 
-// New returns a Client configured for baseURL, authenticating with cliKey.
-func New(baseURL, cliKey string) *Client {
+// New returns a Client configured for base, authenticating with cliKey.
+func New(base endpoint.Base, cliKey string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		cliKey:  cliKey,
-		http:    &http.Client{Timeout: 10 * time.Second},
+		base:   base,
+		cliKey: cliKey,
+		http: &http.Client{
+			Timeout: 10 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -63,7 +74,7 @@ type User struct {
 // Me returns the user associated with the client's CLI key.
 func (c *Client) Me(ctx context.Context) (*User, error) {
 	var user User
-	if err := c.get(ctx, "/cli/me", &user); err != nil {
+	if err := c.get(ctx, "cli/me", &user); err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -113,7 +124,7 @@ type Project struct {
 // ListProjects returns the projects accessible to the client's CLI key.
 func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	var projects []Project
-	if err := c.get(ctx, "/cli/projects", &projects); err != nil {
+	if err := c.get(ctx, "cli/projects", &projects); err != nil {
 		return nil, err
 	}
 	return projects, nil
@@ -121,8 +132,12 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 
 // GetProject returns a single project by uid, including its organization.
 func (c *Client) GetProject(ctx context.Context, uid string) (*Project, error) {
+	uid, err := endpoint.Segment(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid project UID: %w", err)
+	}
 	var project Project
-	if err := c.get(ctx, "/cli/projects/"+uid, &project); err != nil {
+	if err := c.get(ctx, "cli/projects/"+uid, &project); err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -130,8 +145,12 @@ func (c *Client) GetProject(ctx context.Context, uid string) (*Project, error) {
 
 // ListProjectSources returns the sources and connections belonging to a project.
 func (c *Client) ListProjectSources(ctx context.Context, projectUID string) ([]Source, error) {
+	projectUID, err := endpoint.Segment(projectUID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid project UID: %w", err)
+	}
 	var sources []Source
-	if err := c.get(ctx, "/cli/projects/"+projectUID+"/sources", &sources); err != nil {
+	if err := c.get(ctx, "cli/projects/"+projectUID+"/sources", &sources); err != nil {
 		return nil, err
 	}
 	return sources, nil
@@ -147,7 +166,7 @@ func (c *Client) GetProjectBySlugs(ctx context.Context, organizationSlug, projec
 
 	for _, project := range projects {
 		if project.Organization.Slug == organizationSlug && project.Slug == projectSlug {
-			return c.GetProject(ctx, project.UID)
+			return &project, nil
 		}
 	}
 
@@ -155,7 +174,11 @@ func (c *Client) GetProjectBySlugs(ctx context.Context, organizationSlug, projec
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	u := c.base.API(path)
+	if u == nil {
+		return fmt.Errorf("hookspot API endpoint is not configured")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -173,7 +196,17 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 		return decodeErrorResponse(req, resp)
 	}
 
-	return json.NewDecoder(resp.Body).Decode(out)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSuccessBodyBytes+1))
+	if err != nil {
+		return fmt.Errorf("read Hookspot API response: %w", err)
+	}
+	if len(body) > maxSuccessBodyBytes {
+		return errors.New("hookspot API response exceeds 1 MiB limit")
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode Hookspot API response: %w", err)
+	}
+	return nil
 }
 
 func decodeErrorResponse(req *http.Request, resp *http.Response) error {

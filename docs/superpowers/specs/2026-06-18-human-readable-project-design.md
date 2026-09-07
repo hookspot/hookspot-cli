@@ -1,5 +1,7 @@
 # Human-readable project in `listen` output
 
+> **Superseded:** This document preserves the original design history. See the current [README](../../../README.md) and governing [CLI releases plan](../plans/2026-09-05-cli-releases.md).
+
 ## Problem
 
 `HOOKSPOT_PROJECT` (config key `project`) stores a project **uid**. The `listen`

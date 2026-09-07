@@ -1,35 +1,33 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"hookspot/internal/config"
+	"hookspot/internal/endpoint"
 )
 
 var (
-	cfgFile string
-	v       *viper.Viper
+	cfgFile        string
+	store          *config.Store
+	activeEndpoint endpoint.Base
 )
 
-// serverURL is the hookspot server URL. It must be set at build time with:
-//
-//	go build -ldflags "-X hookspot/cmd.serverURL=https://..."
-//
-// A binary built without this flag has serverURL == "" and will refuse to
-// run any command that talks to the hookspot server.
-var serverURL string
+const (
+	annotationConfiguration = "hookspot/configuration"
+	annotationEndpoint      = "hookspot/endpoint"
+)
 
-// requireServerURL returns the build-time server URL, or an error if the
-// binary was built without one.
-func requireServerURL() (string, error) {
-	if serverURL == "" {
-		return "", fmt.Errorf("hookspot was built without a server URL; rebuild with -ldflags \"-X hookspot/cmd.serverURL=https://...\"")
+func commandAnnotations(needsEndpoint bool) map[string]string {
+	annotations := map[string]string{annotationConfiguration: "true"}
+	if needsEndpoint {
+		annotations[annotationEndpoint] = "true"
 	}
-	return serverURL, nil
+	return annotations
 }
 
 var rootCmd = &cobra.Command{
@@ -40,31 +38,91 @@ var rootCmd = &cobra.Command{
 	Long: `hookspot connects to your hookspot project over a websocket
 and proxies incoming webhook events to a local host and port.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		var err error
-		v, err = config.New(cfgFile)
-		if err != nil {
-			return wrapCommandError(commandErrorConfiguration, "load configuration", "Check the config file path and TOML syntax.", err)
-		}
-
-		for _, name := range []string{"cli-key", "project", "log-level"} {
-			key := strings.ReplaceAll(name, "-", "_")
-			if err := v.BindPFlag(key, cmd.Flags().Lookup(name)); err != nil {
-				return wrapCommandError(commandErrorConfiguration, "bind command configuration", "Check the command flags and try again.", err)
+		activeEndpoint = endpoint.Base{}
+		if cmd.Annotations[annotationEndpoint] == "true" {
+			base, err := CurrentBuildInfo().networkEndpoint()
+			if err != nil {
+				return err
 			}
+			activeEndpoint = base
+		}
+		if cmd.Annotations[annotationConfiguration] != "true" {
+			return nil
 		}
 
+		intent := config.Read
+		if cmd == loginCmd {
+			intent = config.LoginCreate
+		}
+		if cmd == configMigrateCmd {
+			intent = config.MigrationCreate
+		}
+		var err error
+		store, err = config.New(config.Options{
+			Environment:     CurrentBuildInfo().Environment,
+			ExplicitPath:    cfgFile,
+			ExplicitPathSet: cmd.Flags().Changed("config"),
+			Intent:          intent,
+		})
+		if err != nil {
+			return wrapCommandError("load configuration", configRecoveryHint(), err)
+		}
 		return nil
 	},
 }
 
+// ExecuteContext runs the root command with ctx.
+func ExecuteContext(ctx context.Context) error {
+	rootCmd.Use = executableName()
+	return rootCmd.ExecuteContext(ctx)
+}
+
 // Execute runs the root command.
 func Execute() error {
-	return rootCmd.Execute()
+	return ExecuteContext(context.Background())
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default $HOME/.config/hookspot/config.toml)")
-	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (env HOOKSPOT_CLI_KEY)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "environment-specific config file")
+	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer a scoped environment variable)")
 	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
-	rootCmd.PersistentFlags().String("log-level", "", "log level: debug, info, warn, error (env HOOKSPOT_LOG_LEVEL)")
+	rootCmd.PersistentFlags().String("log-level", "", "deprecated; retained for compatibility")
+	if err := rootCmd.PersistentFlags().MarkDeprecated("log-level", "logging is no longer configurable"); err != nil {
+		panic(err)
+	}
+}
+
+func resolveCommandConfig(cmd *cobra.Command, needProject bool) (config.Config, error) {
+	overrides := config.Overrides{NeedProject: needProject}
+	if cmd.Flags().Changed("cli-key") {
+		value, err := cmd.Flags().GetString("cli-key")
+		if err != nil {
+			return config.Config{}, err
+		}
+		overrides.CLIKey = &value
+	}
+	if cmd.Flags().Changed("project") {
+		value, err := cmd.Flags().GetString("project")
+		if err != nil {
+			return config.Config{}, err
+		}
+		overrides.Project = &value
+	}
+	return store.Resolve(overrides)
+}
+
+func configRecoveryHint() string {
+	name := executableName()
+	return fmt.Sprintf("Check the selected config path and file. For a fresh login, use an unused path with '%s --config PATH login'. For a legacy file, see '%s config migrate --help'.", name, name)
+}
+
+func executableName() string {
+	if CurrentBuildInfo().Environment == "stage" {
+		return "hookspot-stage"
+	}
+	return "hookspot"
+}
+
+func scopedVariable(suffix string) string {
+	return "HOOKSPOT_" + strings.ToUpper(CurrentBuildInfo().Environment) + "_" + suffix
 }

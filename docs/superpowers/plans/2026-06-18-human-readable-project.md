@@ -1,5 +1,7 @@
 # Human-readable project in `listen` output Implementation Plan
 
+> **Superseded:** This document preserves the original implementation history. See the current [README](../../../README.md) and governing [CLI releases plan](2026-09-05-cli-releases.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show `Organization/Project` instead of the raw project uid in `hookspot listen` output, resolved from the API at listen time.

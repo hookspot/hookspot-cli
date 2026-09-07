@@ -3,3 +3,15 @@
 
 # GoReleaser build output
 /dist/
+/build-info.json
+
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+/.hookspot/
+/config.toml
+*.pem
+*.key
+credentials*.json
+secrets.*
