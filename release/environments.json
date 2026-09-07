@@ -5,5 +5,5 @@
     "server_url": "https://app.stage-m0rk7a.hookspot.dev/",
     "branch": "stage"
   },
-  "prod": { "server_url": "", "branch": "main" }
+  "prod": { "server_url": "https://app.hookspot.dev/", "branch": "main" }
 }
