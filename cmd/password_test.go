@@ -38,7 +38,8 @@ func TestCredentialReaderAcceptsNewlineAndFinalEOF(t *testing.T) {
 		if err != nil || value != "test-key" {
 			t.Fatalf("input %q: value = %q, err = %v", input, value, err)
 		}
-		if prompt.String() != "Enter your hookspot CLI key: " {
+		wantPrompt := "Enter your hookspot CLI key (Account settings > CLI key): "
+		if prompt.String() != wantPrompt {
 			t.Fatalf("prompt = %q", prompt.String())
 		}
 	}

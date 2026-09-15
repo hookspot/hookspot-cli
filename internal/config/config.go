@@ -6,6 +6,7 @@ type Options struct {
 	Environment     string
 	ExplicitPath    string
 	ExplicitPathSet bool
+	Local           bool
 	Intent          Intent
 }
 

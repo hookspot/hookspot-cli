@@ -51,7 +51,276 @@ func setIsolatedHome(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	setWorkingDirectory(t, t.TempDir())
 	return home
+}
+
+func setWorkingDirectory(t *testing.T, path string) {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+}
+
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(parent, filepath.Base(path))
+}
+
+func TestNewPrefersEnvironmentLocalConfigAndKeepsEnvironmentsIndependent(t *testing.T) {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+
+	writeConfigFixture(t, filepath.Join(home, ".config", "hookspot", "dev", "config.toml"), "schema_version = 1\nenvironment = 'dev'\ncli_key = 'global-key'\nproject = 'global-project'\n")
+	localPath := filepath.Join(working, ".hookspot", "dev", "config.toml")
+	writeConfigFixture(t, localPath, "schema_version = 1\nenvironment = 'dev'\ncli_key = 'local-key'\nproject = 'local-project'\n")
+	writeConfigFixture(t, filepath.Join(working, ".hookspot", "stage", "config.toml"), "schema_version = 1\nenvironment = 'stage'\nproject = 'stage-project'\n")
+
+	store, err := New(Options{Environment: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLocalPath := canonicalTestPath(t, localPath)
+	if store.Path() != wantLocalPath {
+		t.Fatalf("Path() = %q, want %q", store.Path(), wantLocalPath)
+	}
+	cfg, err := store.Resolve(Overrides{NeedProject: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CLIKey != "local-key" || cfg.Project != "local-project" {
+		t.Fatalf("resolved local config = %+v", cfg)
+	}
+}
+
+func TestNewConfigPathOverridesWinOverLocalConfig(t *testing.T) {
+	clearConfigEnvironment(t)
+	setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+	writeConfigFixture(t, filepath.Join(working, ".hookspot", "dev", "config.toml"), "schema_version = 1\nenvironment = 'dev'\nproject = 'local-project'\n")
+
+	explicit := filepath.Join(t.TempDir(), "explicit.toml")
+	writeConfigFixture(t, explicit, "schema_version = 1\nenvironment = 'dev'\nproject = 'explicit-project'\n")
+	store, err := New(Options{Environment: "dev", ExplicitPath: explicit, ExplicitPathSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantExplicit := canonicalTestPath(t, explicit)
+	if store.Path() != wantExplicit {
+		t.Fatalf("explicit Path() = %q, want %q", store.Path(), wantExplicit)
+	}
+
+	scoped := filepath.Join(t.TempDir(), "scoped.toml")
+	writeConfigFixture(t, scoped, "schema_version = 1\nenvironment = 'dev'\nproject = 'scoped-project'\n")
+	t.Setenv("HOOKSPOT_DEV_CONFIG_FILE", scoped)
+	store, err = New(Options{Environment: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantScoped := canonicalTestPath(t, scoped)
+	if store.Path() != wantScoped {
+		t.Fatalf("scoped Path() = %q, want %q", store.Path(), wantScoped)
+	}
+}
+
+func TestNewRejectsMalformedLocalConfigInsteadOfFallingBack(t *testing.T) {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+	writeConfigFixture(t, filepath.Join(home, ".config", "hookspot", "dev", "config.toml"), "schema_version = 1\nenvironment = 'dev'\ncli_key = 'global-key'\n")
+	writeConfigFixture(t, filepath.Join(working, ".hookspot", "dev", "config.toml"), "schema_version = [")
+
+	if _, err := New(Options{Environment: "dev"}); err == nil || !strings.Contains(err.Error(), "parse config file") {
+		t.Fatalf("New() error = %v, want malformed local config error", err)
+	}
+}
+
+func TestNewLocalCopiesOnlyPersistedGlobalKey(t *testing.T) {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+	globalPath := filepath.Join(home, ".config", "hookspot", "prod", "config.toml")
+	writeConfigFixture(t, globalPath, "schema_version = 1\nenvironment = 'prod'\ncli_key = 'persisted-key'\nproject = 'global-project'\n")
+	t.Setenv("HOOKSPOT_PROD_CLI_KEY", "ephemeral-key")
+
+	store, err := New(Options{Environment: "prod", Local: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	effectiveWorking, err := filepath.EvalSymlinks(working)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := store.Path(), filepath.Join(effectiveWorking, ".hookspot", "prod", "config.toml"); got != want {
+		t.Fatalf("Path() = %q, want %q", got, want)
+	}
+	cfg, err := store.Resolve(Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CLIKey != "ephemeral-key" {
+		t.Fatalf("resolved CLI key = %q, want environment key", cfg.CLIKey)
+	}
+	if store.SavedProject() != "global-project" {
+		t.Fatalf("saved project default = %q, want global-project", store.SavedProject())
+	}
+	if err := store.SaveProject("local-project"); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, "persisted-key") || !strings.Contains(text, "local-project") || strings.Contains(text, "ephemeral-key") || strings.Contains(text, "global-project") {
+		t.Fatalf("unexpected local config:\n%s", text)
+	}
+	global, err := os.ReadFile(globalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(global), "global-project") || strings.Contains(string(global), "local-project") {
+		t.Fatalf("global config changed:\n%s", global)
+	}
+}
+
+func TestNewLocalPreservesExistingLocalKey(t *testing.T) {
+	clearConfigEnvironment(t)
+	setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+	localPath := filepath.Join(working, ".hookspot", "stage", "config.toml")
+	writeConfigFixture(t, localPath, "schema_version = 1\nenvironment = 'stage'\ncli_key = 'local-key'\nproject = 'old-project'\n")
+
+	store, err := New(Options{Environment: "stage", Local: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveProject("new-project"); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "local-key") || !strings.Contains(string(contents), "new-project") {
+		t.Fatalf("existing local record was not preserved:\n%s", contents)
+	}
+}
+
+func TestNewLocalRejectsConfigPathOverrides(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		options     Options
+		environment map[string]string
+	}{
+		{name: "explicit", options: Options{ExplicitPath: "ignored.toml", ExplicitPathSet: true}},
+		{name: "scoped", environment: map[string]string{"HOOKSPOT_DEV_CONFIG_FILE": "ignored.toml"}},
+		{name: "legacy", environment: map[string]string{"HOOKSPOT_CONFIG_FILE": "ignored.toml", "HOOKSPOT_ENVIRONMENT": "dev"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			clearConfigEnvironment(t)
+			setIsolatedHome(t)
+			for key, value := range test.environment {
+				t.Setenv(key, value)
+			}
+			test.options.Environment = "dev"
+			test.options.Local = true
+			if _, err := New(test.options); err == nil || !strings.Contains(err.Error(), "--local") {
+				t.Fatalf("conflict error = %v", err)
+			}
+		})
+	}
+}
+
+func TestNewDoesNotSearchParentDirectoriesForLocalConfig(t *testing.T) {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	parent := t.TempDir()
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfigFixture(t, filepath.Join(parent, ".hookspot", "dev", "config.toml"), "schema_version = 1\nenvironment = 'dev'\nproject = 'parent-project'\n")
+	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
+	writeConfigFixture(t, globalPath, "schema_version = 1\nenvironment = 'dev'\nproject = 'global-project'\n")
+	setWorkingDirectory(t, child)
+
+	store, err := New(Options{Environment: "dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Path() != canonicalTestPath(t, globalPath) || store.SavedProject() != "global-project" {
+		t.Fatalf("selected store path = %q, project = %q", store.Path(), store.SavedProject())
+	}
+}
+
+func TestNewLocalUsesIndependentEnvironmentPaths(t *testing.T) {
+	clearConfigEnvironment(t)
+	setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+
+	for _, environment := range []string{"dev", "stage", "prod"} {
+		store, err := New(Options{Environment: environment, Local: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveProject(environment + "-project"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, environment := range []string{"dev", "stage", "prod"} {
+		path := filepath.Join(working, ".hookspot", environment, "config.toml")
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(contents), "environment = '"+environment+"'") || !strings.Contains(string(contents), "project = '"+environment+"-project'") {
+			t.Fatalf("unexpected %s local config:\n%s", environment, contents)
+		}
+	}
+}
+
+func TestNewLocalDoesNotOverwriteConcurrentDestination(t *testing.T) {
+	clearConfigEnvironment(t)
+	setIsolatedHome(t)
+	working := t.TempDir()
+	setWorkingDirectory(t, working)
+
+	store, err := New(Options{Environment: "dev", Local: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeConfigFixture(t, store.Path(), "schema_version = 1\nenvironment = 'dev'\ncli_key = 'concurrent-key'\n")
+	if err := store.SaveProject("selected-project"); err == nil {
+		t.Fatal("SaveProject overwrote a concurrently created local config")
+	}
+	contents, err := os.ReadFile(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "concurrent-key") || strings.Contains(string(contents), "selected-project") {
+		t.Fatalf("concurrent config changed:\n%s", contents)
+	}
 }
 
 func TestNewSelectsEnvironmentSpecificPaths(t *testing.T) {

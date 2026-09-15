@@ -168,7 +168,7 @@ func receiptFixture(t *testing.T) (string, artifactsOptions, buildMetadata) {
 		"release/environments.json":          validManifest,
 		"release/toolchain.env":              "GO_VERSION=" + strings.TrimPrefix(runtime.Version(), "go") + "\nGORELEASER_VERSION=v2.17.1\n",
 		".goreleaser.yaml":                   "version: 2\n",
-		"docker/release.Dockerfile":          "FROM scratch\n",
+		"Dockerfile.release":                 "FROM scratch\n",
 		"scripts/release.sh":                 "#!/bin/bash\n",
 		"out/build-info.json":                "{\"fixture\":true}\n",
 		"out/tools/releasecheck-linux-amd64": "amd64 helper",

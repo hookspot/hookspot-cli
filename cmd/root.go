@@ -62,6 +62,7 @@ and proxies incoming webhook events to a local host and port.`,
 			Environment:     CurrentBuildInfo().Environment,
 			ExplicitPath:    cfgFile,
 			ExplicitPathSet: cmd.Flags().Changed("config"),
+			Local:           cmd == projectUseCmd && projectUseLocal,
 			Intent:          intent,
 		})
 		if err != nil {

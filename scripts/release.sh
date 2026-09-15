@@ -247,9 +247,9 @@ build_tools() {
   load_toolchain "$REPOSITORY_ROOT/release/toolchain.env"
   CONTROL_ROOT=$REPOSITORY_ROOT
   lock_hash=$(hash_control_file "$GO_IMAGE" "$CONTROL_ROOT/release/toolchain.env")
-  recipe_hash=$(hash_control_file "$GO_IMAGE" "$CONTROL_ROOT/docker/release.Dockerfile")
+  recipe_hash=$(hash_control_file "$GO_IMAGE" "$CONTROL_ROOT/Dockerfile.release")
   bootstrap_hash=$(hash_control_file "$GO_IMAGE" "$CONTROL_ROOT/tools/releasebootstrap/main.go")
-  docker buildx build --load --file "$REPOSITORY_ROOT/docker/release.Dockerfile" --tag "$RELEASE_IMAGE" \
+  docker buildx build --load --file "$REPOSITORY_ROOT/Dockerfile.release" --tag "$RELEASE_IMAGE" \
     --label "org.hookspot.release.lock-sha256=$lock_hash" \
     --label "org.hookspot.release.recipe-sha256=$recipe_hash" \
     --label "org.hookspot.release.bootstrap-sha256=$bootstrap_hash" \
@@ -278,7 +278,7 @@ inspect_release_image() {
   recipe_label=$(docker image inspect "$IMAGE_ID" --format '{{index .Config.Labels "org.hookspot.release.recipe-sha256"}}' 2>/dev/null) || die "release tool image recipe identity is missing"
   bootstrap_label=$(docker image inspect "$IMAGE_ID" --format '{{index .Config.Labels "org.hookspot.release.bootstrap-sha256"}}' 2>/dev/null) || die "release tool image helper checker identity is missing"
   [ "$lock_label" = "$(hash_control_file "$IMAGE_ID" "$CONTROL_ROOT/release/toolchain.env")" ] || die "release tool image was built from a different toolchain lock; rerun tools"
-  [ "$recipe_label" = "$(hash_control_file "$IMAGE_ID" "$CONTROL_ROOT/docker/release.Dockerfile")" ] || die "release tool image was built from a different Docker recipe; rerun tools"
+  [ "$recipe_label" = "$(hash_control_file "$IMAGE_ID" "$CONTROL_ROOT/Dockerfile.release")" ] || die "release tool image was built from a different Docker recipe; rerun tools"
   [ "$bootstrap_label" = "$(hash_control_file "$IMAGE_ID" "$CONTROL_ROOT/tools/releasebootstrap/main.go")" ] || die "release tool image was built from a different helper checker; rerun tools"
   identity=$(container_run --rm --network none --entrypoint sh "$IMAGE_ID" -c 'set -e; go version; goreleaser --version; gh --version' 2>/dev/null) || die "release tool image cannot run"
   printf '%s\n' "$identity" | grep -Fxq "go version go${GO_VERSION} ${IMAGE_PLATFORM}" || die "release tool image has the wrong Go version"

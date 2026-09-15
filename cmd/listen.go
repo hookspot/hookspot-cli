@@ -72,7 +72,7 @@ var listenCmd = &cobra.Command{
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
 				"no active project",
-				fmt.Sprintf("Run '%s project use <project>' or set %s and %s.", executableName(), scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
+				fmt.Sprintf("Run '%s project use' or set %s and %s.", executableName(), scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
 			)
 		}
 

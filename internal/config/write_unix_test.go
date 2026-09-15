@@ -131,3 +131,50 @@ func TestUnixStoreRejectsSymlinkTargetAndPreservesParentMode(t *testing.T) {
 		t.Fatalf("explicit parent mode changed to %o", parent.Mode().Perm())
 	}
 }
+
+func TestAbsentLocalConfigFallsBackFromGroupWritableWorkingDirectory(t *testing.T) {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
+	writeConfigFixture(t, globalPath, "schema_version = 1\nenvironment = 'dev'\nproject = 'global-project'\n")
+
+	working := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(working, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(working, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	setWorkingDirectory(t, working)
+
+	store, err := New(Options{Environment: "dev"})
+	if err != nil {
+		t.Fatalf("global fallback failed: %v", err)
+	}
+	wantGlobalPath := canonicalTestPath(t, globalPath)
+	if store.Path() != wantGlobalPath {
+		t.Fatalf("Path() = %q, want %q", store.Path(), wantGlobalPath)
+	}
+}
+
+func TestExistingLocalConfigRejectsGroupWritableDirectory(t *testing.T) {
+	clearConfigEnvironment(t)
+	setIsolatedHome(t)
+	working := t.TempDir()
+	localDirectory := filepath.Join(working, ".hookspot", "dev")
+	if err := os.MkdirAll(localDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	localPath := filepath.Join(localDirectory, "config.toml")
+	if err := writePrivateTestFile(localPath, []byte("schema_version = 1\nenvironment = 'dev'\nproject = 'local-project'\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(localDirectory, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	setWorkingDirectory(t, working)
+
+	if _, err := New(Options{Environment: "dev"}); err == nil {
+		t.Fatal("local config in a group-writable directory was accepted")
+	}
+}

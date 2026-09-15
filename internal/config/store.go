@@ -35,31 +35,38 @@ func New(opts Options) (*Store, error) {
 	if !validEnvironment(opts.Environment) {
 		return nil, fmt.Errorf("unknown configuration environment %q", opts.Environment)
 	}
+	if opts.Local {
+		return newLocalStore(opts)
+	}
 	path, managed, err := selectPath(opts)
 	if err != nil {
 		return nil, err
 	}
+	return newStoreAt(opts.Environment, path, managed, opts.Intent)
+}
+
+func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, error) {
 	if strings.ContainsRune(path, '\x00') {
 		return nil, errors.New("config path contains a NUL byte")
 	}
-	path, err = canonicalConfigPath(path)
+	path, err := canonicalConfigPath(path)
 	if err != nil {
 		return nil, err
 	}
 	store := &Store{
-		environment: opts.Environment,
+		environment: environment,
 		path:        path,
 		managedDir:  managed,
 		record: persistedRecord{
 			SchemaVersion: currentSchemaVersion,
-			Environment:   opts.Environment,
+			Environment:   environment,
 		},
 		write: writeFileAtomic,
 	}
 
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if !managed && opts.Intent == Read {
+		if !managed && intent == Read {
 			return nil, errors.New("selected config file does not exist")
 		}
 		return store, nil
@@ -67,7 +74,7 @@ func New(opts Options) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect config file: %w", err)
 	}
-	if opts.Intent == MigrationCreate {
+	if intent == MigrationCreate {
 		return nil, errors.New("migration destination already exists")
 	}
 	if err := validateConfigFileType(path, info); err != nil {
@@ -87,12 +94,53 @@ func New(opts Options) (*Store, error) {
 		}
 		return nil, fmt.Errorf("unsupported config schema %d", record.SchemaVersion)
 	}
-	if record.Environment != opts.Environment {
-		return nil, fmt.Errorf("config environment is %q, binary environment is %q", record.Environment, opts.Environment)
+	if record.Environment != environment {
+		return nil, fmt.Errorf("config environment is %q, binary environment is %q", record.Environment, environment)
 	}
 	store.record = record
 	store.exists = true
 	return store, nil
+}
+
+func newLocalStore(opts Options) (*Store, error) {
+	if opts.ExplicitPathSet || configPathEnvironmentSet(opts.Environment) {
+		return nil, errors.New("--local cannot be combined with --config or a CONFIG_FILE environment override")
+	}
+
+	localPath, err := localConfigPath(opts.Environment)
+	if err != nil {
+		return nil, err
+	}
+	localPath, err = canonicalConfigPath(localPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Lstat(localPath); err == nil {
+		return newStoreAt(opts.Environment, localPath, true, opts.Intent)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect local config file: %w", err)
+	}
+
+	globalPath, err := globalConfigPath(opts.Environment)
+	if err != nil {
+		return nil, err
+	}
+	global, err := newStoreAt(opts.Environment, globalPath, true, Read)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{
+		environment: opts.Environment,
+		path:        localPath,
+		managedDir:  true,
+		record: persistedRecord{
+			SchemaVersion: currentSchemaVersion,
+			Environment:   opts.Environment,
+			CLIKey:        global.record.CLIKey,
+			Project:       global.record.Project,
+		},
+		write: writeFileAtomic,
+	}, nil
 }
 
 func readValidatedConfig(path string, info os.FileInfo) ([]byte, error) {
@@ -120,6 +168,9 @@ func readValidatedConfig(path string, info os.FileInfo) ([]byte, error) {
 
 // Path returns the selected configuration file path.
 func (s *Store) Path() string { return s.path }
+
+// SavedProject returns the project UID persisted in the selected record.
+func (s *Store) SavedProject() string { return s.record.Project }
 
 // Resolve applies flag and environment precedence without mutating the store.
 func (s *Store) Resolve(flags Overrides) (Config, error) {
@@ -258,11 +309,41 @@ func selectPath(opts Options) (string, bool, error) {
 		}
 		return path, false, nil
 	}
+	localPath, err := localConfigPath(opts.Environment)
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := os.Lstat(localPath); err == nil {
+		return localPath, true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", false, fmt.Errorf("inspect local config file: %w", err)
+	}
+	globalPath, err := globalConfigPath(opts.Environment)
+	return globalPath, true, err
+}
+
+func configPathEnvironmentSet(environment string) bool {
+	if _, set := os.LookupEnv(scopedName(environment, "CONFIG_FILE")); set {
+		return true
+	}
+	_, set := os.LookupEnv("HOOKSPOT_CONFIG_FILE")
+	return set
+}
+
+func localConfigPath(environment string) (string, error) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("find current directory: %w", err)
+	}
+	return filepath.Join(workingDirectory, ".hookspot", environment, "config.toml"), nil
+}
+
+func globalConfigPath(environment string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", false, fmt.Errorf("find home directory: %w", err)
+		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "hookspot", opts.Environment, "config.toml"), true, nil
+	return filepath.Join(home, ".config", "hookspot", environment, "config.toml"), nil
 }
 
 func requireLegacyAssertion(environment string) error {

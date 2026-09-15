@@ -152,12 +152,21 @@ hookspot project use
 hookspot listen
 ```
 
-Project listing and explicit UID selection are optional alternatives:
+`project use` selects the only accessible project automatically or opens an
+arrow-key picker when several are available. Noninteractive callers must pass
+`PROJECT_UID`, `ORGANIZATION`, or `ORGANIZATION PROJECT`. Names match exactly
+without regard to case and names containing spaces must be quoted. A single
+path-safe argument is resolved as a UID first; only a 404 falls back to an
+organization-name match.
 
-```sh
-hookspot project list
-hookspot project use PROJECT_UID
-```
+Commands choose one complete config file: explicit `--config`, then the
+environment-scoped or validated legacy `CONFIG_FILE` override, then
+`.hookspot/<environment>/config.toml` in the current directory, then the global
+environment file. The CLI does not search parent directories, and an invalid
+local file blocks fallback. `project use --local` creates or updates the local
+record and cannot be combined with a custom config path. A new local record may
+copy the CLI key persisted in the global record, so treat it as plaintext
+credentials; flag and environment keys are never copied.
 
 Staging and production keep separate keys, configuration, and project
 selection. This is a compatibility break from the old shared credential and
@@ -187,8 +196,9 @@ key, refuses an existing destination, and leaves the legacy source unchanged.
 
 The staging quick start uses the same flow with `hookspot-stage login`,
 `hookspot-stage project use`, and `hookspot-stage listen`. The selected config
-is access-restricted plaintext, not encrypted. Logout removes only the local
-saved key; service-side revocation or rotation is a separate backend action.
+is access-restricted plaintext, not encrypted. Logout removes only the saved
+key in that selected config; service-side revocation or rotation is a separate
+backend action.
 
 Third-party terms and attributions are in `THIRD_PARTY_NOTICES.txt` inside the
 archive.

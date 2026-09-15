@@ -9,7 +9,7 @@
 .env
 .env.*
 !.env.example
-/.hookspot/
+.hookspot/
 /config.toml
 *.pem
 *.key

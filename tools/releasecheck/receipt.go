@@ -69,7 +69,7 @@ var retainedControls = []struct {
 	{name: "release/environments.json", maximum: maxEnvironmentManifestBytes},
 	{name: "release/toolchain.env", maximum: maxToolchainLockBytes},
 	{name: ".goreleaser.yaml", maximum: maxControlBytes},
-	{name: "docker/release.Dockerfile", maximum: maxControlBytes},
+	{name: "Dockerfile.release", maximum: maxControlBytes},
 	{name: "scripts/release.sh", maximum: maxControlBytes},
 }
 

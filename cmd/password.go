@@ -54,7 +54,8 @@ func (r *credentialReader) read(ctx context.Context, in io.Reader, out io.Writer
 		}()
 	}
 
-	if _, err := fmt.Fprint(out, "Enter your hookspot CLI key: "); err != nil {
+	if _, err := fmt.Fprint(out,
+		"Enter your hookspot CLI key (Account settings > CLI key): "); err != nil {
 		return "", fmt.Errorf("write CLI key prompt: %w", err)
 	}
 	if err := ctx.Err(); err != nil {

@@ -130,11 +130,11 @@ expect_failure make-lock make -C "$make_dir" release-check ENV=stage
 test ! -e "$make_dir/INVALID_LOCK_EXECUTED" || fail "Make evaluated toolchain data"
 
 fixture="$TMP_ROOT/repository"
-mkdir -p "$fixture/scripts" "$fixture/release" "$fixture/docker" "$fixture/tools/releasecheck" "$fixture/tools/releasebootstrap" "$fixture/fake-bin" "$fixture/fake-tools" "$fixture/.githooks"
+mkdir -p "$fixture/scripts" "$fixture/release" "$fixture/tools/releasecheck" "$fixture/tools/releasebootstrap" "$fixture/fake-bin" "$fixture/fake-tools" "$fixture/.githooks"
 cp "$SCRIPT" "$fixture/scripts/release.sh"
 chmod 755 "$fixture/scripts/release.sh"
 write_lock "$fixture"
-cp "$ROOT/docker/release.Dockerfile" "$fixture/docker/release.Dockerfile"
+cp "$ROOT/Dockerfile.release" "$fixture/Dockerfile.release"
 cp "$ROOT/.goreleaser.yaml" "$fixture/.goreleaser.yaml"
 cp "$ROOT/Makefile" "$fixture/Makefile"
 cp "$ROOT/tools/releasebootstrap/main.go" "$fixture/tools/releasebootstrap/main.go"
@@ -191,7 +191,7 @@ case "$*" in
     fi
     printf '%064d  /input\n' 0 | tr 0 a
     ;;
-  *'release.Dockerfile'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 b ;;
+  *'Dockerfile.release'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 b ;;
   *'releasebootstrap/main.go'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 c ;;
   *'go version; goreleaser --version; gh --version'*)
     if [ "${FAKE_EXECUTE_COMPOUND-}" = 1 ]; then
@@ -864,7 +864,7 @@ fi
 if [ "\$1" = version ]; then printf '%s\n' '$release_test_image_platform'; exit 0; fi
 case "\$*" in
   *'toolchain.env'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 a; exit 0 ;;
-  *'release.Dockerfile'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 b; exit 0 ;;
+  *'Dockerfile.release'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 b; exit 0 ;;
   *'releasebootstrap/main.go'*'sha256sum'*) printf '%064d  /input\n' 0 | tr 0 c; exit 0 ;;
   *'go version; goreleaser --version; gh --version'*) printf '%s\n' 'go version go1.26.8 $release_test_image_platform' 'goreleaser version 2.17.1' 'gh version 2.100.0 (fixture)'; exit 0 ;;
   *' env-url '*|*' env-url') printf '%s\n' 'https://stage.example.invalid'; exit 0 ;;

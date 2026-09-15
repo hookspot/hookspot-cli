@@ -46,12 +46,22 @@ hookspot project use
 hookspot listen
 ```
 
-Listing projects and selecting one explicit UID are optional alternatives:
+With one accessible project, `project use` selects it immediately. With more
+than one, it opens an arrow-key picker in an interactive terminal and marks the
+saved project as the default. Scripts and other noninteractive callers must use
+an unambiguous form:
 
 ```sh
 hookspot project list
 hookspot project use PROJECT_UID
+hookspot project use "Acme Inc."
+hookspot project use "Acme Inc." Payments
 ```
+
+Names match exactly without regard to case; quote names containing spaces. A
+single path-safe argument is tried as a project UID first, then as an exact
+organization name only when the UID lookup returns 404. Two arguments always
+mean organization and project names.
 
 Use `hookspot-stage` for the same staging flow. For a noninteractive production
 process, pass only the scoped variables it needs:
@@ -104,12 +114,42 @@ Default configuration lives at:
 ~/.config/hookspot/dev/config.toml
 ```
 
-Resolution order is an explicit flag, then an environment-scoped variable,
-then the matching configuration file. An explicit missing `--config` path is
-an error for ordinary commands; login may create a new file at an unused path.
-Legacy generic variables require a matching `HOOKSPOT_ENVIRONMENT` assertion.
-A legacy shared file is never imported implicitly. Review the exact migration
-command first:
+Every command selects one complete config file in this order:
+
+1. explicit `--config`;
+2. `HOOKSPOT_<ENV>_CONFIG_FILE`, or legacy `HOOKSPOT_CONFIG_FILE` with a
+   matching `HOOKSPOT_ENVIRONMENT` assertion;
+3. `.hookspot/<environment>/config.toml` in the current directory;
+4. the matching global file listed above.
+
+The CLI checks only the current directory and never searches parents. Only an
+absent local file falls back to the global file; a malformed, unreadable, or
+unsafe local file is an error. An explicit missing `--config` path remains an
+error for ordinary commands, while login may create a new file at an unused
+selected path. A legacy shared file is never imported implicitly.
+
+Use `project use --local` to create or update the current directory's complete
+environment-specific record. It stores the selected project and may copy the
+CLI key already persisted in the global record; flag and environment keys are
+never copied. The local file contains plaintext credentials when a persisted
+key is available and is ignored by this repository's `.gitignore`. `--local`
+cannot be combined with `--config` or a `CONFIG_FILE` environment override.
+
+“Current directory” is the CLI process directory, including inside Docker. Two
+development shells that mount the same host checkout at `/src` and run there
+therefore share the same host `.hookspot/<environment>/config.toml`. When
+separate project directories are mounted in the container, enter each one
+before invoking the shared binary:
+
+```sh
+cd "/workspaces/project A"
+/src/tmp/hookspot project use --local "asd1" "Project 1"
+
+cd "/workspaces/project B"
+/src/tmp/hookspot project use --local "asd1" "Project 2"
+```
+
+Review the exact migration command first:
 
 ```sh
 hookspot config migrate --help

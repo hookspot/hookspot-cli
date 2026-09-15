@@ -48,6 +48,10 @@ func runCommandProcess(t *testing.T, input string, metadata map[string]string, a
 }
 
 func runCommandProcessEnvironment(t *testing.T, input string, metadata, environment map[string]string, args ...string) commandResult {
+	return runCommandProcessDirectoryEnvironment(t, "", input, metadata, environment, args...)
+}
+
+func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string, metadata, environment map[string]string, args ...string) commandResult {
 	t.Helper()
 	executable, err := os.Executable()
 	if err != nil {
@@ -55,15 +59,25 @@ func runCommandProcessEnvironment(t *testing.T, input string, metadata, environm
 	}
 	commandArgs := append([]string{"-test.run=TestCommandHelper", "--"}, args...)
 	command := exec.Command(executable, commandArgs...)
+	if directory != "" {
+		command.Dir = directory
+	}
 	command.Stdin = strings.NewReader(input)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	home := t.TempDir()
+	if configured, set := environment["HOME"]; set {
+		home = configured
+	}
+	userProfile := home
+	if configured, set := environment["USERPROFILE"]; set {
+		userProfile = configured
+	}
 	command.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + home,
-		"USERPROFILE=" + home,
+		"USERPROFILE=" + userProfile,
 		commandHelperEnvironment + "=1",
 		"TEST_BUILD_VERSION=" + metadata["version"],
 		"TEST_BUILD_SERVER_URL=" + metadata["server_url"],
@@ -76,6 +90,9 @@ func runCommandProcessEnvironment(t *testing.T, input string, metadata, environm
 		command.Env = append(command.Env, "SystemRoot="+systemRoot)
 	}
 	for key, value := range environment {
+		if key == "HOME" || key == "USERPROFILE" {
+			continue
+		}
 		command.Env = append(command.Env, key+"="+value)
 	}
 	err = command.Run()
@@ -157,6 +174,24 @@ func TestHelpAndDevelopmentVersionStayOffline(t *testing.T) {
 			if result.stdout == "" {
 				t.Fatalf("server %q %v produced no output", serverURL, args)
 			}
+		}
+	}
+}
+
+func TestHelpAndVersionIgnoreMalformedLocalConfig(t *testing.T) {
+	working := t.TempDir()
+	localPath := filepath.Join(working, ".hookspot", "dev", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCommandFixture(localPath, []byte("schema_version = [")); err != nil {
+		t.Fatal(err)
+	}
+	metadata := developmentMetadata("")
+	for _, args := range [][]string{{"--help"}, {"version"}} {
+		result := runCommandProcessDirectoryEnvironment(t, working, "", metadata, nil, args...)
+		if result.err != nil || result.stdout == "" {
+			t.Fatalf("%v result = %v, stdout = %q, stderr = %q", args, result.err, result.stdout, result.stderr)
 		}
 	}
 }
