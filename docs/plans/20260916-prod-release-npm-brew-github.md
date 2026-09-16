@@ -326,23 +326,23 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
   `native_evidence.go`, `native_requirements.go`
 - Delete: `release/environments.json`
 
-- [ ] `main.go`: only the `metadata` subcommand remains; usage string
+- [x] `main.go`: only the `metadata` subcommand remains; usage string
       `releasecheck metadata`
-- [ ] `metadata.go`: remove the `RELEASE_ENV`/`SERVER_URL` env reads and the
+- [x] `metadata.go`: remove the `RELEASE_ENV`/`SERVER_URL` env reads and the
       `loadEnvironmentManifest`/`checkEnvironment` calls; add a required
       `--server-url` flag validated with `endpoint.Parse(url, "prod")`;
       `Environment` is the constant `prod`; allow a relative `--output`;
       delete `stageVersionPattern`; keep `writeExclusiveFile`, moving it here
       if it lived in a deleted file
-- [ ] delete the listed files and `release/environments.json`; `go vet` and
+- [x] delete the listed files and `release/environments.json`; `go vet` and
       `go build ./...` confirm nothing dangles
-- [ ] `metadata_test.go`: success cases for release and snapshot versions with
+- [x] `metadata_test.go`: success cases for release and snapshot versions with
       a relative and an absolute `--output`; error cases for a stage-style
       version, an `http://` server URL, an empty `--server-url`, and an
       existing output file
-- [ ] `cli_integration_test.go` and `main_test.go`: keep only the `metadata`
+- [x] `cli_integration_test.go` and `main_test.go`: keep only the `metadata`
       paths and an unknown-subcommand error case
-- [ ] run `make test` and `make vet` - must pass before task 3
+- [x] run `make test` and `make vet` - must pass before task 3
 
 ### Task 3: Rewrite `.goreleaser.yaml` for prod-only multi-channel publishing
 

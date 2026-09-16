@@ -5,9 +5,8 @@ and can forward them to a local HTTP server. Production releases use the
 `hookspot` executable. Staging releases use the separate `hookspot-stage`
 executable, configuration, and credentials.
 
-Stage and production service URLs are committed in `release/environments.json`
-and embedded during release builds. Development or `.invalid` example
-endpoints are not live Hookspot services.
+Service URLs are embedded during release builds. Development or `.invalid`
+example endpoints are not live Hookspot services.
 
 ## Install
 
