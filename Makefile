@@ -51,7 +51,7 @@ dev:
 
 # Host Node, not the Docker toolchain: the launcher has no dependencies.
 npm-test:
-	node --test npm/test/
+	node --test 'npm/test/*.test.js'
 
 # Locked GoReleaser-on-pinned-Go image shared by local snapshots and CI.
 release-tools:

@@ -434,17 +434,17 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - Create: `.github/workflows/ci.yml`
 
-- [ ] trigger on `push` to `main` and `pull_request`; `permissions: contents:
+- [x] trigger on `push` to `main` and `pull_request`; `permissions: contents:
   read`; single ubuntu job; pin `actions/*` to major versions
-- [ ] steps: checkout with `fetch-depth: 0`; `make test`; `make vet`;
+- [x] steps: checkout with `fetch-depth: 0`; `make test`; `make vet`;
       `make release-tools`; `make release-check`; `make release-snapshot`;
       `actions/setup-node@v4` Node 22 then `make npm-test`; `cd npm && npm
   pack --dry-run`
-- [ ] no dependency caching: the `hookspot-gomod` and `hookspot-gocache`
+- [x] no dependency caching: the `hookspot-gomod` and `hookspot-gocache`
       Docker volumes do not survive between runners; add a comment saying so
-- [ ] verify: push the branch and confirm the workflow is green via `gh run
+- [x] verify: push the branch and confirm the workflow is green via `gh run
   view`; fix and re-push until green
-- [ ] run `make test` - must pass before task 7
+- [x] run `make test` - must pass before task 7
 
 ### Task 7: Add the release workflow (GitHub Release, Homebrew, npm)
 

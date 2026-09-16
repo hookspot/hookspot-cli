@@ -1,0 +1,40 @@
+name: CI
+
+# Every branch push and pull request runs the full build path unpublished:
+# the same locked GoReleaser image and targets as release.yml, minus publishing.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    # No dependency caching: the Makefile's hookspot-gomod and hookspot-gocache
+    # Docker volumes are created on the runner and do not survive between runs.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: make test
+
+      - run: make vet
+
+      - run: make release-tools
+
+      - run: make release-check
+
+      - run: make release-snapshot
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: make npm-test
+
+      - run: npm pack --dry-run
+        working-directory: npm
