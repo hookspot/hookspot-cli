@@ -518,21 +518,21 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - Modify: `README.md`, `docs/releases/INSTALL.md`, `docs/releases/RUNBOOK.md`
 
-- [ ] `README.md`: remove every stage/`hookspot-stage`/`environments.json`
+- [x] `README.md`: remove every stage/`hookspot-stage`/`environments.json`
       mention; Install section lists npm, Homebrew, and GitHub archive in that
       order; replace "Release operators" with a short "Releasing" section
       (tag, push, watch the workflow, local snapshot for testing)
-- [ ] `docs/releases/INSTALL.md`: remove stage; new archive names; add npm and
+- [x] `docs/releases/INSTALL.md`: remove stage; new archive names; add npm and
       Homebrew sections; keep the checksum verification block for archives
-- [ ] `docs/releases/RUNBOOK.md`: rewrite to the new flow: version choice,
+- [x] `docs/releases/RUNBOOK.md`: rewrite to the new flow: version choice,
       `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`, what each job does,
       required secrets and where they live, how to re-run a failed job (assets
       are replaced, formula push and npm publish are idempotent per version),
       what a red smoke job means and how to yank (npm `deprecate`, revert the
       tap formula commit, mark the GitHub release as pre-release or delete it)
-- [ ] grep docs for `stage`, `RELEASE_ENV`, `release.sh`, `receipt`,
+- [x] grep docs for `stage`, `RELEASE_ENV`, `release.sh`, `receipt`,
       `native`, `clean checkout` and remove leftovers
-- [ ] run `make test` - must pass before task 10
+- [x] run `make test` - must pass before task 10
 
 ### Task 10: Verify acceptance criteria
 
@@ -551,9 +551,9 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 ### Task 11: [Final] Update documentation
 
-- [ ] update README.md if anything changed during implementation
-- [ ] no CLAUDE.md exists in this repo; skip unless one is added
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update README.md if anything changed during implementation (no drift found)
+- [x] no CLAUDE.md exists in this repo; skip unless one is added
+- [x] move this plan to `docs/plans/completed/` (moved by the harness after review)
 
 ## Post-Completion
 

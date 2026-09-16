@@ -13,10 +13,10 @@ services:
         BUILD_KIND: dev
     image: hookspot:dev
     environment:
-      - HOOKSPOT_DEV_CLI_KEY
-      - HOOKSPOT_DEV_ORGANIZATION_SLUG
-      - HOOKSPOT_DEV_PROJECT_SLUG
-      - HOOKSPOT_DEV_CONFIG_FILE
+      - HOOKSPOT_CLI_KEY
+      - HOOKSPOT_ORGANIZATION_SLUG
+      - HOOKSPOT_PROJECT_SLUG
+      - HOOKSPOT_CONFIG_FILE
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "hookspot.localhost:host-gateway"
@@ -37,10 +37,10 @@ services:
       - SERVER_URL=${SERVER_URL:-https://hookspot.localhost}
       - COMMIT=${COMMIT:-unknown}
       - SOURCE_DATE=${SOURCE_DATE:-unknown}
-      - HOOKSPOT_DEV_CLI_KEY
-      - HOOKSPOT_DEV_ORGANIZATION_SLUG
-      - HOOKSPOT_DEV_PROJECT_SLUG
-      - HOOKSPOT_DEV_CONFIG_FILE
+      - HOOKSPOT_CLI_KEY
+      - HOOKSPOT_ORGANIZATION_SLUG
+      - HOOKSPOT_PROJECT_SLUG
+      - HOOKSPOT_CONFIG_FILE
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "hookspot.localhost:host-gateway"

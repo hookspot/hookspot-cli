@@ -1,33 +1,41 @@
 # Hookspot CLI
 
 Hookspot CLI connects to a Hookspot project, prints incoming webhook requests,
-and can forward them to a local HTTP server. Production releases use the
-`hookspot` executable. Staging releases use the separate `hookspot-stage`
-executable, configuration, and credentials.
+and can forward them to a local HTTP server.
 
 Service URLs are embedded during release builds. Development or `.invalid`
 example endpoints are not live Hookspot services.
 
 ## Install
 
-Choose a production archive from the stable-latest GitHub release, or a staging
-archive from its explicit reviewed stage tag/release page. `darwin` means
-macOS, `amd64` means Intel/AMD 64-bit, and `arm64` means Apple Silicon or
-another ARM64 system.
+Every release is published to npm, Homebrew, and GitHub Releases from one
+build, so all three channels install the same `hookspot` binary.
 
-Every release contains exactly six platform archives and one checksum file.
-Verify the exact archive entry before extracting it, then install `hookspot`
-or `hookspot.exe` for production, or `hookspot-stage` or
-`hookspot-stage.exe` for staging. In a downloaded archive, follow the adjacent
-`INSTALL.md`. In the repository, see the [installation guide](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/INSTALL.md)
-for shell and PowerShell commands, updating, macOS verification, and uninstalling.
+npm (Node 18 or newer; the package bundles binaries for macOS, Linux, and
+Windows on amd64 and arm64):
+
+```sh
+npm install -g hookspot
+```
+
+Homebrew on macOS or Linux:
+
+```sh
+brew install hookspot/hookspot/hookspot
+```
+
+GitHub release archive: download the archive for your platform and the checksum
+file from the [latest release](https://github.com/hookspot/hookspot-cli/releases/latest),
+verify the checksum, and install `hookspot` (`hookspot.exe` on Windows). Each
+archive contains an `INSTALL.md` with shell and PowerShell commands, the macOS
+Gatekeeper note for the unsigned binary, updating, and uninstalling; the same
+guide is in the repository at
+[docs/releases/INSTALL.md](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/INSTALL.md).
 
 Confirm the installed binary before logging in:
 
 ```sh
 hookspot version --json
-# or
-hookspot-stage version --json
 ```
 
 The JSON identifies the version, source commit, environment, compiled endpoint,
@@ -62,8 +70,7 @@ single path-safe argument is tried as a project UID first, then as an exact
 organization name only when the UID lookup returns 404. Two arguments always
 mean organization and project names.
 
-Use `hookspot-stage` for the same staging flow. For a noninteractive process,
-pass only the variables it needs:
+For a noninteractive process, pass only the variables it needs:
 
 ```sh
 export HOOKSPOT_CLI_KEY='...'
@@ -71,10 +78,8 @@ export HOOKSPOT_ORGANIZATION_SLUG='acme'
 export HOOKSPOT_PROJECT_SLUG='payments'
 ```
 
-The same variable names apply to every binary, so set them to values from the
-environment of the binary you run. Organization and project slug variables
-must be set together. A saved CLI key and selected project are stored
-separately for each environment.
+Organization and project slug variables must be set together. A saved CLI key
+and selected project are stored separately for each environment.
 
 ## Listen and forward
 
@@ -110,7 +115,6 @@ Default configuration lives at:
 
 ```text
 ~/.config/hookspot/prod/config.toml
-~/.config/hookspot/stage/config.toml
 ~/.config/hookspot/dev/config.toml
 ```
 
@@ -152,7 +156,6 @@ Review the exact migration command first:
 
 ```sh
 hookspot config migrate --help
-hookspot-stage config migrate --help
 ```
 
 `hookspot logout` removes the saved key but does not unset an active
@@ -208,11 +211,23 @@ docker compose --env-file release/toolchain.env run --rm cli listen \
   --forward-to http://host.docker.internal:3000
 ```
 
-## Release operators
+## Releasing
 
-Releases are built and published by GoReleaser from a locked Docker image. A
-local snapshot runs the same pipeline without publishing anything; it requires
-a clean working tree because the build embeds VCS metadata:
+Pushing a `v*` tag publishes the release. The tag-triggered workflow builds the
+six platform archives with GoReleaser in the locked Docker image, creates the
+GitHub Release, pushes the Homebrew formula to `hookspot/homebrew-hookspot`,
+publishes the npm package from the same binaries, and then installs from every
+channel on Linux, macOS, and Windows runners:
+
+```sh
+git tag -a v1.2.3 -m "v1.2.3"
+git push origin v1.2.3
+gh run watch
+```
+
+To exercise the pipeline locally, build an unpublished snapshot (version
+`0.0.0-snapshot.<sha>`). It requires a clean working tree because the build
+embeds VCS metadata:
 
 ```sh
 make release-tools
@@ -221,4 +236,4 @@ make release-snapshot
 ```
 
 The [release runbook](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
-describes publication.
+covers version choice, secrets, re-running a failed job, and yanking a release.
