@@ -55,18 +55,18 @@ func (info BuildInfo) networkEndpoint() (endpoint.Base, error) {
 			)
 		}
 		return base, nil
-	case "stage", "prod":
+	case "prod":
 		if !info.validDistributionMetadata() {
 			return endpoint.Base{}, newCommandError(
-				"invalid "+info.Environment+" build metadata",
-				"Uninstall this binary and install the correct "+info.Environment+" release.",
+				"invalid prod build metadata",
+				"Uninstall this binary and install the correct prod release.",
 			)
 		}
-		base, err := endpoint.Parse(info.ServerURL, info.Environment)
+		base, err := endpoint.Parse(info.ServerURL, "prod")
 		if err != nil {
 			return endpoint.Base{}, newCommandError(
-				"invalid "+info.Environment+" release endpoint",
-				"Uninstall this binary and install the correct "+info.Environment+" release.",
+				"invalid prod release endpoint",
+				"Uninstall this binary and install the correct prod release.",
 			)
 		}
 		return base, nil

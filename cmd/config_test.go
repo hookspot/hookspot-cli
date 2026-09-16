@@ -29,22 +29,9 @@ func TestOrdinaryCommandRejectsMissingExplicitConfig(t *testing.T) {
 	}
 }
 
-func TestStageRecoveryGuidanceUsesStageExecutable(t *testing.T) {
+func TestMarkerlessConfigRequiresExplicitMigration(t *testing.T) {
 	metadata := map[string]string{
-		"version": "1.2.3-stage.1", "server_url": "https://stage.example.invalid", "environment": "stage",
-		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
-	}
-	path := filepath.Join(t.TempDir(), "missing.toml")
-	result := runCommandProcess(t, "", metadata, "--config", path, "project", "list")
-	if result.err == nil || !strings.Contains(result.stderr, "hookspot-stage --config PATH login") ||
-		!strings.Contains(result.stderr, "hookspot-stage config migrate") || strings.Contains(result.stderr, "'hookspot ") {
-		t.Fatalf("unexpected stage guidance: %q", result.stderr)
-	}
-}
-
-func TestStageMarkerlessConfigUsesOnlyStageRecoveryCommands(t *testing.T) {
-	metadata := map[string]string{
-		"version": "1.2.3-stage.1", "server_url": "https://stage.example.invalid", "environment": "stage",
+		"version": "1.2.3", "server_url": "https://prod.example.invalid", "environment": "prod",
 		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
 	}
 	path := filepath.Join(t.TempDir(), "legacy.toml")
@@ -53,8 +40,8 @@ func TestStageMarkerlessConfigUsesOnlyStageRecoveryCommands(t *testing.T) {
 	}
 	result := runCommandProcess(t, "", metadata, "--config", path, "project", "list")
 	if result.err == nil || !strings.Contains(result.stderr, "explicit migration is required") ||
-		!strings.Contains(result.stderr, "hookspot-stage config migrate") || strings.Contains(result.stderr, "'hookspot ") {
-		t.Fatalf("unexpected markerless stage guidance: %q", result.stderr)
+		!strings.Contains(result.stderr, "hookspot config migrate") {
+		t.Fatalf("unexpected markerless guidance: %q", result.stderr)
 	}
 }
 
@@ -85,17 +72,6 @@ func TestLoginMayCreateMissingExplicitConfig(t *testing.T) {
 	}
 }
 
-func TestStageHelpUsesMetadataExecutableName(t *testing.T) {
-	metadata := map[string]string{
-		"version": "1.2.3-stage.1", "server_url": "https://stage.example.invalid", "environment": "stage",
-		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
-	}
-	result := runCommandProcess(t, "", metadata, "--help")
-	if result.err != nil || !strings.Contains(result.stdout, "hookspot-stage") {
-		t.Fatalf("stage help = %q, %v", result.stdout, result.err)
-	}
-}
-
 func TestCredentialOnlyCommandsIgnoreIncompleteProjectEnvironment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -110,7 +86,7 @@ func TestCredentialOnlyCommandsIgnoreIncompleteProjectEnvironment(t *testing.T) 
 		}
 	}))
 	defer server.Close()
-	environment := map[string]string{"HOOKSPOT_DEV_ORGANIZATION_SLUG": "incomplete"}
+	environment := map[string]string{"HOOKSPOT_ORGANIZATION_SLUG": "incomplete"}
 
 	for _, test := range []struct {
 		name string
@@ -143,15 +119,12 @@ func TestLogoutClearsSavedKeyWithoutCredentialResolution(t *testing.T) {
 		wantWarning bool
 	}{
 		{
-			name: "invalid unused generic assertion",
-			environment: map[string]string{
-				"HOOKSPOT_CLI_KEY": "generic-key", "HOOKSPOT_ENVIRONMENT": "prod",
-			},
+			name: "no environment key",
 		},
 		{
-			name: "CLI flag does not hide scoped environment key",
+			name: "CLI flag does not hide environment key",
 			environment: map[string]string{
-				"HOOKSPOT_DEV_CLI_KEY": "scoped-key",
+				"HOOKSPOT_CLI_KEY": "environment-key",
 			},
 			args:        []string{"--cli-key", "flag-key"},
 			wantWarning: true,
@@ -205,7 +178,7 @@ func TestConfigMigrateValidatesAndImportsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := runCommandProcessEnvironment(t, "", developmentMetadata(server.URL), map[string]string{
-		"HOOKSPOT_DEV_CLI_KEY": "ignored-key",
+		"HOOKSPOT_CLI_KEY": "ignored-key",
 	}, "--config", destination, "config", "migrate", "--from", source, "--confirm-environment", "dev")
 	if result.err != nil {
 		t.Fatalf("migration failed: %v\n%s", result.err, result.stderr)

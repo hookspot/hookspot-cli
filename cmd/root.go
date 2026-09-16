@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +33,7 @@ var rootCmd = &cobra.Command{
 	Short:         "Forward hookspot webhook events to your local machine",
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	Version:       version,
 	Long: `hookspot connects to your hookspot project over a websocket
 and proxies incoming webhook events to a local host and port.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -74,7 +73,6 @@ and proxies incoming webhook events to a local host and port.`,
 
 // ExecuteContext runs the root command with ctx.
 func ExecuteContext(ctx context.Context) error {
-	rootCmd.Use = executableName()
 	return rootCmd.ExecuteContext(ctx)
 }
 
@@ -84,6 +82,7 @@ func Execute() error {
 }
 
 func init() {
+	rootCmd.Flags().BoolP("version", "v", false, "Get the version of the Hookspot CLI")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "environment-specific config file")
 	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer a scoped environment variable)")
 	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
@@ -113,17 +112,5 @@ func resolveCommandConfig(cmd *cobra.Command, needProject bool) (config.Config, 
 }
 
 func configRecoveryHint() string {
-	name := executableName()
-	return fmt.Sprintf("Check the selected config path and file. For a fresh login, use an unused path with '%s --config PATH login'. For a legacy file, see '%s config migrate --help'.", name, name)
-}
-
-func executableName() string {
-	if CurrentBuildInfo().Environment == "stage" {
-		return "hookspot-stage"
-	}
-	return "hookspot"
-}
-
-func scopedVariable(suffix string) string {
-	return "HOOKSPOT_" + strings.ToUpper(CurrentBuildInfo().Environment) + "_" + suffix
+	return "Check the selected config path and file. For a fresh login, use an unused path with 'hookspot --config PATH login'. For a legacy file, see 'hookspot config migrate --help'."
 }

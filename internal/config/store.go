@@ -103,7 +103,7 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 }
 
 func newLocalStore(opts Options) (*Store, error) {
-	if opts.ExplicitPathSet || configPathEnvironmentSet(opts.Environment) {
+	if opts.ExplicitPathSet || configPathEnvironmentSet() {
 		return nil, errors.New("--local cannot be combined with --config or a CONFIG_FILE environment override")
 	}
 
@@ -177,12 +177,7 @@ func (s *Store) Resolve(flags Overrides) (Config, error) {
 	cfg := Config{}
 	if flags.CLIKey != nil {
 		cfg.CLIKey = *flags.CLIKey
-	} else if value, set := os.LookupEnv(s.scopedName("CLI_KEY")); set {
-		cfg.CLIKey = value
 	} else if value, set := os.LookupEnv("HOOKSPOT_CLI_KEY"); set {
-		if err := requireLegacyAssertion(s.environment); err != nil {
-			return Config{}, err
-		}
 		cfg.CLIKey = value
 	} else {
 		cfg.CLIKey = s.record.CLIKey
@@ -195,23 +190,9 @@ func (s *Store) Resolve(flags Overrides) (Config, error) {
 		cfg.Project = *flags.Project
 		return cfg, nil
 	}
-	organization, organizationSet := os.LookupEnv(s.scopedName("ORGANIZATION_SLUG"))
-	project, projectSet := os.LookupEnv(s.scopedName("PROJECT_SLUG"))
+	organization, organizationSet := os.LookupEnv("HOOKSPOT_ORGANIZATION_SLUG")
+	project, projectSet := os.LookupEnv("HOOKSPOT_PROJECT_SLUG")
 	if organizationSet || projectSet {
-		if organization == "" || project == "" || !organizationSet || !projectSet {
-			return Config{}, fmt.Errorf("%s and %s must both be set and nonempty", s.scopedName("ORGANIZATION_SLUG"), s.scopedName("PROJECT_SLUG"))
-		}
-		cfg.OrganizationSlug = organization
-		cfg.ProjectSlug = project
-		return cfg, nil
-	}
-
-	organization, organizationSet = os.LookupEnv("HOOKSPOT_ORGANIZATION_SLUG")
-	project, projectSet = os.LookupEnv("HOOKSPOT_PROJECT_SLUG")
-	if organizationSet || projectSet {
-		if err := requireLegacyAssertion(s.environment); err != nil {
-			return Config{}, err
-		}
 		if organization == "" || project == "" || !organizationSet || !projectSet {
 			return Config{}, errors.New("HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG must both be set and nonempty")
 		}
@@ -248,15 +229,12 @@ func (s *Store) ClearCLIKey() error {
 	return s.persist(record, !s.exists)
 }
 
-// EnvironmentCLIKeyActive reports whether logout leaves a nonempty scoped or
-// correctly asserted legacy key active. Explicit flags are intentionally
-// irrelevant because they do not outlive this invocation.
+// EnvironmentCLIKeyActive reports whether logout leaves a nonempty
+// HOOKSPOT_CLI_KEY active. Explicit flags are intentionally irrelevant
+// because they do not outlive this invocation.
 func (s *Store) EnvironmentCLIKeyActive() bool {
-	if value, set := os.LookupEnv(s.scopedName("CLI_KEY")); set {
-		return value != ""
-	}
 	value, set := os.LookupEnv("HOOKSPOT_CLI_KEY")
-	return set && value != "" && requireLegacyAssertion(s.environment) == nil
+	return set && value != ""
 }
 
 // Import publishes a legacy key and project together without overwriting a
@@ -294,18 +272,9 @@ func selectPath(opts Options) (string, bool, error) {
 		}
 		return opts.ExplicitPath, false, nil
 	}
-	if path, set := os.LookupEnv(scopedName(opts.Environment, "CONFIG_FILE")); set {
-		if path == "" {
-			return "", false, fmt.Errorf("%s config path is empty", strings.ToLower(opts.Environment))
-		}
-		return path, false, nil
-	}
 	if path, set := os.LookupEnv("HOOKSPOT_CONFIG_FILE"); set {
-		if err := requireLegacyAssertion(opts.Environment); err != nil {
-			return "", false, err
-		}
 		if path == "" {
-			return "", false, errors.New("legacy config path is empty")
+			return "", false, errors.New("HOOKSPOT_CONFIG_FILE is empty")
 		}
 		return path, false, nil
 	}
@@ -322,10 +291,7 @@ func selectPath(opts Options) (string, bool, error) {
 	return globalPath, true, err
 }
 
-func configPathEnvironmentSet(environment string) bool {
-	if _, set := os.LookupEnv(scopedName(environment, "CONFIG_FILE")); set {
-		return true
-	}
+func configPathEnvironmentSet() bool {
 	_, set := os.LookupEnv("HOOKSPOT_CONFIG_FILE")
 	return set
 }
@@ -346,25 +312,6 @@ func globalConfigPath(environment string) (string, error) {
 	return filepath.Join(home, ".config", "hookspot", environment, "config.toml"), nil
 }
 
-func requireLegacyAssertion(environment string) error {
-	asserted, set := os.LookupEnv("HOOKSPOT_ENVIRONMENT")
-	if !set || asserted == "" {
-		return errors.New("legacy HOOKSPOT variables require HOOKSPOT_ENVIRONMENT to match this binary")
-	}
-	if asserted != environment {
-		return fmt.Errorf("HOOKSPOT_ENVIRONMENT is %q, binary environment is %q", asserted, environment)
-	}
-	return nil
-}
-
-func (s *Store) scopedName(suffix string) string {
-	return scopedName(s.environment, suffix)
-}
-
-func scopedName(environment, suffix string) string {
-	return "HOOKSPOT_" + strings.ToUpper(environment) + "_" + suffix
-}
-
 func validEnvironment(environment string) bool {
-	return environment == "dev" || environment == "stage" || environment == "prod"
+	return environment == "dev" || environment == "prod"
 }

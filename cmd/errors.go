@@ -48,7 +48,7 @@ func wrapCommandError(message, hint string, cause error) error {
 func loginRequiredError() error {
 	return newCommandError(
 		"not logged in",
-		fmt.Sprintf("Run '%s login' or set %s.", executableName(), scopedVariable("CLI_KEY")),
+		"Run 'hookspot login' or set HOOKSPOT_CLI_KEY.",
 	)
 }
 
@@ -82,7 +82,7 @@ func fatalErrorMessage(err error) (string, string) {
 			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
 				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release for this environment."
 		case apiErr.StatusCode == http.StatusUnauthorized:
-			return "authentication failed: the Hookspot CLI key was rejected", fmt.Sprintf("Check the key, then run '%s login' again or update %s.", executableName(), scopedVariable("CLI_KEY"))
+			return "authentication failed: the Hookspot CLI key was rejected", "Check the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
 		case apiErr.StatusCode == http.StatusForbidden:
 			return "authorization failed: the Hookspot CLI key cannot access this resource", "Check that the key belongs to the selected project and has the required access."
 		case apiErr.StatusCode == http.StatusTooManyRequests:
@@ -98,7 +98,7 @@ func fatalErrorMessage(err error) (string, string) {
 	if errors.As(err, &sessionErr) {
 		switch sessionErr.Kind {
 		case ws.SessionAuthentication:
-			return "authentication failed: the WebSocket session was rejected", fmt.Sprintf("Run '%s login' again or update %s.", executableName(), scopedVariable("CLI_KEY"))
+			return "authentication failed: the WebSocket session was rejected", "Run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
 		case ws.SessionProtocol:
 			return err.Error(), "The server sent an invalid WebSocket message. Retry the command; if it continues, report the error."
 		case ws.SessionHandler:

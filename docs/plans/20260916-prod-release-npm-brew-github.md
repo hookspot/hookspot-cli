@@ -384,20 +384,20 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 - Modify: `cmd/config_test.go`, `cmd/version_test.go`, `cmd/errors_test.go`,
   `internal/endpoint/endpoint_test.go`, `internal/config/store_test.go`
 
-- [ ] `cmd/build_info.go`: `networkEndpoint` handles `dev` and `prod` only;
+- [x] `cmd/build_info.go`: `networkEndpoint` handles `dev` and `prod` only;
       the default branch keeps rejecting unknown environments
-- [ ] `cmd/root.go`: delete `executableName` and the `rootCmd.Use =
+- [x] `cmd/root.go`: delete `executableName` and the `rootCmd.Use =
   executableName()` assignment (`Use` is already `hookspot`); replace the
       remaining callers in `cmd/root.go`, `cmd/errors.go`, `cmd/listen.go`,
       `cmd/project.go` with the literal `hookspot`
-- [ ] `internal/endpoint/endpoint.go` and `internal/config/store.go`: accept
+- [x] `internal/endpoint/endpoint.go` and `internal/config/store.go`: accept
       `dev|prod` only
-- [ ] `cmd/version.go`: point `latestVersion` at `repos/bgr11n/hookspot-cli`
-- [ ] tests: remove stage cases; add cases asserting `stage` is rejected by
+- [x] `cmd/version.go`: point `latestVersion` at `repos/bgr11n/hookspot-cli`
+- [x] tests: remove stage cases; add cases asserting `stage` is rejected by
       `endpoint.Parse`, `validEnvironment`, and `networkEndpoint`; keep
       dev/prod success cases; assert the upgrade-check request path; rename
       the `-stage.N` semver fixtures in `cmd/version_test.go` to `-rc.N`
-- [ ] run `make test`, `make vet`, and `make release-snapshot` - must pass
+- [x] run `make test`, `make vet`, and `make release-snapshot` - must pass
       before task 5
 
 ### Task 5: Create the npm package skeleton and launcher

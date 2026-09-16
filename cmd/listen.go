@@ -65,14 +65,14 @@ var listenCmd = &cobra.Command{
 		}
 		if (cfg.OrganizationSlug == "") != (cfg.ProjectSlug == "") {
 			return newCommandError(
-				fmt.Sprintf("project selection requires both %s and %s", scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
-				fmt.Sprintf("Set both variables, or unset them and run '%s project use'.", executableName()),
+				"project selection requires both HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG",
+				"Set both variables, or unset them and run 'hookspot project use'.",
 			)
 		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
 				"no active project",
-				fmt.Sprintf("Run '%s project use' or set %s and %s.", executableName(), scopedVariable("ORGANIZATION_SLUG"), scopedVariable("PROJECT_SLUG")),
+				"Run 'hookspot project use' or set HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.",
 			)
 		}
 

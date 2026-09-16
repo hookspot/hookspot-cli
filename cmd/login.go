@@ -32,7 +32,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		if cliKey == "" {
-			return newCommandError("no CLI key provided", "Pass a CLI key when prompted or set "+scopedVariable("CLI_KEY")+".")
+			return newCommandError("no CLI key provided", "Pass a CLI key when prompted or set HOOKSPOT_CLI_KEY.")
 		}
 
 		client := api.New(activeEndpoint, cliKey)

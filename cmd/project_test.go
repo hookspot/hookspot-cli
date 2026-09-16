@@ -304,7 +304,7 @@ func TestProjectUseSupportsInteractiveNameAndUIDForms(t *testing.T) {
 		{
 			name: "no arguments selects sole project despite incomplete slug override", listed: projects[:1],
 			wantRequests: "/cli/projects", wantUID: "proj_storefront",
-			environment: map[string]string{"HOOKSPOT_DEV_ORGANIZATION_SLUG": "irrelevant"},
+			environment: map[string]string{"HOOKSPOT_ORGANIZATION_SLUG": "irrelevant"},
 		},
 		{
 			name: "organization with spaces goes directly to exact name filtering", args: []string{"acme inc."}, listed: projects[1:2],
@@ -522,7 +522,7 @@ func TestProjectUseLocalCreatesRecordFromPersistedValuesOnly(t *testing.T) {
 		{
 			name:         "copies persisted global key instead of environment key",
 			global:       "schema_version = 1\nenvironment = 'dev'\ncli_key = 'persisted-key'\nproject = 'old-project'\n",
-			environment:  map[string]string{"HOOKSPOT_DEV_CLI_KEY": "environment-key"},
+			environment:  map[string]string{"HOOKSPOT_CLI_KEY": "environment-key"},
 			wantLocalKey: "persisted-key", forbiddenKey: "environment-key", globalExists: true,
 		},
 		{
@@ -811,7 +811,7 @@ func TestProjectUseLocalRejectsCustomConfigBeforeAPI(t *testing.T) {
 		environment map[string]string
 	}{
 		{name: "explicit flag", args: []string{"--config", "config.toml"}},
-		{name: "scoped environment", environment: map[string]string{"HOOKSPOT_DEV_CONFIG_FILE": "config.toml"}},
+		{name: "environment variable", environment: map[string]string{"HOOKSPOT_CONFIG_FILE": "config.toml"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			home := t.TempDir()

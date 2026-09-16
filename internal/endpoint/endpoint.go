@@ -17,7 +17,7 @@ type Base struct {
 
 // Parse validates a build-time deployment URL for environment.
 func Parse(raw, environment string) (Base, error) {
-	if environment != "dev" && environment != "stage" && environment != "prod" {
+	if environment != "dev" && environment != "prod" {
 		return Base{}, fmt.Errorf("unknown build environment %q", environment)
 	}
 	if raw == "" {

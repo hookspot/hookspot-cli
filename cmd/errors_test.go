@@ -46,7 +46,7 @@ func TestHandleError(t *testing.T) {
 			name:     "command guidance",
 			err:      loginRequiredError(),
 			wantCode: 1,
-			want:     "not logged in\n\nRun 'hookspot login' or set HOOKSPOT_DEV_CLI_KEY.\n",
+			want:     "not logged in\n\nRun 'hookspot login' or set HOOKSPOT_CLI_KEY.\n",
 		},
 		{
 			name: "wrapped unauthorized API response",
@@ -57,7 +57,7 @@ func TestHandleError(t *testing.T) {
 				Message:    "invalid key",
 			}),
 			wantCode: 1,
-			want:     "authentication failed: the Hookspot CLI key was rejected\n\nCheck the key, then run 'hookspot login' again or update HOOKSPOT_DEV_CLI_KEY.\n",
+			want:     "authentication failed: the Hookspot CLI key was rejected\n\nCheck the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
 		},
 		{
 			name:     "API rate limit",
@@ -105,7 +105,7 @@ func TestHandleError(t *testing.T) {
 				Err:  errors.New("unauthorized"),
 			},
 			wantCode: 1,
-			want:     "authentication failed: the WebSocket session was rejected\n\nRun 'hookspot login' again or update HOOKSPOT_DEV_CLI_KEY.\n",
+			want:     "authentication failed: the WebSocket session was rejected\n\nRun 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
 		},
 		{
 			name:     "generic error",

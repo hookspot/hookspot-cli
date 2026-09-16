@@ -204,7 +204,7 @@ func persistProjectSelection(ctx context.Context, store *config.Store, project a
 }
 
 func projectUseHint() string {
-	return fmt.Sprintf("Run '%s project use --help' for selection forms.", executableName())
+	return "Run 'hookspot project use --help' for selection forms."
 }
 
 func projectDisplayName(project api.Project) string {

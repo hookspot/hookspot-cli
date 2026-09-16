@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,8 +107,8 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := map[string]string{
-		"version": "1.2.3-stage.4", "server_url": "https://STAGE.example.invalid:0443/prefix/",
-		"environment": "stage", "commit": strings.Repeat("a", 40),
+		"version": "1.2.3-rc.4", "server_url": "https://PROD.example.invalid:0443/prefix/",
+		"environment": "prod", "commit": strings.Repeat("a", 40),
 		"source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
 	}
 	result := runCommandProcess(t, "", metadata, "--config", badConfig, "version", "--json")
@@ -118,9 +120,9 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 		t.Fatalf("decode JSON: %v\n%s", err, result.stdout)
 	}
 	want := map[string]string{
-		"version": metadata["version"], "environment": "stage", "commit": metadata["commit"],
+		"version": metadata["version"], "environment": "prod", "commit": metadata["commit"],
 		"source_date": metadata["source_date"], "build_kind": "release", "go_version": runtime.Version(),
-		"os": runtime.GOOS, "arch": runtime.GOARCH, "server_url": "https://stage.example.invalid/prefix",
+		"os": runtime.GOOS, "arch": runtime.GOARCH, "server_url": "https://prod.example.invalid/prefix",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("JSON keys = %v", got)
@@ -135,24 +137,130 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 	}
 }
 
-func TestHumanVersionUsesReadableLabels(t *testing.T) {
-	info := BuildInfo{
-		Version: "1.2.3", Environment: "prod", Commit: strings.Repeat("c", 40),
-		SourceDate: "2026-09-05T10:11:12Z", BuildKind: "release", GoVersion: "go1.26.8",
-		OS: "darwin", Arch: "arm64", ServerURL: "https://prod.example.invalid",
+func TestVersionPrintsExecutableNameAndVersion(t *testing.T) {
+	metadata := developmentMetadata("")
+	result := runCommandProcess(t, "", metadata, "version")
+	if result.err != nil {
+		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
 	}
+	if result.stdout != "hookspot version dev\n" {
+		t.Fatalf("stdout = %q", result.stdout)
+	}
+}
+
+func TestVersionFlagMatchesVersionCommand(t *testing.T) {
+	metadata := developmentMetadata("")
+	for _, args := range [][]string{{"--version"}, {"-v"}} {
+		result := runCommandProcess(t, "", metadata, args...)
+		if result.err != nil {
+			t.Fatalf("%v failed: %v\nstderr: %s", args, result.err, result.stderr)
+		}
+		if result.stdout != "hookspot version dev\n" {
+			t.Fatalf("%v stdout = %q", args, result.stdout)
+		}
+	}
+}
+
+func TestNeedsToUpgrade(t *testing.T) {
+	cases := []struct {
+		current, latest string
+		want            bool
+	}{
+		{"1.2.3", "v1.2.3", false},
+		{"1.2.3", "1.2.3", false},
+		{"1.2.3", "1.2.4", true},
+		{"v1.2.3", "v1.2.4", true},
+		{"1.9.1", "1.10.0", true},
+		{"1.10.0", "1.9.1", false},
+		{"1.9.1", "1.10.0-rc.4", false},
+		{"1.10.0", "1.10.1-rc.1", false},
+		{"1.9.0-rc.4", "1.9.0", true},
+		{"1.10.0-rc.4", "1.9.1", false},
+		{"1.9.0-rc.3", "1.9.0-rc.4", true},
+		{"1.9.0-rc.9", "1.9.0-rc.10", true},
+		{"1.9.0-rc.4", "1.9.0-rc.3", false},
+		{"1.9.0-rc.4", "1.9.0-rc.4", false},
+		{"1.2.3", "", false},
+	}
+	for _, c := range cases {
+		if got := needsToUpgrade(c.current, c.latest); got != c.want {
+			t.Errorf("needsToUpgrade(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
+		}
+	}
+}
+
+func stubLatestRelease(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	original := githubAPIBaseURL
+	githubAPIBaseURL = server.URL
+	t.Cleanup(func() {
+		githubAPIBaseURL = original
+		server.Close()
+	})
+}
+
+func TestLatestVersionReadsTagFromGitHub(t *testing.T) {
+	var gotPath, gotAccept, gotUserAgent string
+	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAccept = r.Header.Get("Accept")
+		gotUserAgent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v2.5.0","name":"v2.5.0"}`))
+	})
+	if got := latestVersion(context.Background(), "1.0.0"); got != "v2.5.0" {
+		t.Fatalf("latestVersion = %q", got)
+	}
+	if gotPath != "/repos/bgr11n/hookspot-cli/releases/latest" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotAccept != "application/vnd.github+json" {
+		t.Fatalf("accept = %q", gotAccept)
+	}
+	if gotUserAgent != "hookspot-cli/1.0.0" {
+		t.Fatalf("user agent = %q", gotUserAgent)
+	}
+}
+
+func TestLatestVersionIgnoresFailures(t *testing.T) {
+	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	})
+	if got := latestVersion(context.Background(), "1.0.0"); got != "" {
+		t.Fatalf("latestVersion on 403 = %q", got)
+	}
+	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	})
+	if got := latestVersion(context.Background(), "1.0.0"); got != "" {
+		t.Fatalf("latestVersion on malformed body = %q", got)
+	}
+}
+
+func TestCheckLatestVersionPrintsUpgradeNotice(t *testing.T) {
+	requests := 0
+	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"tag_name":"v1.3.0"}`))
+	})
+
 	var output bytes.Buffer
-	if err := writeHumanVersion(&output, "hookspot", info); err != nil {
-		t.Fatal(err)
+	checkLatestVersion(context.Background(), &output, "1.2.3")
+	if output.String() != "A newer version of the Hookspot CLI is available, please update to: v1.3.0\n" {
+		t.Fatalf("output = %q", output.String())
 	}
-	want := "hookspot 1.2.3\n" +
-		"environment: prod\n" +
-		"server: https://prod.example.invalid\n" +
-		"source: " + strings.Repeat("c", 40) + " (2026-09-05T10:11:12Z)\n" +
-		"build: release\n" +
-		"platform: go1.26.8 darwin/arm64\n"
-	if output.String() != want {
-		t.Fatalf("output = %q, want %q", output.String(), want)
+
+	output.Reset()
+	checkLatestVersion(context.Background(), &output, "1.3.0")
+	if output.Len() != 0 {
+		t.Fatalf("up-to-date output = %q", output.String())
+	}
+
+	output.Reset()
+	checkLatestVersion(context.Background(), &output, "dev")
+	if output.Len() != 0 || requests != 2 {
+		t.Fatalf("dev build checked GitHub: output = %q, requests = %d", output.String(), requests)
 	}
 }
 
@@ -245,7 +353,7 @@ func TestNetworkCommandRejectsReleaseMetadataBeforeConfigOrPrompt(t *testing.T) 
 		t.Fatal(err)
 	}
 	metadata := map[string]string{
-		"version": "dev", "server_url": "", "environment": "stage",
+		"version": "dev", "server_url": "", "environment": "prod",
 		"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
 	}
 	result := runCommandProcess(t, "credential-sentinel\n", metadata, "--config", badConfig, "login")
@@ -253,7 +361,7 @@ func TestNetworkCommandRejectsReleaseMetadataBeforeConfigOrPrompt(t *testing.T) 
 		t.Fatal("login succeeded with incomplete release metadata")
 	}
 	combined := result.stdout + result.stderr
-	if !strings.Contains(combined, "install the correct stage release") {
+	if !strings.Contains(combined, "install the correct prod release") {
 		t.Fatalf("missing release guidance:\n%s", combined)
 	}
 	for _, forbidden := range []string{"Enter your", "credential-sentinel", "TOML"} {
@@ -268,34 +376,70 @@ func TestCompleteSnapshotMetadataReachesCommandConfiguration(t *testing.T) {
 	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
 		t.Fatal(err)
 	}
-	for _, environment := range []string{"stage", "prod"} {
-		t.Run(environment, func(t *testing.T) {
-			metadata := map[string]string{
-				"version": "1.2.3-snapshot", "server_url": "https://" + environment + ".example.invalid",
-				"environment": environment, "commit": strings.Repeat("b", 40),
-				"source_date": "2026-09-05T10:11:12Z", "build_kind": "snapshot",
-			}
-			result := runCommandProcess(t, "", metadata, "--config", badConfig, "login")
-			if result.err == nil {
-				t.Fatal("login accepted malformed config")
-			}
-			if !strings.Contains(result.stderr, "load configuration") {
-				t.Fatalf("snapshot did not reach config validation:\n%s", result.stderr)
-			}
-			if strings.Contains(result.stderr, "build metadata") {
-				t.Fatalf("snapshot was rejected as build metadata:\n%s", result.stderr)
-			}
-		})
+	metadata := map[string]string{
+		"version": "1.2.3-snapshot", "server_url": "https://prod.example.invalid",
+		"environment": "prod", "commit": strings.Repeat("b", 40),
+		"source_date": "2026-09-05T10:11:12Z", "build_kind": "snapshot",
+	}
+	result := runCommandProcess(t, "", metadata, "--config", badConfig, "login")
+	if result.err == nil {
+		t.Fatal("login accepted malformed config")
+	}
+	if !strings.Contains(result.stderr, "load configuration") {
+		t.Fatalf("snapshot did not reach config validation:\n%s", result.stderr)
+	}
+	if strings.Contains(result.stderr, "build metadata") {
+		t.Fatalf("snapshot was rejected as build metadata:\n%s", result.stderr)
 	}
 }
 
 func TestIncompleteSnapshotMetadataStopsBeforeConfiguration(t *testing.T) {
 	metadata := map[string]string{
-		"version": "1.2.3-snapshot", "server_url": "https://stage.example.invalid", "environment": "stage",
+		"version": "1.2.3-snapshot", "server_url": "https://prod.example.invalid", "environment": "prod",
 		"commit": "unknown", "source_date": "unknown", "build_kind": "snapshot",
 	}
 	result := runCommandProcess(t, "", metadata, "--config", filepath.Join(t.TempDir(), "missing.toml"), "login")
 	if result.err == nil || !strings.Contains(result.stderr, "build metadata") {
 		t.Fatalf("incomplete snapshot was not rejected:\n%s", result.stderr)
 	}
+}
+
+func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
+	release := BuildInfo{
+		Version: "1.2.3", Commit: strings.Repeat("c", 40), SourceDate: "2026-09-05T10:11:12Z",
+		BuildKind: "release", ServerURL: "https://prod.example.invalid",
+	}
+	tests := []struct {
+		name        string
+		info        BuildInfo
+		want        string
+		wantMessage string
+	}{
+		{name: "dev", info: BuildInfo{Environment: "dev", ServerURL: "http://127.0.0.1:4000"}, want: "http://127.0.0.1:4000"},
+		{name: "prod", info: withEnvironment(release, "prod"), want: "https://prod.example.invalid"},
+		{name: "stage", info: withEnvironment(release, "stage"), wantMessage: `unknown build environment "stage"`},
+		{name: "unknown", info: withEnvironment(release, "qa"), wantMessage: `unknown build environment "qa"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			base, err := test.info.networkEndpoint()
+			if test.wantMessage != "" {
+				if err == nil || err.Error() != test.wantMessage {
+					t.Fatalf("networkEndpoint() error = %v, want %q", err, test.wantMessage)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if base.String() != test.want {
+				t.Fatalf("networkEndpoint() = %q, want %q", base.String(), test.want)
+			}
+		})
+	}
+}
+
+func withEnvironment(info BuildInfo, environment string) BuildInfo {
+	info.Environment = environment
+	return info
 }
