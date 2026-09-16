@@ -212,7 +212,7 @@ func TestLatestVersionReadsTagFromGitHub(t *testing.T) {
 	if got := latestVersion(context.Background(), "1.0.0"); got != "v2.5.0" {
 		t.Fatalf("latestVersion = %q", got)
 	}
-	if gotPath != "/repos/bgr11n/hookspot-cli/releases/latest" {
+	if gotPath != "/repos/hookspot/hookspot-cli/releases/latest" {
 		t.Fatalf("path = %q", gotPath)
 	}
 	if gotAccept != "application/vnd.github+json" {

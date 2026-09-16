@@ -19,7 +19,7 @@ Every release contains exactly six platform archives and one checksum file.
 Verify the exact archive entry before extracting it, then install `hookspot`
 or `hookspot.exe` for production, or `hookspot-stage` or
 `hookspot-stage.exe` for staging. In a downloaded archive, follow the adjacent
-`INSTALL.md`. In the repository, see the [installation guide](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/INSTALL.md)
+`INSTALL.md`. In the repository, see the [installation guide](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/INSTALL.md)
 for shell and PowerShell commands, updating, macOS verification, and uninstalling.
 
 Confirm the installed binary before logging in:
@@ -220,5 +220,5 @@ make release-check
 make release-snapshot
 ```
 
-The [release runbook](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
+The [release runbook](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
 describes publication.

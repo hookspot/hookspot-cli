@@ -81,7 +81,7 @@ changelog:
 
 release:
   github:
-    owner: bgr11n
+    owner: hookspot
     name: hookspot-cli
   prerelease: auto
   replace_existing_artifacts: true
@@ -94,7 +94,7 @@ brews:
     ids:
       - cli
     repository:
-      owner: bgr11n
+      owner: hookspot
       name: homebrew-hookspot
       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
     directory: Formula

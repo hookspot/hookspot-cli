@@ -68,7 +68,7 @@ func latestVersion(ctx context.Context, current string) string {
 	ctx, cancel := context.WithTimeout(ctx, latestReleaseTimeout)
 	defer cancel()
 
-	url := githubAPIBaseURL + "/repos/bgr11n/hookspot-cli/releases/latest"
+	url := githubAPIBaseURL + "/repos/hookspot/hookspot-cli/releases/latest"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return ""

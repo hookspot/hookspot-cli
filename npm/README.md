@@ -12,4 +12,4 @@ hookspot version --json
 ```
 
 Usage, login, and the other install channels are documented in the
-[hookspot-cli repository](https://github.com/bgr11n/hookspot-cli#readme).
+[hookspot-cli repository](https://github.com/hookspot/hookspot-cli#readme).

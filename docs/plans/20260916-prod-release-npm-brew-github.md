@@ -9,8 +9,8 @@ tag push:
   SHA-256 checksum file, exactly as today.
 - **npm**: a single `hookspot` package bundling all six binaries with a Node
   launcher (the hookdeck-cli layout). `npm install -g hookspot`.
-- **Homebrew**: a `hookspot` formula in the `bgr11n/homebrew-hookspot` tap.
-  `brew install bgr11n/hookspot/hookspot`. Works on macOS and Linux and does not
+- **Homebrew**: a `hookspot` formula in the `hookspot/homebrew-hookspot` tap.
+  `brew install hookspot/hookspot/hookspot`. Works on macOS and Linux and does not
   quarantine the unsigned binary (casks would).
 
 Publication moves into a GitHub Actions workflow triggered by `v*` tags.
@@ -30,7 +30,7 @@ This replaces the bespoke, maintainer-run publisher in `scripts/release.sh`
 ## Context (from discovery)
 
 - **Project**: Go 1.26.8 cobra CLI, module `hookspot`, public repo
-  `bgr11n/hookspot-cli`. No LICENSE file; `docs/releases/THIRD_PARTY_NOTICES.txt`
+  `hookspot/hookspot-cli`. No LICENSE file; `docs/releases/THIRD_PARTY_NOTICES.txt`
   exists.
 - **Existing release flow**: `.goreleaser.yaml` (v2, `release: disable`) builds
   six targets inside a locked Docker image (`Dockerfile.release`,
@@ -51,9 +51,12 @@ This replaces the bespoke, maintainer-run publisher in `scripts/release.sh`
   during review): no top-level `after:` hooks in OSS; `goreleaser check` exits
   2 when a deprecated section such as `brews` is present; hooks run without a
   shell; `dist/artifacts.json` is written after publishing.
-- **Bug**: `cmd/version.go` queries `repos/hookspot/hookspot-cli/releases/latest`;
-  that repository does not exist. The real one is `bgr11n/hookspot-cli`.
-- **External state**: npm name `hookspot` is unclaimed; `bgr11n/homebrew-hookspot`
+- **Repository owner**: at planning time the repository lived under `bgr11n`
+  and `cmd/version.go` queried `repos/hookspot/hookspot-cli/releases/latest`,
+  which did not exist. The repository has since been transferred to the
+  `hookspot` organization (`bgr11n/hookspot-cli` only redirects), so every
+  owner reference targets `hookspot`.
+- **External state**: npm name `hookspot` is unclaimed; `hookspot/homebrew-hookspot`
   does not exist; the repo has no Actions secrets; old tags `v0.0.0-stage.1`,
   `stage_*` and one pre-release exist.
 - **Dirty tree**: 17 modified files are uncommitted at planning time. Commit or
@@ -119,13 +122,13 @@ git tag v1.2.3 && git push origin v1.2.3
 │     │  npm/binaries/<os>-<arch>/                             │
 │     ├─ 6 archives + checksums                                │
 │     ├─ creates GitHub Release, uploads 7 assets              │
-│     └─ pushes Formula/hookspot.rb to bgr11n/homebrew-hookspot│
+│     └─ pushes hookspot.rb → hookspot/homebrew-hookspot       │
 │   setup-node; npm version ${TAG#v}; npm publish --provenance │
 ├──────────────────────────────────────────────────────────────┤
 │ smoke (needs release; matrix ubuntu/macos/windows)           │
 │   gh release download + checksum → hookspot version --json   │
 │   npm install -g hookspot@X → hookspot version --json        │
-│   macOS: brew install bgr11n/hookspot/hookspot → version     │
+│   macOS: brew install hookspot/hookspot/hookspot → version   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -237,7 +240,7 @@ brews:
   - name: hookspot
     ids: [cli]
     repository:
-      owner: bgr11n
+      owner: hookspot
       name: homebrew-hookspot
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
@@ -360,7 +363,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
       `hooks.post` as in Technical Details (`sh -c`)
 - [x] archive `cli`: name `hookspot_{{ .Version }}_{{ .Os }}_{{ .Arch }}`,
       same bundled files; checksum `hookspot_{{ .Version }}_checksums.txt`
-- [x] `release`: enabled, `github.owner/name` `bgr11n/hookspot-cli`,
+- [x] `release`: enabled, `github.owner/name` `hookspot/hookspot-cli`,
       `prerelease: auto`, `replace_existing_artifacts: true`,
       `mode: keep-existing`; `changelog.disable: true` stays
 - [x] add the `brews` section from Technical Details
@@ -392,7 +395,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
       `cmd/project.go` with the literal `hookspot`
 - [x] `internal/endpoint/endpoint.go` and `internal/config/store.go`: accept
       `dev|prod` only
-- [x] `cmd/version.go`: point `latestVersion` at `repos/bgr11n/hookspot-cli`
+- [x] `cmd/version.go`: point `latestVersion` at `repos/hookspot/hookspot-cli`
 - [x] tests: remove stage cases; add cases asserting `stage` is rejected by
       `endpoint.Parse`, `validEnvironment`, and `networkEndpoint`; keep
       dev/prod success cases; assert the upgrade-check request path; rename
@@ -410,7 +413,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - [x] `npm/package.json`: name `hookspot`, version `0.0.0`, `bin`
       `{hookspot: bin/hookspot.js}`, `files` `[bin/, binaries/]`, `engines.node
-  > =18`, repository/bugs/homepage pointing at `bgr11n/hookspot-cli`,
+  > =18`, repository/bugs/homepage pointing at `hookspot/hookspot-cli`,
     `license`set per Post-Completion decision (default`UNLICENSED`until a
     LICENSE file exists), no`scripts`, no dependencies
 - [x] `npm/bin/hookspot.js`: shebang; `resolveBinary(platform, arch, root)`
@@ -445,6 +448,8 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 - [x] verify: push the branch and confirm the workflow is green via `gh run
   view`; fix and re-push until green
 - [x] run `make test` - must pass before task 7
+- ➕ the repository owner (`bgr11n` → `hookspot` organization) was corrected in
+  task 7 across `.goreleaser.yaml`, `cmd/version.go`, `npm/`, and the docs
 
 ### Task 7: Add the release workflow (GitHub Release, Homebrew, npm)
 
@@ -485,7 +490,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
       `windows-latest`; `permissions: contents: read`): run `scripts/smoke.sh`;
       `npm install -g hookspot@$VERSION` with up to 5 retries 30s apart for
       registry propagation, then `hookspot version --json`; on macOS
-      additionally `brew install bgr11n/hookspot/hookspot` then `hookspot
+      additionally `brew install hookspot/hookspot/hookspot` then `hookspot
   version --json`, skipped for pre-release versions
 - [ ] tests: `shellcheck scripts/smoke.sh` clean; a negative run with a
       deliberately corrupted checksum file (via a `CHECKSUMS_FILE` override
@@ -543,7 +548,7 @@ _Items requiring manual intervention or external systems - no checkboxes, inform
 
 - The repository is already public, which Homebrew asset downloads and the
   `version` upgrade check both require. Keep it that way.
-- Create the public repository `bgr11n/homebrew-hookspot` with an empty
+- Create the public repository `hookspot/homebrew-hookspot` with an empty
   `Formula/` directory and a README.
 - Create a fine-grained PAT scoped to `homebrew-hookspot` with Contents:
   read/write; store it as the `HOMEBREW_TAP_TOKEN` Actions secret on
@@ -564,14 +569,14 @@ _Items requiring manual intervention or external systems - no checkboxes, inform
 - Watch `gh run watch`; the smoke matrix is the acceptance test for all three
   channels. If it fails, follow the yank section of the runbook.
 - Manually confirm on a clean macOS machine: `brew install
-bgr11n/hookspot/hookspot`, `npm install -g hookspot`, and the INSTALL.md
+hookspot/hookspot/hookspot`, `npm install -g hookspot`, and the INSTALL.md
   archive flow all yield the same `version --json` output. Confirm Gatekeeper
   does not block the brew-installed binary.
 
 **After the first release**
 
 - On npmjs.com, enable Trusted Publishing for `hookspot` pointing at
-  `bgr11n/hookspot-cli` / `release.yml`, then delete the `NPM_TOKEN` secret and
+  `hookspot/hookspot-cli` / `release.yml`, then delete the `NPM_TOKEN` secret and
   the `NODE_AUTH_TOKEN` line from the workflow.
 
 **Security considerations**
