@@ -15,3 +15,6 @@
 *.key
 credentials*.json
 secrets.*
+
+# npm package binaries, copied in by GoReleaser post-hooks
+/npm/binaries/

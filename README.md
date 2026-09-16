@@ -63,18 +63,19 @@ single path-safe argument is tried as a project UID first, then as an exact
 organization name only when the UID lookup returns 404. Two arguments always
 mean organization and project names.
 
-Use `hookspot-stage` for the same staging flow. For a noninteractive production
-process, pass only the scoped variables it needs:
+Use `hookspot-stage` for the same staging flow. For a noninteractive process,
+pass only the variables it needs:
 
 ```sh
-export HOOKSPOT_PROD_CLI_KEY='...'
-export HOOKSPOT_PROD_ORGANIZATION_SLUG='acme'
-export HOOKSPOT_PROD_PROJECT_SLUG='payments'
+export HOOKSPOT_CLI_KEY='...'
+export HOOKSPOT_ORGANIZATION_SLUG='acme'
+export HOOKSPOT_PROJECT_SLUG='payments'
 ```
 
-Staging uses `HOOKSPOT_STAGE_*`; development builds use `HOOKSPOT_DEV_*`.
-Organization and project slug variables must be set together. A saved CLI key
-and selected project are stored separately for each environment.
+The same variable names apply to every binary, so set them to values from the
+environment of the binary you run. Organization and project slug variables
+must be set together. A saved CLI key and selected project are stored
+separately for each environment.
 
 ## Listen and forward
 
@@ -117,8 +118,7 @@ Default configuration lives at:
 Every command selects one complete config file in this order:
 
 1. explicit `--config`;
-2. `HOOKSPOT_<ENV>_CONFIG_FILE`, or legacy `HOOKSPOT_CONFIG_FILE` with a
-   matching `HOOKSPOT_ENVIRONMENT` assertion;
+2. `HOOKSPOT_CONFIG_FILE`;
 3. `.hookspot/<environment>/config.toml` in the current directory;
 4. the matching global file listed above.
 
@@ -156,8 +156,8 @@ hookspot config migrate --help
 hookspot-stage config migrate --help
 ```
 
-`hookspot logout` removes the saved production key but does not unset an active
-`HOOKSPOT_PROD_CLI_KEY`. Staging behaves the same with its scoped variable.
+`hookspot logout` removes the saved key but does not unset an active
+`HOOKSPOT_CLI_KEY`.
 
 ## Client limits and cancellation
 
@@ -189,11 +189,6 @@ make run SERVER_URL=https://api.example.invalid ARGS='version --json'
 make run SERVER_URL=https://api.example.invalid ARGS='--help'
 ```
 
-`make build`, `make tidy`, and `make get` require a clean checkout: staged,
-unstaged, and untracked changes all block the command before it starts work.
-Review and commit changes first. `make test`, `make vet`, `make run`, and
-`make dev` remain available while editing.
-
 `make run` keeps stdin open for interactive or piped login and allocates a TTY
 only when stdin and stdout are terminals. `make run` and `make dev` use the
 dedicated `hookspot-dev-config` volume, so development login and project
@@ -205,7 +200,7 @@ Docker Compose provides the same development-only image and maps
 
 ```sh
 docker compose --env-file release/toolchain.env build cli
-export HOOKSPOT_DEV_CLI_KEY='...'
+export HOOKSPOT_CLI_KEY='...'
 docker compose --env-file release/toolchain.env run --rm cli login
 docker compose --env-file release/toolchain.env run --rm cli project list
 : "${PROJECT_UID:?set PROJECT_UID to one UID listed above}"
@@ -216,29 +211,15 @@ docker compose --env-file release/toolchain.env run --rm cli listen \
 
 ## Release operators
 
-From a clean checkout, build a stage release with the locked tool image.
-Choose the intended version before running `release-build`:
+Releases are built and published by GoReleaser from a locked Docker image. A
+local snapshot runs the same pipeline without publishing anything; it requires
+a clean working tree because the build embeds VCS metadata:
 
 ```sh
 make release-tools
-make release-check ENV=stage
-make release-build ENV=stage TAG=v1.2.3-stage.1
+make release-check
+make release-snapshot
 ```
 
-`release-build` creates a missing annotated local tag at committed `HEAD` after
-validating the selected source, tools, and environment. An existing tag selects
-its own commit, even when `HEAD` differs; the command prints the tag and full
-commit and never moves or converts it. Building does not fetch, push, publish,
-or need a GitHub token.
-A newly created tag remains if the build later fails; use a new candidate tag
-when fixing source changes.
-
-Release tool builds, snapshot/tagged builds, publishing (including with
-`DIST`), resume, and operator-record creation require the same clean checkout.
-Release checks, verification, and status remain available while editing.
-
-`make release-verify ENV=stage DIST=/absolute/retained-parent` proves retained
-artifact and immutable receipt integrity. It does not prove complete native
-evidence or publication eligibility. The [release runbook](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
-contains the token-free build flow, native requirements/reports/manual checks,
-stage acceptance, trusted publisher boundary, and exact recovery commands.
+The [release runbook](https://github.com/bgr11n/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
+describes publication.

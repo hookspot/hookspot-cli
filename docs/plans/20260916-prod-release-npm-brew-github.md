@@ -285,11 +285,11 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
   `scripts/smoke.ps1`, `tools/releasebootstrap/` (all files),
   `docs/releases/NATIVE_CHECKS.md`
 
-- [ ] `Makefile`: `include release/toolchain.env`; drop `TOOLCHAIN_VALUE`,
+- [x] `Makefile`: `include release/toolchain.env`; drop `TOOLCHAIN_VALUE`,
       `_require-clean-tree`, `ENV/TAG/REF/DIST/NOTES_FILE/FROM_STAGE_TAG/
   STAGE_ACCEPTANCE`, `release-build`, `release-verify`, `release-status`,
       `release-resume`, `stage-release`, `prod-release`
-- [ ] `Makefile`: `release-tools` builds `Dockerfile.release` as
+- [x] `Makefile`: `release-tools` builds `Dockerfile.release` as
       `hookspot-release:local`; `release-check` runs `goreleaser check` and
       accepts exit 0 or 2 (comment: 2 = deprecation notice for `brews`);
       `release-snapshot` requires a clean tree, removes `build-info.json` and
@@ -298,17 +298,17 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
       tokens; `release-publish` does the same preparation, requires
       `GITHUB_TOKEN` and `HOMEBREW_TAP_TOKEN` (fail with a clear message
       otherwise), and runs `goreleaser release --clean`
-- [ ] `Dockerfile.release`: keep only the GoReleaser-onto-pinned-Go stage;
+- [x] `Dockerfile.release`: keep only the GoReleaser-onto-pinned-Go stage;
       remove the `gh` download and the `releasebootstrap` stage; add
       `git config --global --add safe.directory /src`;
       `release/toolchain.env`: remove `GH_VERSION` and `GH_SHA256_*`
-- [ ] delete the listed scripts, tool, and doc; grep the repo for
+- [x] delete the listed scripts, tool, and doc; grep the repo for
       `release.sh`, `releasebootstrap`, `smoke.sh`, `smoke.ps1`,
       `NATIVE_CHECKS`, `release-helper-check`, `_require-clean-tree` and remove
       every reference (README's clean-checkout paragraph for `make build/tidy/
   get` included)
-- [ ] `.gitignore`: keep `/dist/` and `/build-info.json`; add `/npm/binaries/`
-- [ ] verify: `make test`, `make vet`, `make release-tools` pass;
+- [x] `.gitignore`: keep `/dist/` and `/build-info.json`; add `/npm/binaries/`
+- [x] verify: `make test`, `make vet`, `make release-tools` pass;
       `make release-check` and `make release-snapshot` become runnable in
       task 3 - must pass before task 2
 

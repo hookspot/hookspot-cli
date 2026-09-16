@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -239,62 +237,6 @@ func TestAcceptedReportAllowsCollectorIDsButRejectsTraversal(t *testing.T) {
 		if validReportID(invalid) {
 			t.Fatalf("unsafe report ID %q was accepted", invalid)
 		}
-	}
-}
-
-func TestSmokeShellCollectorFeedsTypedValidator(t *testing.T) {
-	if runtime.GOOS != "linux" || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
-		t.Skip("Unix collector integration runs in the pinned Linux test container")
-	}
-	packageDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	script, err := filepath.Abs(filepath.Join(packageDir, "..", "..", "scripts", "smoke.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dist, receipt, metadata := completeReceiptFixture(t)
-	target := buildTarget{OS: runtime.GOOS, Arch: runtime.GOARCH}
-	archiveName := releaseArchiveName("stage", metadata.Version, target)
-	binaryName := releaseBinaryName("stage", target.OS)
-	observed := observedBuildInfo{
-		Version: receipt.Version, Environment: receipt.Environment, Commit: receipt.Commit,
-		SourceDate: receipt.SourceDate, BuildKind: receipt.BuildKind, GoVersion: receipt.GoVersion,
-		OS: target.OS, Arch: target.Arch, ServerURL: receipt.ServerURL,
-	}
-	versionBytes, err := json.Marshal(observed)
-	if err != nil || strings.ContainsRune(string(versionBytes), '\'') {
-		t.Fatal("build smoke fixture version")
-	}
-	binary := fmt.Sprintf("#!/bin/sh\n[ -z \"${HOOKSPOT_DEV_CLI_KEY-}\" ] || exit 40\nif IFS= read -r input; then exit 41; fi\ncase \"$*\" in\n  'version --json') printf '%%s\\n' '%s' ;;\n  '--help') printf '%%s\\n' 'fixture help' ;;\n  *) exit 42 ;;\nesac\n", versionBytes)
-	entries := validArchiveEntries(binaryName)
-	entries[0].body = []byte(binary)
-	archivePath := filepath.Join(dist, "artifacts", archiveName)
-	writeTestArchive(t, archivePath, "tar.gz", entries, nil)
-	archiveHash, err := hashBoundedFile(archivePath, defaultArtifactLimits.maxCompressedBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for index := range receipt.Artifacts {
-		if receipt.Artifacts[index].Name == archiveName {
-			receipt.Artifacts[index].SHA256 = archiveHash
-		}
-	}
-	writeTestJSON(t, filepath.Join(dist, "receipt.json"), receipt)
-	command := exec.Command("/bin/bash", script, "--dist", dist, "--environment", "stage", "--target", target.OS+"/"+target.Arch)
-	command.Env = append(os.Environ(), "HOOKSPOT_DEV_CLI_KEY=TOKEN_BOUNDARY_SENTINEL")
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("smoke collector failed: %v: %s", err, output)
-	}
-	reportEntries, err := os.ReadDir(filepath.Join(dist, "native", "reports", target.OS+"-"+target.Arch))
-	if err != nil || len(reportEntries) != 1 {
-		t.Fatalf("find smoke report: %v", err)
-	}
-	reportDir := filepath.Join(dist, "native", "reports", target.OS+"-"+target.Arch, reportEntries[0].Name())
-	if _, err := verifySmokeReport(dist, "stage", reportDir); err != nil {
-		t.Fatal(err)
 	}
 }
 
