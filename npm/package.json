@@ -1,0 +1,24 @@
+{
+  "name": "hookspot",
+  "version": "0.0.0",
+  "description": "Receive and forward Hookspot webhooks to a local server",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/bgr11n/hookspot-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bgr11n/hookspot-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bgr11n/hookspot-cli/issues"
+  },
+  "bin": {
+    "hookspot": "bin/hookspot.js"
+  },
+  "files": [
+    "bin/",
+    "binaries/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

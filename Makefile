@@ -15,7 +15,7 @@ LDFLAGS = -X hookspot/cmd.version=$(VERSION) -X hookspot/cmd.serverURL=$(SERVER_
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 
-.PHONY: tidy build test vet run get dev release-tools release-check release-snapshot release-publish
+.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot release-publish
 
 tidy:
 	$(RUN) go mod tidy
@@ -48,6 +48,10 @@ get:
 # Override the command run on reload with ARGS, e.g. make dev ARGS="listen --help".
 dev:
 	COMMIT="$(COMMIT)" SOURCE_DATE="$(SOURCE_DATE)" docker compose --env-file release/toolchain.env run --rm dev go run github.com/air-verse/air@$(AIR_VERSION) -- $(DEV_ARGS)
+
+# Host Node, not the Docker toolchain: the launcher has no dependencies.
+npm-test:
+	node --test npm/test/
 
 # Locked GoReleaser-on-pinned-Go image shared by local snapshots and CI.
 release-tools:

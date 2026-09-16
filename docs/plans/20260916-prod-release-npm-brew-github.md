@@ -408,25 +408,25 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
   `npm/test/launcher.test.js`, `npm/README.md`
 - Modify: `Makefile`
 
-- [ ] `npm/package.json`: name `hookspot`, version `0.0.0`, `bin`
+- [x] `npm/package.json`: name `hookspot`, version `0.0.0`, `bin`
       `{hookspot: bin/hookspot.js}`, `files` `[bin/, binaries/]`, `engines.node
   > =18`, repository/bugs/homepage pointing at `bgr11n/hookspot-cli`,
     `license`set per Post-Completion decision (default`UNLICENSED`until a
     LICENSE file exists), no`scripts`, no dependencies
-- [ ] `npm/bin/hookspot.js`: shebang; `resolveBinary(platform, arch, root)`
+- [x] `npm/bin/hookspot.js`: shebang; `resolveBinary(platform, arch, root)`
       returns the path or `null`; when run as main, `spawnSync` the binary
       with inherited stdio and exit with its status, or print the
       unsupported-platform message and exit 1
-- [ ] `npm/test/launcher.test.js` (`node --test`): success cases for all six
+- [x] `npm/test/launcher.test.js` (`node --test`): success cases for all six
       supported platform/arch pairs including `win32/x64 → windows-amd64/
   hookspot.exe`; error cases for `linux/ia32` and `freebsd/x64`; a spawn
       test that runs the launcher against a stub executable placed in a temp
       `binaries/` tree and checks exit-code passthrough for 0 and 3
-- [ ] `Makefile`: add `npm-test` running `node --test npm/test/` (host Node;
+- [x] `Makefile`: add `npm-test` running `node --test npm/test/` (host Node;
       not part of the Docker toolchain)
-- [ ] verify: `make release-snapshot && cd npm && npm pack --dry-run` lists
+- [x] verify: `make release-snapshot && cd npm && npm pack --dry-run` lists
       `bin/hookspot.js` and six binaries and no tests
-- [ ] run `make test` and `make npm-test` - must pass before task 6
+- [x] run `make test` and `make npm-test` - must pass before task 6
 
 ### Task 6: Add the CI workflow for branches and pull requests
 
