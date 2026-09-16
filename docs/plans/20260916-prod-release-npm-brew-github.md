@@ -536,18 +536,26 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 ### Task 10: Verify acceptance criteria
 
-- [ ] verify all requirements from Overview are implemented: GitHub archives,
+- [x] verify all requirements from Overview are implemented: GitHub archives,
       npm fat package, Homebrew formula, tag-triggered workflow, stage fully
       removed, local unpublished snapshot works
-- [ ] `grep -ri stage` across the repo (excluding `dist/`, `tmp/`,
+- [x] `grep -ri stage` across the repo (excluding `dist/`, `tmp/`,
       `.worktrees/`, `docs/superpowers/`) returns nothing release-related
-- [ ] verify edge cases: pre-release tag path (`prerelease: auto`,
+      (hits: the four negative test cases, this plan, and `stagePackage` in
+      `npm/test/launcher.test.js`, which stages a temp package)
+- [x] verify edge cases: pre-release tag path (`prerelease: auto`,
       `skip_upload: auto`, npm `next`), unsupported platform message in the
       launcher, missing tokens in `make release-publish`, dirty-tree refusal,
       rerun of `make release-snapshot`
-- [ ] run full test suite: `make test && make vet && make npm-test`
-- [ ] run integration: `make release-check && make release-snapshot`
-- [ ] `ci.yml` green on the branch
+- [x] run full test suite: `make test && make vet && make npm-test`
+- [x] run integration: `make release-check && make release-snapshot`
+- [x] `ci.yml` green on the branch
+      (https://github.com/hookspot/hookspot-cli/actions/runs/35138818848)
+- ➕ the snapshot's `dist/homebrew/Formula/hookspot.rb` URLs name
+  `v0.0.0-stage.1`: GoReleaser fills `{{ .Tag }}` from the newest existing git
+  tag in snapshot mode. Not a config defect (a real `vX.Y.Z` push sets the tag
+  and snapshot formulas are never uploaded), but one more reason to delete the
+  old `stage_*`/`v0.0.0-stage.1` tags per Post-Completion
 
 ### Task 11: [Final] Update documentation
 
