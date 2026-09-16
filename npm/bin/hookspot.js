@@ -2,7 +2,7 @@
 'use strict';
 
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const platforms = { darwin: 'darwin', linux: 'linux', win32: 'windows' };
 const arches = { x64: 'amd64', arm64: 'arm64' };
@@ -25,22 +25,23 @@ function main() {
     console.error(`hookspot: unsupported platform ${process.platform}/${process.arch}`);
     process.exit(1);
   }
-  // Ctrl-C reaches the whole process group: the binary owns the graceful
-  // shutdown, and the launcher must outlive it to report its exit status.
-  const ignore = () => {};
-  process.on('SIGINT', ignore);
-  process.on('SIGTERM', ignore);
-  const result = spawnSync(binary, process.argv.slice(2), { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`hookspot: ${result.error.message}`);
+  const child = spawn(binary, process.argv.slice(2), { stdio: 'inherit' });
+  // Ctrl-C reaches the whole process group, so the binary already sees it and
+  // forwarding would double-deliver, triggering its forced exit. SIGTERM from
+  // a supervisor targets the launcher alone, so it is passed on.
+  process.on('SIGINT', () => {});
+  process.on('SIGTERM', () => child.kill('SIGTERM'));
+  child.on('error', (error) => {
+    console.error(`hookspot: ${error.message}`);
     process.exit(1);
-  }
-  if (result.signal) {
-    process.removeListener('SIGINT', ignore);
-    process.removeListener('SIGTERM', ignore);
-    process.kill(process.pid, result.signal);
-  }
-  process.exit(result.status === null ? 1 : result.status);
+  });
+  child.on('exit', (status, signal) => {
+    if (signal) {
+      process.removeAllListeners(signal);
+      process.kill(process.pid, signal);
+    }
+    process.exit(status === null ? 1 : status);
+  });
 }
 
 module.exports = { resolveBinary };

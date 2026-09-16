@@ -90,11 +90,40 @@ test('launcher dies by the same signal as the binary', spawnTest, (t) => {
   assert.equal(result.signal, 'SIGTERM');
 });
 
-test('launcher ignores SIGINT and reports the status the binary chose', spawnTest, async (t) => {
-  const dir = stagePackage(t, 'sleep 1\nexit 7');
-  const child = spawn(process.execPath, [path.join(dir, 'bin', 'hookspot.js')], { stdio: 'ignore' });
-  setTimeout(() => child.kill('SIGINT'), 300);
-  const [status, signal] = await new Promise((resolve) => child.on('exit', (s, sig) => resolve([s, sig])));
-  assert.equal(signal, null);
-  assert.equal(status, 7);
+// Starts the launcher in the package root, detached from the test's stdio, and
+// resolves with the launcher's [status, signal] once it exits.
+function startLauncher(dir) {
+  const child = spawn(process.execPath, [path.join(dir, 'bin', 'hookspot.js')], { cwd: dir, stdio: 'ignore' });
+  const exited = new Promise((resolve) => child.on('exit', (status, signal) => resolve([status, signal])));
+  return { child, exited };
+}
+
+// Polls until the stub has created the given file, so a signal is only sent
+// once the launcher has installed its handlers.
+async function waitForFile(file) {
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(file)) {
+    assert.ok(Date.now() < deadline, `timed out waiting for ${file}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+test('launcher ignores SIGINT sent to it alone and lets the binary finish', spawnTest, async (t) => {
+  const dir = stagePackage(t, "trap 'exit 9' INT\ntouch started\nsleep 1\nexit 7");
+  const { child, exited } = startLauncher(dir);
+  await waitForFile(path.join(dir, 'started'));
+  child.kill('SIGINT');
+  assert.deepEqual(await exited, [7, null]);
+});
+
+test('launcher forwards SIGTERM to the binary and reports its status', spawnTest, async (t) => {
+  const dir = stagePackage(
+    t,
+    "trap 'touch terminated; exit 0' TERM\ntouch started\ni=0\nwhile [ $i -lt 100 ]; do sleep 0.05; i=$((i + 1)); done\nexit 5",
+  );
+  const { child, exited } = startLauncher(dir);
+  await waitForFile(path.join(dir, 'started'));
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+  assert.ok(fs.existsSync(path.join(dir, 'terminated')));
 });
