@@ -480,22 +480,37 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 - Modify: `.github/workflows/release.yml`
 - Create: `scripts/smoke.sh`
 
-- [ ] `scripts/smoke.sh VERSION`: detect OS/arch, `gh release download
+- [x] `scripts/smoke.sh VERSION`: detect OS/arch, `gh release download
   "v$VERSION" --pattern` for the matching archive and the checksum file,
       verify SHA-256 with `sha256sum -c` (`shasum -a 256` on macOS), extract
       with `tar -xf` (handles `zip` too), run `hookspot version --json`, assert
       `version`, `build_kind=release`, `environment=prod`. One script for all
       three runners via `shell: bash`
-- [ ] job `smoke` (needs `release`; matrix `ubuntu-latest`, `macos-latest`,
+- [x] job `smoke` (needs `release`; matrix `ubuntu-latest`, `macos-latest`,
       `windows-latest`; `permissions: contents: read`): run `scripts/smoke.sh`;
       `npm install -g hookspot@$VERSION` with up to 5 retries 30s apart for
       registry propagation, then `hookspot version --json`; on macOS
       additionally `brew install hookspot/hookspot/hookspot` then `hookspot
   version --json`, skipped for pre-release versions
-- [ ] tests: `shellcheck scripts/smoke.sh` clean; a negative run with a
+- [x] tests: `shellcheck scripts/smoke.sh` clean; a negative run with a
       deliberately corrupted checksum file (via a `CHECKSUMS_FILE` override
       used only by the test) exits non-zero; both recorded in the task notes
-- [ ] run `make test` - must pass before task 9
+- [x] run `make test` - must pass before task 9
+- ➕ the test override is a directory, `SMOKE_ASSETS_DIR`, holding both the
+  archive and the checksum file, not a `CHECKSUMS_FILE` path: there is no
+  release to download the archive from yet, and one override covers both
+- ➕ `scripts/smoke.sh VERSION COMMAND` asserts an installed command instead
+  of downloading; the npm and Homebrew steps use it so every channel gets the
+  same `version`/`build_kind`/`environment` assertion (the brew step targets
+  `$(brew --prefix)/bin/hookspot` so the npm shim on PATH cannot mask it)
+- ➕ Windows extracts with `7z x` (on the runner's PATH): Git Bash ships no
+  `unzip`, and its GNU `tar` does not read zip
+- ➕ test results (macOS arm64, stub `hookspot` in a hand-built
+  `hookspot_1.2.3_darwin_arm64.tar.gz`): `shellcheck` clean, `actionlint`
+  clean; positive run prints `OK` and exits 0; corrupted checksum file prints
+  `FAILED` and exits 1 on both the `sha256sum` and the `shasum -a 256`
+  branches; a command reporting another version exits 1; the zip/7z branch
+  cannot run locally and is verified by the first Windows smoke run
 
 ### Task 9: Rewrite user and operator documentation
 

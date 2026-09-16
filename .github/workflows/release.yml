@@ -46,3 +46,44 @@ jobs:
         working-directory: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # The acceptance test: each channel installs on each platform and reports the
+  # released version. A red matrix means yank; see docs/releases/RUNBOOK.md.
+  smoke:
+    needs: release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: scripts/smoke.sh "${GITHUB_REF_NAME#v}"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The registry can take a few minutes to serve a freshly published version.
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in 1 2 3 4 5; do
+            npm install -g "hookspot@$version" && break
+            [ "$attempt" -lt 5 ] || exit 1
+            sleep 30
+          done
+          scripts/smoke.sh "$version" hookspot
+        shell: bash
+
+      # Pre-release tags publish no formula (brews.skip_upload: auto).
+      - if: matrix.os == 'macos-latest' && !contains(github.ref_name, '-')
+        run: |
+          brew install hookspot/hookspot/hookspot
+          scripts/smoke.sh "${GITHUB_REF_NAME#v}" "$(brew --prefix)/bin/hookspot"
+        shell: bash
