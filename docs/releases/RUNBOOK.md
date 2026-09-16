@@ -29,9 +29,10 @@ Before the first release, and worth re-checking when a release fails early:
   Secrets below).
 - The npm package name `hookspot` is owned by the publishing account, or still
   free for the first publish.
-- The old `stage_*` tags on origin are harmless but clutter the release list
-  and are what `make release-snapshot` names in its formula (see Local
-  snapshot); delete them when convenient.
+- The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
+  clutter the release list, and the newest reachable one is what
+  `make release-snapshot` names in its formula (see Local snapshot); delete
+  them when convenient.
 
 ## Tag and push
 
@@ -46,11 +47,11 @@ gh run watch
 
 `release` (ubuntu, `contents: write`, `id-token: write`):
 
-0. Checks that `NPM_TOKEN` is set, then runs `make test`, so a missing secret
+1. Checks that `NPM_TOKEN` is set, then runs `make test`, so a missing secret
    or a failing test stops the job before anything is published.
-1. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
+2. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
    `Dockerfile.release` (digests in `release/toolchain.env`).
-2. `make release-publish` runs `goreleaser release --clean` in that image. The
+3. `make release-publish` runs `goreleaser release --clean` in that image. The
    before hooks clear `npm/binaries/`, run `go mod download`, and run
    `releasecheck metadata`, which writes `build-info.json`. GoReleaser builds
    the six binaries (`serverURL` and `buildEnvironment=prod` from
@@ -59,8 +60,8 @@ gh run watch
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
    seven assets, and pushes `Formula/hookspot.rb` to
    `hookspot/homebrew-hookspot`.
-3. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
-   package bundling the binaries from step 2.
+4. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
+   package bundling the binaries from step 3.
 
 `smoke` (needs `release`; ubuntu, macOS, and Windows; `contents: read`):
 `scripts/smoke.sh <version>` downloads the runner's archive from the release,
@@ -151,8 +152,8 @@ version `0.0.0-snapshot.<sha>`, `build_kind=snapshot`. It requires a clean
 working tree because the build embeds VCS metadata; a before hook clears
 `npm/binaries/` inside the container, so the run is repeatable on Linux hosts
 where the bind mount leaves those files root-owned. The snapshot formula in
-`dist/homebrew/` names the newest existing tag in its download URLs (one of
-the old `stage_*` tags today); a real `v*` tag push fills in the right one.
+`dist/homebrew/` names the newest reachable tag in its download URLs
+(`v0.0.0-stage.1` today); a real `v*` tag push fills in the right one.
 
 `make release-check` validates `.goreleaser.yaml`; exit code 2 is GoReleaser's
 deprecation notice for the `brews` section, which is used deliberately (a

@@ -49,7 +49,7 @@ func (info BuildInfo) networkEndpoint() (endpoint.Base, error) {
 	}
 	base, err := endpoint.Parse(info.ServerURL, info.Environment)
 	if err != nil {
-		return endpoint.Base{}, wrapCommandError("", endpointHint(info.Environment), err)
+		return endpoint.Base{}, wrapCommandError("resolve server endpoint", endpointHint(info.Environment), err)
 	}
 	return base, nil
 }

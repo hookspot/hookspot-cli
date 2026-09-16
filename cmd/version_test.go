@@ -144,7 +144,7 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 	}
 }
 
-func TestVersionPrintsExecutableNameAndVersion(t *testing.T) {
+func TestVersionPrintsNameAndVersion(t *testing.T) {
 	metadata := developmentMetadata("")
 	result := runCommandProcess(t, "", metadata, "version")
 	if result.err != nil {
@@ -173,7 +173,7 @@ func TestVersionFlagPrintsVersionWithoutUpgradeCheck(t *testing.T) {
 }
 
 func TestNeedsToUpgrade(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		current, latest string
 		want            bool
 	}{
@@ -193,9 +193,9 @@ func TestNeedsToUpgrade(t *testing.T) {
 		{"1.2.3", "", false},
 		{"1.2.3", "not-a-version", false},
 	}
-	for _, c := range cases {
-		if got := needsToUpgrade(c.current, c.latest); got != c.want {
-			t.Errorf("needsToUpgrade(%q, %q) = %v, want %v", c.current, c.latest, got, c.want)
+	for _, test := range tests {
+		if got := needsToUpgrade(test.current, test.latest); got != test.want {
+			t.Errorf("needsToUpgrade(%q, %q) = %v, want %v", test.current, test.latest, got, test.want)
 		}
 	}
 }
@@ -203,12 +203,15 @@ func TestNeedsToUpgrade(t *testing.T) {
 func stubLatestRelease(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	setGitHubAPIBaseURL(t, server.URL)
+}
+
+func setGitHubAPIBaseURL(t *testing.T, url string) {
+	t.Helper()
 	original := githubAPIBaseURL
-	githubAPIBaseURL = server.URL
-	t.Cleanup(func() {
-		githubAPIBaseURL = original
-		server.Close()
-	})
+	githubAPIBaseURL = url
+	t.Cleanup(func() { githubAPIBaseURL = original })
 }
 
 func TestLatestVersionReadsTagFromGitHub(t *testing.T) {
@@ -250,7 +253,7 @@ func TestLatestVersionIgnoresFailures(t *testing.T) {
 
 	server := httptest.NewServer(http.NotFoundHandler())
 	server.Close()
-	githubAPIBaseURL = server.URL
+	setGitHubAPIBaseURL(t, server.URL)
 	if got := latestVersion(context.Background(), "1.0.0"); got != "" {
 		t.Fatalf("latestVersion on closed server = %q", got)
 	}
@@ -448,10 +451,9 @@ func TestIncompleteSnapshotMetadataStopsBeforeConfiguration(t *testing.T) {
 
 func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
 	release := BuildInfo{
-		Version: "1.2.3", Commit: strings.Repeat("c", 40), SourceDate: "2026-09-05T10:11:12Z",
+		Version: "1.2.3", Environment: "prod", Commit: strings.Repeat("c", 40), SourceDate: "2026-09-05T10:11:12Z",
 		BuildKind: "release", ServerURL: "https://prod.example.invalid",
 	}
-	release.Environment = "prod"
 	tests := []struct {
 		name        string
 		info        BuildInfo
@@ -461,10 +463,10 @@ func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
 		{name: "dev", info: BuildInfo{Environment: "dev", ServerURL: "http://127.0.0.1:4000"}, want: "http://127.0.0.1:4000"},
 		{name: "prod", info: release, want: "https://prod.example.invalid"},
 		{name: "prod without metadata", info: BuildInfo{Environment: "prod", Version: "dev", ServerURL: "https://prod.example.invalid"}, wantMessage: "invalid prod build metadata"},
-		{name: "prod with http endpoint", info: withServerURL(release, "http://prod.example.invalid"), wantMessage: "invalid prod server URL: HTTPS is required"},
-		{name: "dev without endpoint", info: BuildInfo{Environment: "dev"}, wantMessage: "dev server URL is empty"},
-		{name: "stage", info: withEnvironment(release, "stage"), wantMessage: `unknown build environment "stage"`},
-		{name: "unknown", info: withEnvironment(release, "qa"), wantMessage: `unknown build environment "qa"`},
+		{name: "prod with http endpoint", info: withServerURL(release, "http://prod.example.invalid"), wantMessage: "resolve server endpoint: invalid prod server URL: HTTPS is required"},
+		{name: "dev without endpoint", info: BuildInfo{Environment: "dev"}, wantMessage: "resolve server endpoint: dev server URL is empty"},
+		{name: "stage", info: withEnvironment(release, "stage"), wantMessage: `resolve server endpoint: unknown build environment "stage"`},
+		{name: "unknown", info: withEnvironment(release, "qa"), wantMessage: `resolve server endpoint: unknown build environment "qa"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

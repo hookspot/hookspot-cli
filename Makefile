@@ -58,11 +58,10 @@ release-tools:
 # Exit 2 is GoReleaser's deprecation notice for the `brews` section, which is
 # used deliberately (formula, not cask) and still supported by the pinned version.
 release-check:
-	@$(RELEASE_RUN) check; status=$$?; test $$status -eq 0 || test $$status -eq 2 || exit $$status
+	$(RELEASE_RUN) check; status=$$?; test $$status -eq 0 || test $$status -eq 2 || exit $$status
 
 # The build embeds VCS metadata (-buildvcs=true) from the mounted checkout, so a
-# dirty tree would change the artifacts. npm/binaries/ (filled by post-hooks,
-# root-owned on Linux hosts) is cleared by a before hook inside the container.
+# dirty tree would change the artifacts.
 define require-clean-tree
 	@test -z "$$(git status --porcelain)" || { echo "$(1) requires a clean tree; commit or stash your changes first" >&2; exit 1; }
 endef

@@ -20,18 +20,16 @@ var versionJSON bool
 var versionCmd = &cobra.Command{
 	Use:     "version",
 	Args:    cobra.NoArgs,
-	Short:   "Get the version of the Hookspot CLI",
+	Short:   "Print the hookspot CLI version",
 	Long:    "Print the CLI version and check whether a new version is available.",
-	Example: "  $ hookspot version",
+	Example: "  hookspot version",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		info := CurrentBuildInfo()
 		out := cmd.OutOrStdout()
 		if versionJSON {
 			return json.NewEncoder(out).Encode(info)
 		}
-		if _, err := fmt.Fprintf(out, "%s version %s\n", cmd.Root().Name(), info.Version); err != nil {
-			return err
-		}
+		fmt.Fprintf(out, "%s version %s\n", cmd.Root().Name(), info.Version)
 		checkLatestVersion(cmd.Context(), out, info.Version)
 		return nil
 	},

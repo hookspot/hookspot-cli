@@ -10,13 +10,13 @@ const arches = { x64: 'amd64', arm64: 'arm64' };
 // Maps a Node platform/arch pair to the bundled GoReleaser binary, or null
 // when no binary is shipped for it.
 function resolveBinary(platform, arch, root) {
-  const os = platforms[platform];
+  const goOS = platforms[platform];
   const goArch = arches[arch];
-  if (!os || !goArch) {
+  if (!goOS || !goArch) {
     return null;
   }
-  const ext = os === 'windows' ? '.exe' : '';
-  return path.join(root, 'binaries', `${os}-${goArch}`, `hookspot${ext}`);
+  const ext = goOS === 'windows' ? '.exe' : '';
+  return path.join(root, 'binaries', `${goOS}-${goArch}`, `hookspot${ext}`);
 }
 
 function main() {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -88,7 +89,7 @@ func TestRunMetadataOverwritesExistingOutput(t *testing.T) {
 }
 
 func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
 		name       string
 		version    string
 		commit     string
@@ -109,16 +110,16 @@ func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 		{"snapshot suffix from another commit", "0.0.0-snapshot.abcdef0", fixtureCommit, fixtureSourceDate, "snapshot", fixtureServerURL},
 		{"release-style snapshot version", "1.2.3", fixtureCommit, fixtureSourceDate, "snapshot", fixtureServerURL},
 	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			outputPath := filepath.Join(t.TempDir(), "build-info.json")
 			err := run([]string{
 				"metadata",
-				"--version", testCase.version,
-				"--commit", testCase.commit,
-				"--source-date", testCase.sourceDate,
-				"--kind", testCase.kind,
-				"--server-url", testCase.serverURL,
+				"--version", test.version,
+				"--commit", test.commit,
+				"--source-date", test.sourceDate,
+				"--kind", test.kind,
+				"--server-url", test.serverURL,
 				"--output", outputPath,
 			})
 			if err == nil {
@@ -134,8 +135,8 @@ func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 func TestRunMetadataRejectsInvalidArguments(t *testing.T) {
 	valid := metadataArgs("1.2.3", "release", fixtureServerURL, filepath.Join(t.TempDir(), "build-info.json"))
 	for _, args := range [][]string{
-		append(append([]string(nil), valid...), "--bogus"),
-		append(append([]string(nil), valid...), "positional"),
+		slices.Concat(valid, []string{"--bogus"}),
+		slices.Concat(valid, []string{"positional"}),
 	} {
 		err := run(args)
 		if err == nil || err.Error() != "invalid metadata arguments" {

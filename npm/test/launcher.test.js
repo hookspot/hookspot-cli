@@ -31,6 +31,12 @@ test('resolveBinary returns null for unsupported platforms and archs', () => {
   assert.equal(resolveBinary('freebsd', 'x64', root), null);
 });
 
+function tempDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hookspot-launcher-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
 test('launcher refuses an unsupported platform before spawning anything', (t) => {
   const dir = tempDir(t);
   const preload = path.join(dir, 'freebsd.js');
@@ -42,12 +48,6 @@ test('launcher refuses an unsupported platform before spawning anything', (t) =>
 
 // A stub shell script needs a POSIX shell, so the spawn tests skip on Windows.
 const spawnTest = { skip: process.platform === 'win32' && 'stub binary requires a POSIX shell' };
-
-function tempDir(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hookspot-launcher-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  return dir;
-}
 
 // Copies the launcher into a temporary package root whose binaries/ tree holds
 // the given shell script as the binary, or no binary at all.

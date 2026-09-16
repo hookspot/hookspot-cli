@@ -7,18 +7,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 smoke=scripts/smoke.sh
 version=1.2.3
-
-case "$(uname -s)" in
-  Darwin) os=darwin ;;
-  Linux) os=linux ;;
-  *) echo "smoke_test: unsupported OS $(uname -s)" >&2; exit 2 ;;
-esac
-case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
-  arm64 | aarch64) arch=arm64 ;;
-  *) echo "smoke_test: unsupported architecture $(uname -m)" >&2; exit 2 ;;
-esac
-archive="hookspot_${version}_${os}_${arch}.tar.gz"
 checksums="hookspot_${version}_checksums.txt"
 
 work=$(mktemp -d)
@@ -27,20 +15,31 @@ failures=0
 
 # Writes an executable that answers `version --json` with the given fields.
 stub() {
-  printf '#!/bin/sh\nprintf '"'"'%%s\\n'"'"' '"'"'{"version":"%s","build_kind":"%s","environment":"%s"}'"'"'\n' "$2" "$3" "$4" >"$1"
+  cat >"$1" <<EOS
+#!/bin/sh
+printf '%s\n' '{"version":"$2","build_kind":"$3","environment":"$4"}'
+EOS
   chmod 0755 "$1"
 }
 
 sha256() {
-  if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$@"
+  else
+    shasum -a 256 "$@"
+  fi
 }
 
-# Builds SMOKE_ASSETS_DIR contents in $1 for a stub reporting version $2.
+# Builds SMOKE_ASSETS_DIR contents in $1 for a stub reporting version $2: one
+# archive per tar.gz target and a checksum file listing them all, so smoke.sh
+# picks this machine's archive the way it does from a real release.
 assets() {
   mkdir -p "$1/pack"
   stub "$1/pack/hookspot" "$2" release prod
-  tar -C "$1/pack" -czf "$1/$archive" hookspot
-  (cd "$1" && sha256 "$archive" >"$checksums")
+  for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+    tar -C "$1/pack" -czf "$1/hookspot_${version}_${target}.tar.gz" hookspot
+  done
+  (cd "$1" && sha256 hookspot_*.tar.gz >"$checksums")
 }
 
 expect() {
