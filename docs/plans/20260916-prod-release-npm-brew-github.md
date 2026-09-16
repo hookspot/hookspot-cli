@@ -457,21 +457,21 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - Create: `.github/workflows/release.yml`
 
-- [ ] trigger on `push.tags: ['v*']`; top-level `permissions: contents: read`
-- [ ] job `release` (ubuntu, `permissions: contents: write, id-token: write`):
+- [x] trigger on `push.tags: ['v*']`; top-level `permissions: contents: read`
+- [x] job `release` (ubuntu, `permissions: contents: write, id-token: write`):
       checkout `fetch-depth: 0`; `make release-tools`; `make release-publish`
       with `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `HOMEBREW_TAP_TOKEN:
   ${{ secrets.HOMEBREW_TAP_TOKEN }}`
-- [ ] same job, after the build: `actions/setup-node@v4` Node 22 with
+- [x] same job, after the build: `actions/setup-node@v4` Node 22 with
       `registry-url: https://registry.npmjs.org`; in `npm/`: `npm version
   "${GITHUB_REF_NAME#v}" --no-git-tag-version`; dist-tag `latest`, or
       `next` when the version contains `-`; `npm publish --provenance
   --access public --tag "$NPM_TAG"` with `NODE_AUTH_TOKEN: ${{
   secrets.NPM_TOKEN }}`
-- [ ] verify: `actionlint` (or `gh workflow view` after push) reports no
+- [x] verify: `actionlint` (or `gh workflow view` after push) reports no
       errors; the workflow cannot be exercised without a tag, so the
       end-to-end check is the first release (Post-Completion)
-- [ ] run `make test` - must pass before task 8
+- [x] run `make test` - must pass before task 8
 
 ### Task 8: Add the post-release smoke matrix
 

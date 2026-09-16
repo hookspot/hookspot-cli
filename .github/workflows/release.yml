@@ -1,0 +1,48 @@
+name: Release
+
+# A v* tag publishes the GitHub Release and the Homebrew formula through the
+# same locked GoReleaser image ci.yml builds snapshots with, then publishes the
+# npm package from those exact binaries.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: make release-tools
+
+      - run: make release-publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+        working-directory: npm
+
+      # Pre-release tags (v1.2.3-rc.1) publish under `next`, never `latest`.
+      - run: |
+          case "$GITHUB_REF_NAME" in
+            *-*) npm_tag=next ;;
+            *) npm_tag=latest ;;
+          esac
+          npm publish --provenance --access public --tag "$npm_tag"
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
