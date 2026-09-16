@@ -63,12 +63,6 @@ var listenCmd = &cobra.Command{
 		if cfg.CLIKey == "" {
 			return loginRequiredError()
 		}
-		if (cfg.OrganizationSlug == "") != (cfg.ProjectSlug == "") {
-			return newCommandError(
-				"project selection requires both HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG",
-				"Set both variables, or unset them and run 'hookspot project use'.",
-			)
-		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
 				"no active project",

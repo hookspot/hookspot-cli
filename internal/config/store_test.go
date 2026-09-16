@@ -12,7 +12,7 @@ func clearConfigEnvironment(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"HOOKSPOT_CONFIG_FILE", "HOOKSPOT_CLI_KEY",
-		"HOOKSPOT_ORGANIZATION_SLUG", "HOOKSPOT_PROJECT_SLUG", "HOOKSPOT_PROJECT",
+		"HOOKSPOT_ORGANIZATION_SLUG", "HOOKSPOT_PROJECT_SLUG",
 	} {
 		value, set := os.LookupEnv(key)
 		if err := os.Unsetenv(key); err != nil {
@@ -525,24 +525,6 @@ func TestResolveProjectPrecedenceDoesNotMixSlugPairs(t *testing.T) {
 	}
 	if cfg.Project != "" || cfg.OrganizationSlug != "environment-org" || cfg.ProjectSlug != "environment-project" {
 		t.Fatalf("slug pair was mixed or ignored: %+v", cfg)
-	}
-}
-
-func TestResolveIgnoresGenericProjectUIDEnvironment(t *testing.T) {
-	clearConfigEnvironment(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	writeConfigFixture(t, path, "schema_version = 1\nenvironment = 'dev'\nproject = 'stored-project'\n")
-	t.Setenv("HOOKSPOT_PROJECT", "ignored-project")
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := store.Resolve(Overrides{NeedProject: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Project != "stored-project" {
-		t.Fatalf("Project = %q", cfg.Project)
 	}
 }
 

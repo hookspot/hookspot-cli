@@ -36,5 +36,7 @@ jobs:
 
       - run: make npm-test
 
+      - run: scripts/smoke_test.sh
+
       - run: npm pack --dry-run
         working-directory: npm

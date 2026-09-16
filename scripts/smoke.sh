@@ -18,7 +18,7 @@ fail() {
 
 assert_version() {
   local output
-  output=$("$1" version --json)
+  output=$("$1" version --json) || fail "$1 version --json failed"
   echo "$output"
   jq -e --arg version "$version" \
     '.version == $version and .build_kind == "release" and .environment == "prod"' \
@@ -52,7 +52,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # SMOKE_ASSETS_DIR: take the archive and checksum file from a local directory
-# instead of the GitHub Release. Used only by the script's own tests.
+# instead of the GitHub Release. Used only by scripts/smoke_test.sh.
 if [ -n "${SMOKE_ASSETS_DIR:-}" ]; then
   cp "$SMOKE_ASSETS_DIR/$archive" "$SMOKE_ASSETS_DIR/$checksums" "$work"
 else

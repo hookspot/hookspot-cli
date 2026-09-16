@@ -90,7 +90,7 @@ This replaces the bespoke, maintainer-run publisher in `scripts/release.sh`
 ## Testing Strategy
 
 - **unit tests**: `make test` (Go, in the locked Docker image) and
-  `make npm-test` (`node --test npm/test/`). Required for every code task.
+  `make npm-test` (`node --test 'npm/test/*.test.js'`). Required for every code task.
 - **integration tests**: `make release-snapshot` runs the full GoReleaser
   pipeline unpublished. Run it after every task that touches
   `.goreleaser.yaml`, the Makefile, `Dockerfile.release`, or
@@ -437,7 +437,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - Create: `.github/workflows/ci.yml`
 
-- [x] trigger on `push` to `main` and `pull_request`; `permissions: contents:
+- [x] trigger on `push` to every branch and `pull_request`; `permissions: contents:
   read`; single ubuntu job; pin `actions/*` to major versions
 - [x] steps: checkout with `fetch-depth: 0`; `make test`; `make vet`;
       `make release-tools`; `make release-check`; `make release-snapshot`;

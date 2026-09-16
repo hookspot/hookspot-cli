@@ -82,9 +82,8 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.Flags().BoolP("version", "v", false, "Get the version of the Hookspot CLI")
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "environment-specific config file")
-	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer a scoped environment variable)")
+	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer HOOKSPOT_CLI_KEY)")
 	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
 	rootCmd.PersistentFlags().String("log-level", "", "deprecated; retained for compatibility")
 	if err := rootCmd.PersistentFlags().MarkDeprecated("log-level", "logging is no longer configurable"); err != nil {

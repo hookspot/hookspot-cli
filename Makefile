@@ -6,12 +6,10 @@ RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
-VERSION ?= dev
-BUILD_ENVIRONMENT ?= dev
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
-BUILD_KIND ?= dev
-LDFLAGS = -X hookspot/cmd.version=$(VERSION) -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.buildEnvironment=$(BUILD_ENVIRONMENT) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=$(BUILD_KIND)
+# Only GoReleaser builds anything other than a dev binary.
+LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.buildEnvironment=dev -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 
@@ -63,16 +61,14 @@ release-check:
 	@$(RELEASE_RUN) check; status=$$?; test $$status -eq 0 || test $$status -eq 2 || exit $$status
 
 # The build embeds VCS metadata (-buildvcs=true) from the mounted checkout, so a
-# dirty tree would change the artifacts. GoReleaser's --clean only empties dist/;
-# build-info.json is created exclusively and npm/binaries/ is filled by post-hooks.
-define release-prepare
+# dirty tree would change the artifacts. npm/binaries/ (filled by post-hooks,
+# root-owned on Linux hosts) is cleared by a before hook inside the container.
+define require-clean-tree
 	@test -z "$$(git status --porcelain)" || { echo "$(1) requires a clean tree; commit or stash your changes first" >&2; exit 1; }
-	rm -f build-info.json
-	rm -rf npm/binaries
 endef
 
 release-snapshot:
-	$(call release-prepare,release-snapshot)
+	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
 
 # CI only: publishes the GitHub Release and the Homebrew formula.
@@ -83,5 +79,5 @@ endif
 ifndef HOMEBREW_TAP_TOKEN
 	$(error HOMEBREW_TAP_TOKEN is required to push the Homebrew formula)
 endif
-	$(call release-prepare,release-publish)
+	$(call require-clean-tree,release-publish)
 	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN $(RELEASE_IMAGE) release --clean

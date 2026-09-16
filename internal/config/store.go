@@ -22,12 +22,11 @@ type persistedRecord struct {
 
 // Store owns the persisted record for one immutable environment.
 type Store struct {
-	environment string
-	path        string
-	managedDir  bool
-	exists      bool
-	record      persistedRecord
-	write       func(string, []byte, bool) error
+	path       string
+	managedDir bool
+	exists     bool
+	record     persistedRecord
+	write      func(string, []byte, bool) error
 }
 
 // New selects and reads the environment-specific configuration record.
@@ -54,9 +53,8 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 		return nil, err
 	}
 	store := &Store{
-		environment: environment,
-		path:        path,
-		managedDir:  managed,
+		path:       path,
+		managedDir: managed,
 		record: persistedRecord{
 			SchemaVersion: currentSchemaVersion,
 			Environment:   environment,
@@ -104,7 +102,7 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 
 func newLocalStore(opts Options) (*Store, error) {
 	if opts.ExplicitPathSet || configPathEnvironmentSet() {
-		return nil, errors.New("--local cannot be combined with --config or a CONFIG_FILE environment override")
+		return nil, errors.New("--local cannot be combined with --config or HOOKSPOT_CONFIG_FILE")
 	}
 
 	localPath, err := localConfigPath(opts.Environment)
@@ -130,9 +128,8 @@ func newLocalStore(opts Options) (*Store, error) {
 		return nil, err
 	}
 	return &Store{
-		environment: opts.Environment,
-		path:        localPath,
-		managedDir:  true,
+		path:       localPath,
+		managedDir: true,
 		record: persistedRecord{
 			SchemaVersion: currentSchemaVersion,
 			Environment:   opts.Environment,

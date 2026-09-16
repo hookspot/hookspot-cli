@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 const commandHelperEnvironment = "HOOKSPOT_COMMAND_HELPER"
@@ -26,6 +27,10 @@ func TestCommandHelper(t *testing.T) {
 	commit = os.Getenv("TEST_BUILD_COMMIT")
 	sourceDate = os.Getenv("TEST_BUILD_SOURCE_DATE")
 	buildKind = os.Getenv("TEST_BUILD_KIND")
+	// The linker sets version before init runs; the helper sets it after, so
+	// cobra's copy has to be refreshed by hand.
+	rootCmd.Version = version
+	githubAPIBaseURL = os.Getenv("TEST_GITHUB_API_URL")
 
 	separator := 0
 	for i, arg := range os.Args {
@@ -87,6 +92,8 @@ func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string
 		"TEST_BUILD_COMMIT=" + metadata["commit"],
 		"TEST_BUILD_SOURCE_DATE=" + metadata["source_date"],
 		"TEST_BUILD_KIND=" + metadata["build_kind"],
+		// A closed port: the subprocess never reaches the real GitHub API.
+		"TEST_GITHUB_API_URL=http://127.0.0.1:1",
 	}
 	if systemRoot := os.Getenv("SystemRoot"); systemRoot != "" {
 		command.Env = append(command.Env, "SystemRoot="+systemRoot)
@@ -148,14 +155,18 @@ func TestVersionPrintsExecutableNameAndVersion(t *testing.T) {
 	}
 }
 
-func TestVersionFlagMatchesVersionCommand(t *testing.T) {
-	metadata := developmentMetadata("")
+func TestVersionFlagPrintsVersionWithoutUpgradeCheck(t *testing.T) {
+	release := map[string]string{
+		"version": "9.9.9", "server_url": "https://prod.example.invalid",
+		"environment": "prod", "commit": strings.Repeat("a", 40),
+		"source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
+	}
 	for _, args := range [][]string{{"--version"}, {"-v"}} {
-		result := runCommandProcess(t, "", metadata, args...)
+		result := runCommandProcess(t, "", release, args...)
 		if result.err != nil {
 			t.Fatalf("%v failed: %v\nstderr: %s", args, result.err, result.stderr)
 		}
-		if result.stdout != "hookspot version dev\n" {
+		if result.stdout != "hookspot version 9.9.9\n" {
 			t.Fatalf("%v stdout = %q", args, result.stdout)
 		}
 	}
@@ -172,15 +183,15 @@ func TestNeedsToUpgrade(t *testing.T) {
 		{"v1.2.3", "v1.2.4", true},
 		{"1.9.1", "1.10.0", true},
 		{"1.10.0", "1.9.1", false},
-		{"1.9.1", "1.10.0-rc.4", false},
-		{"1.10.0", "1.10.1-rc.1", false},
 		{"1.9.0-rc.4", "1.9.0", true},
 		{"1.10.0-rc.4", "1.9.1", false},
 		{"1.9.0-rc.3", "1.9.0-rc.4", true},
 		{"1.9.0-rc.9", "1.9.0-rc.10", true},
 		{"1.9.0-rc.4", "1.9.0-rc.3", false},
 		{"1.9.0-rc.4", "1.9.0-rc.4", false},
+		{"0.0.0-snapshot.0123456", "0.1.0", true},
 		{"1.2.3", "", false},
+		{"1.2.3", "not-a-version", false},
 	}
 	for _, c := range cases {
 		if got := needsToUpgrade(c.current, c.latest); got != c.want {
@@ -235,6 +246,22 @@ func TestLatestVersionIgnoresFailures(t *testing.T) {
 	})
 	if got := latestVersion(context.Background(), "1.0.0"); got != "" {
 		t.Fatalf("latestVersion on malformed body = %q", got)
+	}
+
+	server := httptest.NewServer(http.NotFoundHandler())
+	server.Close()
+	githubAPIBaseURL = server.URL
+	if got := latestVersion(context.Background(), "1.0.0"); got != "" {
+		t.Fatalf("latestVersion on closed server = %q", got)
+	}
+
+	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if got := latestVersion(ctx, "1.0.0"); got != "" {
+		t.Fatalf("latestVersion on a stalled server = %q", got)
 	}
 }
 
@@ -347,6 +374,21 @@ func TestListenRejectsForwardTargetBeforeAPIRequest(t *testing.T) {
 	}
 }
 
+func TestListenRequiresAnActiveProject(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'key-sentinel'\n")); err != nil {
+		t.Fatal(err)
+	}
+	metadata := developmentMetadata("http://127.0.0.1:1")
+	result := runCommandProcess(t, "", metadata, "--config", configPath, "listen")
+	if result.err == nil {
+		t.Fatal("listen ran without a project")
+	}
+	if !strings.Contains(result.stderr, "no active project") || !strings.Contains(result.stderr, "Run 'hookspot project use'") {
+		t.Fatalf("unexpected output:\n%s", result.stderr)
+	}
+}
+
 func TestNetworkCommandRejectsReleaseMetadataBeforeConfigOrPrompt(t *testing.T) {
 	badConfig := filepath.Join(t.TempDir(), "bad.toml")
 	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
@@ -409,6 +451,7 @@ func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
 		Version: "1.2.3", Commit: strings.Repeat("c", 40), SourceDate: "2026-09-05T10:11:12Z",
 		BuildKind: "release", ServerURL: "https://prod.example.invalid",
 	}
+	release.Environment = "prod"
 	tests := []struct {
 		name        string
 		info        BuildInfo
@@ -416,7 +459,10 @@ func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
 		wantMessage string
 	}{
 		{name: "dev", info: BuildInfo{Environment: "dev", ServerURL: "http://127.0.0.1:4000"}, want: "http://127.0.0.1:4000"},
-		{name: "prod", info: withEnvironment(release, "prod"), want: "https://prod.example.invalid"},
+		{name: "prod", info: release, want: "https://prod.example.invalid"},
+		{name: "prod without metadata", info: BuildInfo{Environment: "prod", Version: "dev", ServerURL: "https://prod.example.invalid"}, wantMessage: "invalid prod build metadata"},
+		{name: "prod with http endpoint", info: withServerURL(release, "http://prod.example.invalid"), wantMessage: "invalid prod server URL: HTTPS is required"},
+		{name: "dev without endpoint", info: BuildInfo{Environment: "dev"}, wantMessage: "dev server URL is empty"},
 		{name: "stage", info: withEnvironment(release, "stage"), wantMessage: `unknown build environment "stage"`},
 		{name: "unknown", info: withEnvironment(release, "qa"), wantMessage: `unknown build environment "qa"`},
 	}
@@ -441,5 +487,10 @@ func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
 
 func withEnvironment(info BuildInfo, environment string) BuildInfo {
 	info.Environment = environment
+	return info
+}
+
+func withServerURL(info BuildInfo, serverURL string) BuildInfo {
+	info.ServerURL = serverURL
 	return info
 }

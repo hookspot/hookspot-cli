@@ -40,7 +40,11 @@ hookspot version --json
 
 The JSON identifies the version, source commit, environment, compiled endpoint,
 Go version, and target platform. The endpoint is part of the executable and
-cannot be changed at runtime.
+cannot be changed at runtime. `version --json` never contacts the network;
+`hookspot version` prints the version and, for release builds, asks GitHub for
+the newest release with a 5-second timeout and prints an upgrade notice when
+there is one (an offline machine sees no notice and no error). `--version` and
+`-v` print only the version.
 
 ## Log in and select a project
 
@@ -191,6 +195,10 @@ make run SERVER_URL=https://api.example.invalid ARGS='version --json'
 make run SERVER_URL=https://api.example.invalid ARGS='--help'
 ```
 
+`make npm-test` runs the npm launcher tests with the host `node` (18 or newer),
+and `scripts/smoke_test.sh` exercises the post-release smoke script against
+local fixtures; neither needs Docker.
+
 `make run` keeps stdin open for interactive or piped login and allocates a TTY
 only when stdin and stdout are terminals. `make run` and `make dev` use the
 dedicated `hookspot-dev-config` volume, so development login and project
@@ -216,8 +224,9 @@ docker compose --env-file release/toolchain.env run --rm cli listen \
 Pushing a `v*` tag publishes the release. The tag-triggered workflow builds the
 six platform archives with GoReleaser in the locked Docker image, creates the
 GitHub Release, pushes the Homebrew formula to `hookspot/homebrew-hookspot`,
-publishes the npm package from the same binaries, and then installs from every
-channel on Linux, macOS, and Windows runners:
+publishes the npm package from the same binaries, and then installs from
+GitHub Releases and npm on Linux, macOS, and Windows runners and from Homebrew
+on macOS:
 
 ```sh
 git tag -a v1.2.3 -m "v1.2.3"

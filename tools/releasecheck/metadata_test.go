@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 )
 
@@ -15,7 +14,8 @@ const (
 )
 
 func TestRunMetadataWritesReleaseBuildInfoToRelativeOutput(t *testing.T) {
-	dir := metadataFixtureDirectory(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
 	if err := os.Mkdir(filepath.Join(dir, "out"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -26,9 +26,6 @@ func TestRunMetadataWritesReleaseBuildInfoToRelativeOutput(t *testing.T) {
 	}
 
 	metadata := readBuildMetadata(t, filepath.Join(dir, "out", "build-info.json"))
-	if metadata.SchemaVersion != 1 || metadata.GoreleaserVersion != "v2.17.1" {
-		t.Fatalf("metadata schema/GoReleaser = %d/%q", metadata.SchemaVersion, metadata.GoreleaserVersion)
-	}
 	if metadata.Version != "1.2.3" || metadata.Environment != "prod" || metadata.ServerURL != "https://prod.example.invalid/gateway" {
 		t.Fatalf("metadata release identity = %#v", metadata)
 	}
@@ -38,22 +35,24 @@ func TestRunMetadataWritesReleaseBuildInfoToRelativeOutput(t *testing.T) {
 	if metadata.GoVersion == "" {
 		t.Fatal("metadata Go version is empty")
 	}
-	wantTargets := []buildTarget{
-		{OS: "darwin", Arch: "amd64"},
-		{OS: "darwin", Arch: "arm64"},
-		{OS: "linux", Arch: "amd64"},
-		{OS: "linux", Arch: "arm64"},
-		{OS: "windows", Arch: "amd64"},
-		{OS: "windows", Arch: "arm64"},
+}
+
+func TestRunMetadataAcceptsPreReleaseVersion(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "build-info.json")
+
+	err := run(metadataArgs("1.2.3-rc.1", "release", fixtureServerURL, outputPath))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(metadata.Targets, wantTargets) {
-		t.Fatalf("metadata targets = %#v, want %#v", metadata.Targets, wantTargets)
+
+	metadata := readBuildMetadata(t, outputPath)
+	if metadata.Version != "1.2.3-rc.1" || metadata.BuildKind != "release" {
+		t.Fatalf("metadata pre-release identity = %#v", metadata)
 	}
 }
 
 func TestRunMetadataWritesSnapshotBuildInfoToAbsoluteOutput(t *testing.T) {
-	dir := metadataFixtureDirectory(t)
-	outputPath := filepath.Join(dir, "build-info.json")
+	outputPath := filepath.Join(t.TempDir(), "build-info.json")
 
 	err := run(metadataArgs("0.0.0-snapshot.0123456", "snapshot", fixtureServerURL, outputPath))
 	if err != nil {
@@ -73,24 +72,55 @@ func TestRunMetadataWritesSnapshotBuildInfoToAbsoluteOutput(t *testing.T) {
 	}
 }
 
+func TestRunMetadataOverwritesExistingOutput(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "build-info.json")
+	if err := os.WriteFile(outputPath, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run(metadataArgs("1.2.3", "release", fixtureServerURL, outputPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata := readBuildMetadata(t, outputPath); metadata.Version != "1.2.3" {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+}
+
 func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 	cases := []struct {
-		name      string
-		version   string
-		kind      string
-		serverURL string
+		name       string
+		version    string
+		commit     string
+		sourceDate string
+		kind       string
+		serverURL  string
 	}{
-		{"stage-style release version", "1.2.3-stage.1", "release", fixtureServerURL},
-		{"http server URL", "1.2.3", "release", "http://prod.example.invalid/gateway"},
-		{"empty server URL", "1.2.3", "release", ""},
-		{"unknown build kind", "1.2.3", "development", fixtureServerURL},
-		{"snapshot suffix from another commit", "0.0.0-snapshot.abcdef0", "snapshot", fixtureServerURL},
+		{"tag-style release version", "v1.2.3", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
+		{"two-component release version", "1.2", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
+		{"release version with build metadata", "1.2.3+build", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
+		{"release version with empty pre-release", "1.2.3-", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
+		{"http server URL", "1.2.3", fixtureCommit, fixtureSourceDate, "release", "http://prod.example.invalid/gateway"},
+		{"empty server URL", "1.2.3", fixtureCommit, fixtureSourceDate, "release", ""},
+		{"unknown build kind", "1.2.3", fixtureCommit, fixtureSourceDate, "development", fixtureServerURL},
+		{"short commit", "1.2.3", "0123456", fixtureSourceDate, "release", fixtureServerURL},
+		{"uppercase commit", "1.2.3", "0123456789ABCDEF0123456789ABCDEF01234567", fixtureSourceDate, "release", fixtureServerURL},
+		{"non-RFC3339 source date", "1.2.3", fixtureCommit, "2026-09-05 12:34:56", "release", fixtureServerURL},
+		{"snapshot suffix from another commit", "0.0.0-snapshot.abcdef0", fixtureCommit, fixtureSourceDate, "snapshot", fixtureServerURL},
+		{"release-style snapshot version", "1.2.3", fixtureCommit, fixtureSourceDate, "snapshot", fixtureServerURL},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			dir := metadataFixtureDirectory(t)
-			outputPath := filepath.Join(dir, "build-info.json")
-			err := run(metadataArgs(testCase.version, testCase.kind, testCase.serverURL, outputPath))
+			outputPath := filepath.Join(t.TempDir(), "build-info.json")
+			err := run([]string{
+				"metadata",
+				"--version", testCase.version,
+				"--commit", testCase.commit,
+				"--source-date", testCase.sourceDate,
+				"--kind", testCase.kind,
+				"--server-url", testCase.serverURL,
+				"--output", outputPath,
+			})
 			if err == nil {
 				t.Fatal("invalid metadata input was accepted")
 			}
@@ -101,32 +131,30 @@ func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestRunMetadataRejectsInvalidArguments(t *testing.T) {
+	valid := metadataArgs("1.2.3", "release", fixtureServerURL, filepath.Join(t.TempDir(), "build-info.json"))
+	for _, args := range [][]string{
+		append(append([]string(nil), valid...), "--bogus"),
+		append(append([]string(nil), valid...), "positional"),
+	} {
+		err := run(args)
+		if err == nil || err.Error() != "invalid metadata arguments" {
+			t.Fatalf("run(%q) = %v, want invalid arguments error", args, err)
+		}
+	}
+}
+
 func TestRunMetadataRejectsMissingOutputPath(t *testing.T) {
-	metadataFixtureDirectory(t)
 	err := run(metadataArgs("1.2.3", "release", fixtureServerURL, ""))
 	if err == nil {
 		t.Fatal("missing metadata output path was accepted")
 	}
 }
 
-func TestRunMetadataPreservesExistingOutput(t *testing.T) {
-	dir := metadataFixtureDirectory(t)
-	outputPath := filepath.Join(dir, "build-info.json")
-	const preserved = "preserved"
-	if err := os.WriteFile(outputPath, []byte(preserved), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	err := run(metadataArgs("1.2.3", "release", fixtureServerURL, outputPath))
+func TestRunMetadataReportsUnwritableOutput(t *testing.T) {
+	err := run(metadataArgs("1.2.3", "release", fixtureServerURL, filepath.Join(t.TempDir(), "missing", "build-info.json")))
 	if err == nil {
-		t.Fatal("existing metadata output was overwritten")
-	}
-	contents, readErr := os.ReadFile(outputPath)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	if string(contents) != preserved {
-		t.Fatalf("existing output changed to %q", contents)
+		t.Fatal("unwritable metadata output path was accepted")
 	}
 }
 
@@ -153,24 +181,4 @@ func readBuildMetadata(t *testing.T, path string) buildMetadata {
 		t.Fatal(err)
 	}
 	return metadata
-}
-
-func metadataFixtureDirectory(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "release"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "release", "toolchain.env"), []byte("GORELEASER_VERSION=v2.17.1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(old) })
-	return dir
 }

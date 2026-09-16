@@ -25,10 +25,20 @@ function main() {
     console.error(`hookspot: unsupported platform ${process.platform}/${process.arch}`);
     process.exit(1);
   }
+  // Ctrl-C reaches the whole process group: the binary owns the graceful
+  // shutdown, and the launcher must outlive it to report its exit status.
+  const ignore = () => {};
+  process.on('SIGINT', ignore);
+  process.on('SIGTERM', ignore);
   const result = spawnSync(binary, process.argv.slice(2), { stdio: 'inherit' });
   if (result.error) {
     console.error(`hookspot: ${result.error.message}`);
     process.exit(1);
+  }
+  if (result.signal) {
+    process.removeListener('SIGINT', ignore);
+    process.removeListener('SIGTERM', ignore);
+    process.kill(process.pid, result.signal);
   }
   process.exit(result.status === null ? 1 : result.status);
 }

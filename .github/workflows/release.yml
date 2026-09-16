@@ -17,9 +17,16 @@ jobs:
       contents: write
       id-token: write
     steps:
+      # Fail before anything is published: the npm step is the last one.
+      - run: test -n "$NPM_TOKEN"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - run: make test
 
       - run: make release-tools
 

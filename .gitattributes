@@ -1,0 +1,4 @@
+# release.yml runs scripts/smoke.sh from Git Bash on windows-latest, where
+# Git checks out with core.autocrlf=true; a CRLF shebang line does not run.
+*.sh text eol=lf
+*.js text eol=lf

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/hex"
-	"fmt"
 	"runtime"
 	"time"
 
@@ -45,37 +44,26 @@ func CurrentBuildInfo() BuildInfo {
 }
 
 func (info BuildInfo) networkEndpoint() (endpoint.Base, error) {
-	switch info.Environment {
-	case "dev":
-		base, err := endpoint.Parse(info.ServerURL, "dev")
-		if err != nil {
-			return endpoint.Base{}, newCommandError(
-				"development build has no valid Hookspot server URL",
-				"Rebuild with SERVER_URL set to the development server.",
-			)
-		}
-		return base, nil
-	case "prod":
-		if !info.validDistributionMetadata() {
-			return endpoint.Base{}, newCommandError(
-				"invalid prod build metadata",
-				"Uninstall this binary and install the correct prod release.",
-			)
-		}
-		base, err := endpoint.Parse(info.ServerURL, "prod")
-		if err != nil {
-			return endpoint.Base{}, newCommandError(
-				"invalid prod release endpoint",
-				"Uninstall this binary and install the correct prod release.",
-			)
-		}
-		return base, nil
-	default:
-		return endpoint.Base{}, newCommandError(
-			fmt.Sprintf("unknown build environment %q", info.Environment),
-			"Install an official Hookspot release.",
-		)
+	if info.Environment == "prod" && !info.validDistributionMetadata() {
+		return endpoint.Base{}, newCommandError("invalid prod build metadata", releaseInstallHint)
 	}
+	base, err := endpoint.Parse(info.ServerURL, info.Environment)
+	if err != nil {
+		return endpoint.Base{}, wrapCommandError("", endpointHint(info.Environment), err)
+	}
+	return base, nil
+}
+
+const releaseInstallHint = "Uninstall this binary and install the correct prod release."
+
+func endpointHint(environment string) string {
+	switch environment {
+	case "dev":
+		return "Rebuild with SERVER_URL set to the development server."
+	case "prod":
+		return releaseInstallHint
+	}
+	return "Install an official Hookspot release."
 }
 
 func (info BuildInfo) validDistributionMetadata() bool {

@@ -7,10 +7,12 @@ env:
   - GOTOOLCHAIN=local
   - GOFLAGS=-mod=readonly
 
+# Tests run in the workflows, not here, so they are not repeated per GoReleaser
+# run. --clean only empties dist/; the post-hooks below fill npm/binaries/.
 before:
   hooks:
+    - rm -rf npm/binaries
     - go mod download
-    - go test ./...
     - go run ./tools/releasecheck metadata --version={{ .Version }} --commit={{ .FullCommit }} --source-date={{ .CommitDate }} --kind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }} --server-url={{ .Env.PROD_SERVER_URL }} --output=build-info.json
 
 builds:

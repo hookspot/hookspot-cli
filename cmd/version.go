@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/mod/semver"
 
 	"hookspot/internal/printer"
 )
@@ -88,104 +88,16 @@ func latestVersion(ctx context.Context, current string) string {
 	var release struct {
 		TagName string `json:"tag_name"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&release); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&release); err != nil {
 		return ""
 	}
 	return release.TagName
 }
 
+// needsToUpgrade reports whether latest is newer than current. Neither
+// argument needs a "v" prefix; an empty or malformed latest never upgrades.
 func needsToUpgrade(current, latest string) bool {
-	if latest == "" {
-		return false
-	}
-	current = strings.TrimPrefix(current, "v")
-	latest = strings.TrimPrefix(latest, "v")
-
-	// Never suggest moving from a GA release to a pre-release.
-	if !strings.Contains(current, "-") && strings.Contains(latest, "-") {
-		return false
-	}
-	return semverGreater(latest, current)
-}
-
-// semverGreater reports whether a is semantically greater than b. Neither
-// argument may carry a "v" prefix.
-func semverGreater(a, b string) bool {
-	aNums, aPre := parseVersion(a)
-	bNums, bPre := parseVersion(b)
-
-	for i := range max(len(aNums), len(bNums)) {
-		var av, bv int
-		if i < len(aNums) {
-			av = aNums[i]
-		}
-		if i < len(bNums) {
-			bv = bNums[i]
-		}
-		if av != bv {
-			return av > bv
-		}
-	}
-
-	// Same base version: GA beats any pre-release.
-	if aPre == "" && bPre != "" {
-		return true
-	}
-	if aPre != "" && bPre == "" {
-		return false
-	}
-	return comparePreRelease(aPre, bPre) > 0
-}
-
-// parseVersion splits a version without its "v" prefix into numeric
-// components and an optional pre-release identifier.
-func parseVersion(v string) (nums []int, pre string) {
-	parts := strings.SplitN(v, "-", 2)
-	if len(parts) > 1 {
-		pre = parts[1]
-	}
-	for _, s := range strings.Split(parts[0], ".") {
-		n, _ := strconv.Atoi(s)
-		nums = append(nums, n)
-	}
-	return nums, pre
-}
-
-// comparePreRelease compares two pre-release identifiers dot by dot. Numeric
-// parts compare numerically and everything else lexically.
-func comparePreRelease(a, b string) int {
-	if a == b {
-		return 0
-	}
-	aParts := strings.Split(a, ".")
-	bParts := strings.Split(b, ".")
-
-	for i := range max(len(aParts), len(bParts)) {
-		if i >= len(aParts) {
-			return -1
-		}
-		if i >= len(bParts) {
-			return 1
-		}
-		aN, aErr := strconv.Atoi(aParts[i])
-		bN, bErr := strconv.Atoi(bParts[i])
-		if aErr == nil && bErr == nil {
-			if aN != bN {
-				if aN > bN {
-					return 1
-				}
-				return -1
-			}
-			continue
-		}
-		if aParts[i] > bParts[i] {
-			return 1
-		}
-		if aParts[i] < bParts[i] {
-			return -1
-		}
-	}
-	return 0
+	return semver.Compare("v"+strings.TrimPrefix(latest, "v"), "v"+strings.TrimPrefix(current, "v")) > 0
 }
 
 func init() {

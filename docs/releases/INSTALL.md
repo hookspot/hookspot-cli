@@ -2,8 +2,9 @@
 
 Every release is published to npm, Homebrew, and GitHub Releases from one
 build, so all three channels install the same `hookspot` binary. None of them
-needs Go, Docker, a compiler, or administrator access. After installing,
-confirm the binary before logging in:
+needs Go, Docker, or a compiler; the Homebrew and archive installs need no
+administrator access either, while `npm install -g` depends on your Node
+prefix. After installing, confirm the binary before logging in:
 
 ```sh
 hookspot version --json

@@ -19,6 +19,20 @@ gh release list --repo hookspot/hookspot-cli
 npm view hookspot versions
 ```
 
+## Prerequisites
+
+Before the first release, and worth re-checking when a release fails early:
+
+- `hookspot/homebrew-hookspot` exists, is public, and has a `Formula/`
+  directory; GoReleaser pushes `Formula/hookspot.rb` into it.
+- The `HOMEBREW_TAP_TOKEN` and `NPM_TOKEN` Actions secrets are set (see
+  Secrets below).
+- The npm package name `hookspot` is owned by the publishing account, or still
+  free for the first publish.
+- The old `stage_*` tags on origin are harmless but clutter the release list
+  and are what `make release-snapshot` names in its formula (see Local
+  snapshot); delete them when convenient.
+
 ## Tag and push
 
 ```sh
@@ -32,10 +46,12 @@ gh run watch
 
 `release` (ubuntu, `contents: write`, `id-token: write`):
 
+0. Checks that `NPM_TOKEN` is set, then runs `make test`, so a missing secret
+   or a failing test stops the job before anything is published.
 1. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
    `Dockerfile.release` (digests in `release/toolchain.env`).
 2. `make release-publish` runs `goreleaser release --clean` in that image. The
-   before hooks run `go mod download`, `go test ./...`, and
+   before hooks clear `npm/binaries/`, run `go mod download`, and run
    `releasecheck metadata`, which writes `build-info.json`. GoReleaser builds
    the six binaries (`serverURL` and `buildEnvironment=prod` from
    `.goreleaser.yaml`), copies each into `npm/binaries/<os>-<arch>/`, packs
@@ -56,19 +72,22 @@ pre-release tags. This matrix is the acceptance test for the release.
 
 ## Secrets
 
-All three are Actions secrets on `hookspot/hookspot-cli` (Settings, Secrets and
-variables, Actions; or `gh secret set NAME --repo hookspot/hookspot-cli`):
+`HOMEBREW_TAP_TOKEN` and `NPM_TOKEN` are Actions secrets on
+`hookspot/hookspot-cli` (Settings, Secrets and variables, Actions; or
+`gh secret set NAME --repo hookspot/hookspot-cli`); `GITHUB_TOKEN` is the
+workflow's built-in token.
 
-- `GITHUB_TOKEN`: provided by Actions; creates the GitHub Release and uploads
-  the assets.
+- `GITHUB_TOKEN`: creates the GitHub Release and uploads the assets.
 - `HOMEBREW_TAP_TOKEN`: a fine-grained personal access token scoped to
   `hookspot/homebrew-hookspot` with Contents read/write; pushes the formula.
-- `NPM_TOKEN`: an npm granular access token with publish permission for
-  `hookspot` and 2FA bypass for CI; used as `NODE_AUTH_TOKEN`.
+- `NPM_TOKEN`: an npm granular access token with publish permission and 2FA
+  bypass for CI; used as `NODE_AUTH_TOKEN`. npm can scope a granular token to
+  a package only once the package exists, so the token for the first publish
+  must cover all packages; replace it with one scoped to `hookspot` afterwards.
 
-`make release-publish` refuses to start without `GITHUB_TOKEN` and
-`HOMEBREW_TAP_TOKEN`; a missing `NPM_TOKEN` fails only at the npm step, after
-the GitHub Release and formula are already published.
+The workflow checks `NPM_TOKEN` first, and `make release-publish` refuses to
+start without `GITHUB_TOKEN` and `HOMEBREW_TAP_TOKEN`, so a missing secret
+stops the job before anything is published.
 
 ## Re-run a failed job
 
@@ -82,8 +101,14 @@ workflow change means a new patch version; never move a tag.
   is written again with the same content.
 - `release` failed at the npm step: re-running repeats the GoReleaser step as
   above, then publishes. If the version had already reached the registry, npm
-  refuses to publish it again (403); confirm with
-  `npm view hookspot@<version>` and treat the release as published.
+  refuses to publish it again (403) and the job stays red, so `smoke` never
+  runs. Confirm with `npm view hookspot@<version>`, then run the acceptance
+  test by hand before treating the release as published: on a macOS, Linux,
+  and Windows machine each, `scripts/smoke.sh <version>` (needs `gh` and
+  `jq`), `npm install -g hookspot@<version>` and
+  `scripts/smoke.sh <version> hookspot`, and on macOS
+  `brew install hookspot/hookspot/hookspot` and
+  `scripts/smoke.sh <version> "$(brew --prefix)/bin/hookspot"`.
 - `smoke` failed: re-running repeats only the smoke matrix. A transient
   failure (registry propagation, a runner outage) passes on re-run. A
   reproducible failure means the release is broken; yank it.
@@ -123,8 +148,16 @@ gh release delete v1.2.3 --repo hookspot/hookspot-cli --yes
 `make release-snapshot` runs the same GoReleaser pipeline unpublished: six
 archives and the checksum file in `dist/`, the binaries in `npm/binaries/`,
 version `0.0.0-snapshot.<sha>`, `build_kind=snapshot`. It requires a clean
-working tree because the build embeds VCS metadata, and it clears
-`build-info.json` and `npm/binaries/` before each run. `make release-check`
-validates `.goreleaser.yaml`; exit code 2 is GoReleaser's deprecation notice
-for the `brews` section, which is used deliberately (a formula does not
-quarantine the unsigned binary and works on Linux), and is treated as success.
+working tree because the build embeds VCS metadata; a before hook clears
+`npm/binaries/` inside the container, so the run is repeatable on Linux hosts
+where the bind mount leaves those files root-owned. The snapshot formula in
+`dist/homebrew/` names the newest existing tag in its download URLs (one of
+the old `stage_*` tags today); a real `v*` tag push fills in the right one.
+
+`make release-check` validates `.goreleaser.yaml`; exit code 2 is GoReleaser's
+deprecation notice for the `brews` section, which is used deliberately (a
+formula does not quarantine the unsigned binary and works on Linux), and is
+treated as success. `brews` is past GoReleaser's soft-deprecation phase, so a
+GoReleaser bump in `release/toolchain.env` may land on a version that has
+removed it; switching to `homebrew_casks` then means signing the binary or
+accepting quarantine.
