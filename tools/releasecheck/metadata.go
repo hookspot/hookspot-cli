@@ -72,6 +72,11 @@ func runMetadata(args []string) error {
 	if err != nil {
 		return err
 	}
+	// Unlink first so a symlink planted at the output path (which git ignores)
+	// is replaced rather than written through.
+	if err := os.Remove(*output); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale build metadata: %w", err)
+	}
 	if err := os.WriteFile(*output, append(contents, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write build metadata: %w", err)
 	}

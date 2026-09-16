@@ -88,6 +88,41 @@ func TestRunMetadataOverwritesExistingOutput(t *testing.T) {
 	}
 }
 
+func TestRunMetadataReplacesSymlinkedOutputWithoutFollowingIt(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target")
+	if err := os.WriteFile(targetPath, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(dir, "build-info.json")
+	if err := os.Symlink(targetPath, outputPath); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run(metadataArgs("1.2.3", "release", fixtureServerURL, outputPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(target) != "keep" {
+		t.Fatalf("symlink target = %q, want untouched", target)
+	}
+	info, err := os.Lstat(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Mode().IsRegular() {
+		t.Fatalf("output mode = %v, want a regular file", info.Mode())
+	}
+	if metadata := readBuildMetadata(t, outputPath); metadata.Version != "1.2.3" {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+}
+
 func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 	tests := []struct {
 		name       string

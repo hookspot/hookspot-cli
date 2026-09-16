@@ -140,7 +140,7 @@ environment-specific record. It stores the selected project and may copy the
 CLI key already persisted in the global record; flag and environment keys are
 never copied. The local file contains plaintext credentials when a persisted
 key is available and is ignored by this repository's `.gitignore`. `--local`
-cannot be combined with `--config` or a `CONFIG_FILE` environment override.
+cannot be combined with `--config` or a `HOOKSPOT_CONFIG_FILE` environment override.
 
 “Current directory” is the CLI process directory, including inside Docker. Two
 development shells that mount the same host checkout at `/src` and run there
