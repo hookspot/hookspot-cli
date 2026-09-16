@@ -350,21 +350,21 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
 
 - Modify: `.goreleaser.yaml`
 
-- [ ] `env`: replace `RELEASE_ENV`/`SERVER_URL` with
+- [x] `env`: replace `RELEASE_ENV`/`SERVER_URL` with
       `PROD_SERVER_URL=https://app.hookspot.dev/`; keep `GOTOOLCHAIN=local`,
       `GOFLAGS=-mod=readonly`; remove `dist: /out/artifacts`
-- [ ] `before.hooks`: `go mod download`, `go test ./...`, the
+- [x] `before.hooks`: `go mod download`, `go test ./...`, the
       `releasecheck metadata` invocation from Technical Details
-- [ ] build `hookspot`: binary `hookspot`, six targets as today, ldflags with
+- [x] build `hookspot`: binary `hookspot`, six targets as today, ldflags with
       `serverURL={{ .Env.PROD_SERVER_URL }}` and `buildEnvironment=prod`;
       `hooks.post` as in Technical Details (`sh -c`)
-- [ ] archive `cli`: name `hookspot_{{ .Version }}_{{ .Os }}_{{ .Arch }}`,
+- [x] archive `cli`: name `hookspot_{{ .Version }}_{{ .Os }}_{{ .Arch }}`,
       same bundled files; checksum `hookspot_{{ .Version }}_checksums.txt`
-- [ ] `release`: enabled, `github.owner/name` `bgr11n/hookspot-cli`,
+- [x] `release`: enabled, `github.owner/name` `bgr11n/hookspot-cli`,
       `prerelease: auto`, `replace_existing_artifacts: true`,
       `mode: keep-existing`; `changelog.disable: true` stays
-- [ ] add the `brews` section from Technical Details
-- [ ] verify: `make release-check` passes (exit 2 tolerated);
+- [x] add the `brews` section from Technical Details
+- [x] verify: `make release-check` passes (exit 2 tolerated);
       `make release-snapshot` produces `dist/` with 6 archives + checksums and
       `npm/binaries/` with 6 binaries (mode 0755 on Unix); `tar -tzf` one
       archive shows `hookspot`, `README.md`, `INSTALL.md`,
@@ -372,7 +372,7 @@ safe.directory /src` so GoReleaser's git calls work on runner-owned checkouts.
       binary's `version --json` reports `environment=prod`,
       `build_kind=snapshot`, `server_url=https://app.hookspot.dev`; a second
       `make release-snapshot` succeeds (rerun safety); a dirty tree is refused
-- [ ] run `make test` - must pass before task 4
+- [x] run `make test` - must pass before task 4
 
 ### Task 4: Collapse build environments to `dev` and `prod` and fix the upgrade check
 
