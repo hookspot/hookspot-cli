@@ -94,9 +94,12 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 				if apiErr.StatusCode == http.StatusNotFound {
 					return newCommandError("login attempt expired", "Run 'hookspot login' again.")
 				}
-				return fmt.Errorf("poll browser login: %w", err)
+				if apiErr.StatusCode < http.StatusInternalServerError && apiErr.StatusCode != http.StatusTooManyRequests {
+					return fmt.Errorf("poll browser login: %w", err)
+				}
 			}
-			// Network failures are transient; keep polling until the deadline.
+			// Network errors, rate limits, and rolling-deploy 5xx responses are
+			// transient; keep polling until the deadline.
 			continue
 		}
 		if result.Status != "approved" {

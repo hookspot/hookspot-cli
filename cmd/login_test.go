@@ -351,26 +351,74 @@ func TestRunBrowserLoginRejectsEmptyCLIKey(t *testing.T) {
 	}
 }
 
-func TestRunBrowserLoginAbortsOnAPIError(t *testing.T) {
-	loginAPI := &fakeLoginAPI{
-		start: func(context.Context, string) (*api.LoginAttempt, error) {
-			return instantLoginAttempt(), nil
-		},
-		poll: func(context.Context, string) (*api.LoginResult, error) {
-			return nil, &api.Error{StatusCode: http.StatusInternalServerError, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
-		},
-	}
+func TestRunBrowserLoginRetriesTransientAPIErrors(t *testing.T) {
+	for _, status := range []int{
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var polls atomic.Int32
+			loginAPI := &fakeLoginAPI{
+				start: func(context.Context, string) (*api.LoginAttempt, error) {
+					return instantLoginAttempt(), nil
+				},
+				poll: func(context.Context, string) (*api.LoginResult, error) {
+					if polls.Add(1) == 1 {
+						return nil, &api.Error{StatusCode: status, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+					}
+					return approvedLoginResult("new-key", nil), nil
+				},
+			}
+			store := &fakeLoginStore{}
 
-	err := runBrowserLogin(context.Background(), browserLoginDeps{
-		api:          loginAPI,
-		endpoint:     loginTestEndpoint(t),
-		openBrowser:  func(string) error { return nil },
-		store:        &fakeLoginStore{},
-		pollInterval: time.Millisecond,
-		out:          io.Discard,
-	})
-	if err == nil || !strings.Contains(err.Error(), "poll browser login") {
-		t.Fatalf("error = %v, want poll failure", err)
+			err := runBrowserLogin(context.Background(), browserLoginDeps{
+				api:          loginAPI,
+				endpoint:     loginTestEndpoint(t),
+				openBrowser:  func(string) error { return nil },
+				store:        store,
+				pollInterval: time.Millisecond,
+				out:          io.Discard,
+			})
+			if err != nil {
+				t.Fatalf("runBrowserLogin: %v", err)
+			}
+			if got := polls.Load(); got != 2 {
+				t.Fatalf("poll calls = %d, want 2", got)
+			}
+			if store.key != "new-key" {
+				t.Fatalf("saved key = %q, want new-key", store.key)
+			}
+		})
+	}
+}
+
+func TestRunBrowserLoginAbortsOnOtherAPIErrors(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			loginAPI := &fakeLoginAPI{
+				start: func(context.Context, string) (*api.LoginAttempt, error) {
+					return instantLoginAttempt(), nil
+				},
+				poll: func(context.Context, string) (*api.LoginResult, error) {
+					return nil, &api.Error{StatusCode: status, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+				},
+			}
+
+			err := runBrowserLogin(context.Background(), browserLoginDeps{
+				api:          loginAPI,
+				endpoint:     loginTestEndpoint(t),
+				openBrowser:  func(string) error { return nil },
+				store:        &fakeLoginStore{},
+				pollInterval: time.Millisecond,
+				out:          io.Discard,
+			})
+			if err == nil || !strings.Contains(err.Error(), "poll browser login") {
+				t.Fatalf("error = %v, want poll failure", err)
+			}
+		})
 	}
 }
 
