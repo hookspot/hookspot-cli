@@ -48,19 +48,24 @@ there is one (an offline machine sees no notice and no error). `--version` and
 
 ## Log in and select a project
 
-Create a CLI key in the matching Hookspot environment, then use the minimal
-interactive flow:
+`hookspot login` opens your browser, where you confirm the printed code and
+choose an organization and project. The CLI saves both the CLI key and the
+selected project:
 
 ```sh
 hookspot login
-hookspot project use
 hookspot listen
 ```
 
-With one accessible project, `project use` selects it immediately. With more
-than one, it opens an arrow-key picker in an interactive terminal and marks the
-saved project as the default. Scripts and other noninteractive callers must use
-an unambiguous form:
+On a headless or SSH machine the browser cannot open; visit the printed URL
+manually. To paste a key instead, run `hookspot login -i` (piping a key on
+stdin requires `-i`). For CI, pass `HOOKSPOT_CLI_KEY` or `--cli-key` and skip
+login. Browser login requires a Hookspot server with browser login support.
+
+To change the selected project, run `hookspot project use`. With one accessible
+project it selects it immediately; with more than one it opens an arrow-key
+picker in an interactive terminal and marks the saved project as the default.
+Scripts and other noninteractive callers must use an unambiguous form:
 
 ```sh
 hookspot project list

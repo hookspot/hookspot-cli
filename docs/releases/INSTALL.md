@@ -162,16 +162,22 @@ The minimal interactive flow is:
 
 ```sh
 hookspot login
-hookspot project use
 hookspot listen
 ```
 
-`project use` selects the only accessible project automatically or opens an
-arrow-key picker when several are available. Noninteractive callers must pass
-`PROJECT_UID`, `ORGANIZATION`, or `ORGANIZATION PROJECT`. Names match exactly
-without regard to case and names containing spaces must be quoted. A single
-path-safe argument is resolved as a UID first; only a 404 falls back to an
-organization-name match.
+`hookspot login` opens your browser, where you confirm the printed code and
+choose an organization and project; the CLI saves both. On a headless or SSH
+machine, open the printed URL manually. `hookspot login -i` prompts for a key
+to paste (piping a key on stdin requires `-i`), and CI should pass
+`HOOKSPOT_CLI_KEY` or `--cli-key`. Browser login requires a Hookspot server
+with browser login support.
+
+After login, `project use` selects the only accessible project automatically
+or opens an arrow-key picker when several are available. Noninteractive callers
+must pass `PROJECT_UID`, `ORGANIZATION`, or `ORGANIZATION PROJECT`. Names match
+exactly without regard to case and names containing spaces must be quoted. A
+single path-safe argument is resolved as a UID first; only a 404 falls back to
+an organization-name match.
 
 Commands choose one complete config file: explicit `--config`, then
 `HOOKSPOT_CONFIG_FILE`, then `.hookspot/<environment>/config.toml` in the

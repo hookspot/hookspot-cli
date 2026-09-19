@@ -9,7 +9,10 @@ arm64) and a launcher that runs the one matching your platform.
 ```sh
 npm install -g hookspot
 hookspot version --json
+hookspot login
 ```
 
-Usage, login, and the other install channels are documented in the
+`hookspot login` opens your browser to confirm a code and choose an
+organization and project; the CLI saves both for later commands. Usage, login
+options, and the other install channels are documented in the
 [hookspot-cli repository](https://github.com/hookspot/hookspot-cli#readme).

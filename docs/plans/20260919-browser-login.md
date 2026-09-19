@@ -186,14 +186,14 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Create: `test/app/iam/operations/cli_login_attempt/approve_test.exs`
 - Create: `test/app/iam/operations/cli_login_attempt/claim_test.exs`
 
-- [ ] `Create`: generate unpadded url-safe tokens and code, truncate `device_name` to 100 chars, store hashes, `expires_at = now + 10 min`; return the attempt plus raw tokens
-- [ ] `Approve`: given browser token, user, optional project uid — resolve project via `ProjectQuery.by_user(user)`, then the conditional `update_all`; `{:error, :not_found | :project_not_found}` otherwise
-- [ ] `Claim`: atomic `delete_all … select:` as specified; returns `:pending`, `{:approved, user, project}` (preloads after delete; `Repo.transact/1` if a transaction is needed), or `:not_found`
-- [ ] add fetch-by-browser-token returning the attempt state needed by the show page (pending / approved-by-user / gone)
-- [ ] write create tests (hashes stored, raw tokens not persisted, tokens unpadded, expiry set, long device_name truncated)
-- [ ] write approve tests (with project, without project, foreign project rejected and attempt stays pending, expired rejected, double approve rejected)
-- [ ] write claim tests (pending, approved-once-then-not-found, expired, unknown token)
-- [ ] run `docker-compose exec app mix test` - must pass before task 3
+- [x] `Create`: generate unpadded url-safe tokens and code, truncate `device_name` to 100 chars, store hashes, `expires_at = now + 10 min`; return the attempt plus raw tokens
+- [x] `Approve`: given browser token, user, optional project uid — resolve project via `ProjectQuery.by_user(user)`, then the conditional `update_all`; `{:error, :not_found | :project_not_found}` otherwise
+- [x] `Claim`: atomic `delete_all … select:` as specified; returns `:pending`, `{:approved, user, project}` (preloads after delete; `Repo.transact/1` if a transaction is needed), or `:not_found`
+- [x] add fetch-by-browser-token returning the attempt state needed by the show page (pending / approved-by-user / gone)
+- [x] write create tests (hashes stored, raw tokens not persisted, tokens unpadded, expiry set, long device_name truncated)
+- [x] write approve tests (with project, without project, foreign project rejected and attempt stays pending, expired rejected, double approve rejected)
+- [x] write claim tests (pending, approved-once-then-not-found, expired, unknown token)
+- [x] run `docker-compose exec app mix test` - must pass before task 3
 
 ### Task 3 (hookspot): JSON endpoints `POST /cli/auth` and `POST /cli/auth/poll`
 
@@ -202,13 +202,13 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Create: `lib/app_web/controllers/cli/login_controller.ex`
 - Modify: `test/app_web/controllers/cli_controller_test.exs`
 
-- [ ] add a second `/cli` scope piped through `[:api]` only (no `:put_cli_user`) with `post "/auth"` and `post "/auth/poll"`
-- [ ] `create`: call `Create`, respond 201 with `browser_token`, `poll_token`, `code`, `expires_in`
-- [ ] `poll`: map `Claim` results to 200-pending / 200-approved / 404, reusing `UserSerializer` and `ProjectSerializer` (`expand: [:organization]`)
-- [ ] write tests for `POST /cli/auth` (201 shape, works without `X-CLI-KEY`, overlong/missing device_name handled)
-- [ ] write tests for poll (pending, approved returns user with `cli_key` + project, approved without project returns `project: null`, second poll 404, bad/missing token 404)
-- [ ] verify existing `/cli/me` and `/cli/projects` tests still pass (still require `X-CLI-KEY`)
-- [ ] run `docker-compose exec app mix test` - must pass before task 4
+- [x] add a second `/cli` scope piped through `[:api]` only (no `:put_cli_user`) with `post "/auth"` and `post "/auth/poll"`
+- [x] `create`: call `Create`, respond 201 with `browser_token`, `poll_token`, `code`, `expires_in`
+- [x] `poll`: map `Claim` results to 200-pending / 200-approved / 404, reusing `UserSerializer` and `ProjectSerializer` (`expand: [:organization]`)
+- [x] write tests for `POST /cli/auth` (201 shape, works without `X-CLI-KEY`, overlong/missing device_name handled)
+- [x] write tests for poll (pending, approved returns user with `cli_key` + project, approved without project returns `project: null`, second poll 404, bad/missing token 404)
+- [x] verify existing `/cli/me` and `/cli/projects` tests still pass (still require `X-CLI-KEY`)
+- [x] run `docker-compose exec app mix test` - must pass before task 4
 
 ### Task 4 (hookspot): browser approval page (controller + Inertia views)
 
