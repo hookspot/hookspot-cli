@@ -209,6 +209,18 @@ func (s *Store) SaveCLIKey(key string) error {
 	return s.persist(record, !s.exists)
 }
 
+// SaveLogin persists a browser login's key and, when projectUID is nonempty,
+// its project in one write. An empty projectUID keeps the recorded project so
+// a login without a project selection does not clear it.
+func (s *Store) SaveLogin(key, projectUID string) error {
+	record := s.record
+	record.CLIKey = key
+	if projectUID != "" {
+		record.Project = projectUID
+	}
+	return s.persist(record, !s.exists)
+}
+
 // SaveProject persists only the project UID owned by this store.
 func (s *Store) SaveProject(uid string) error {
 	record := s.record

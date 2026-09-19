@@ -663,3 +663,106 @@ func TestImportDoesNotOverwriteDestination(t *testing.T) {
 		t.Fatalf("destination changed: %s", contents)
 	}
 }
+
+func TestSaveLoginPersistsKeyAndProject(t *testing.T) {
+	clearConfigEnvironment(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveLogin("login-key", "login-project"); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, `cli_key = 'login-key'`) || !strings.Contains(text, `project = 'login-project'`) {
+		t.Fatalf("unexpected config:\n%s", text)
+	}
+	if store.SavedProject() != "login-project" {
+		t.Fatalf("SavedProject() = %q, want login-project", store.SavedProject())
+	}
+}
+
+func TestSaveLoginOverwritesExistingRecord(t *testing.T) {
+	clearConfigEnvironment(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	writeConfigFixture(t, path, "schema_version = 1\nenvironment = 'prod'\ncli_key = 'old-key'\nproject = 'old-project'\n")
+	store, err := New(Options{Environment: "prod", ExplicitPath: path, ExplicitPathSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveLogin("new-key", "new-project"); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, `cli_key = 'new-key'`) || !strings.Contains(text, `project = 'new-project'`) {
+		t.Fatalf("unexpected config:\n%s", text)
+	}
+	if strings.Contains(text, "old-key") || strings.Contains(text, "old-project") {
+		t.Fatalf("previous login values survived:\n%s", text)
+	}
+}
+
+func TestSaveLoginWithoutProjectKeepsSavedProject(t *testing.T) {
+	clearConfigEnvironment(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	writeConfigFixture(t, path, "schema_version = 1\nenvironment = 'dev'\ncli_key = 'old-key'\nproject = 'kept-project'\n")
+	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveLogin("new-key", ""); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(contents)
+	if !strings.Contains(text, `cli_key = 'new-key'`) || !strings.Contains(text, `project = 'kept-project'`) {
+		t.Fatalf("unexpected config:\n%s", text)
+	}
+	if strings.Contains(text, "old-key") {
+		t.Fatalf("previous key survived:\n%s", text)
+	}
+	if store.SavedProject() != "kept-project" {
+		t.Fatalf("SavedProject() = %q, want kept-project", store.SavedProject())
+	}
+}
+
+func TestSaveLoginFailurePreservesDiskAndMemory(t *testing.T) {
+	clearConfigEnvironment(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	original := "schema_version = 1\nenvironment = 'prod'\ncli_key = 'old-key'\nproject = 'old-project'\n"
+	writeConfigFixture(t, path, original)
+	store, err := New(Options{Environment: "prod", ExplicitPath: path, ExplicitPathSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.write = func(string, []byte, bool) error { return errors.New("publish failed") }
+	if err := store.SaveLogin("new-key", "new-project"); err == nil {
+		t.Fatal("SaveLogin succeeded")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != original {
+		t.Fatalf("disk changed: %q", contents)
+	}
+	cfg, err := store.Resolve(Overrides{NeedProject: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CLIKey != "old-key" || cfg.Project != "old-project" {
+		t.Fatalf("in-memory config = %+v", cfg)
+	}
+}

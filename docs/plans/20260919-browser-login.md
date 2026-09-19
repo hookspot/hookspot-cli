@@ -267,11 +267,11 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Create: `internal/browser/browser.go`
 - Create: `internal/browser/browser_test.go`
 
-- [ ] `command(goos, url string) (name string, args []string, ok bool)`: `open` (darwin), `xdg-open` (linux), `rundll32 url.dll,FileProtocolHandler` (windows), `ok=false` otherwise — no build tags needed
-- [ ] `Open(url string) error`: reject non-`http(s)` URLs, then `exec.Command` with the URL as a single argument (no shell); `Start` and don't wait
-- [ ] write table tests for `command` across all three GOOS values plus unsupported
-- [ ] write tests for scheme rejection (`file:`, `javascript:`, empty)
-- [ ] run `make test` and `make vet` - must pass before task 8
+- [x] `command(goos, url string) (name string, args []string, ok bool)`: `open` (darwin), `xdg-open` (linux), `rundll32 url.dll,FileProtocolHandler` (windows), `ok=false` otherwise — no build tags needed
+- [x] `Open(url string) error`: reject non-`http(s)` URLs, then `exec.Command` with the URL as a single argument (no shell); `Start` and don't wait
+- [x] write table tests for `command` across all three GOOS values plus unsupported
+- [x] write tests for scheme rejection (`file:`, `javascript:`, empty)
+- [x] run `make test` and `make vet` - must pass before task 8
 
 ### Task 8 (hookspot-cli): `Store.SaveLogin`
 
@@ -279,9 +279,9 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Modify: `internal/config/store.go`
 - Modify: `internal/config/store_test.go`
 
-- [ ] add `SaveLogin(key, projectUID string) error`: single `persist` setting `CLIKey` and, when `projectUID` is non-empty, `Project`
-- [ ] write tests: new config gets both; existing config is overwritten with both; empty project preserves the previously saved project; persist failure leaves in-memory record unchanged
-- [ ] run `make test` - must pass before task 9
+- [x] add `SaveLogin(key, projectUID string) error`: single `persist` setting `CLIKey` and, when `projectUID` is non-empty, `Project`
+- [x] write tests: new config gets both; existing config is overwritten with both; empty project preserves the previously saved project; persist failure leaves in-memory record unchanged
+- [x] run `make test` - must pass before task 9
 
 ### Task 9 (hookspot-cli): browser flow in `hookspot login`
 
