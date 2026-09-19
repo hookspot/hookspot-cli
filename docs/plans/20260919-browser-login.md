@@ -253,13 +253,13 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Modify: `internal/api/client.go`
 - Modify: `internal/api/client_test.go`
 
-- [ ] refactor `get` into a shared `do(ctx, method, path, in, out)` with `get`/`post` wrappers; `post` JSON-encodes the body, sets `Content-Type: application/json`, accepts 200 and 201; `X-CLI-KEY` still only sent when non-empty
-- [ ] add `CLIKey` to `api.User`; add `LoginAttempt`, `LoginResult` types and `StartLogin(ctx, deviceName)`, `PollLogin(ctx, pollToken)`
-- [ ] write tests for `StartLogin` (request body, no `X-CLI-KEY` header when key empty, 201 decode, deployment path prefix preserved, 404 → `*api.Error`)
-- [ ] write tests for `PollLogin` (pending, approved with project, approved with `project: null`, 404 → `*api.Error` with status 404, body-size limit)
-- [ ] check `safeDisplayText`/JSON output paths don't start leaking `User.CLIKey` (e.g. any place that prints or marshals `api.User`)
-- [ ] confirm existing `get` tests are unchanged and pass
-- [ ] run `make test` - must pass before task 7
+- [x] refactor `get` into a shared `do(ctx, method, path, in, out)` with `get`/`post` wrappers; `post` JSON-encodes the body, sets `Content-Type: application/json`, accepts 200 and 201; `X-CLI-KEY` still only sent when non-empty
+- [x] add `CLIKey` to `api.User`; add `LoginAttempt`, `LoginResult` types and `StartLogin(ctx, deviceName)`, `PollLogin(ctx, pollToken)`
+- [x] write tests for `StartLogin` (request body, no `X-CLI-KEY` header when key empty, 201 decode, deployment path prefix preserved, 404 → `*api.Error`)
+- [x] write tests for `PollLogin` (pending, approved with project, approved with `project: null`, 404 → `*api.Error` with status 404, body-size limit)
+- [x] check `safeDisplayText`/JSON output paths don't start leaking `User.CLIKey` (e.g. any place that prints or marshals `api.User`)
+- [x] confirm existing `get` tests are unchanged and pass
+- [x] run `make test` - must pass before task 7
 
 ### Task 7 (hookspot-cli): browser opener
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,8 +68,24 @@ func New(base endpoint.Base, cliKey string) *Client {
 
 // User represents the authenticated hookspot user.
 type User struct {
-	UID   string `json:"uid"`
-	Email string `json:"email"`
+	UID    string `json:"uid"`
+	Email  string `json:"email"`
+	CLIKey string `json:"cli_key"`
+}
+
+// LoginAttempt is a browser login attempt created by StartLogin.
+type LoginAttempt struct {
+	BrowserToken string `json:"browser_token"`
+	PollToken    string `json:"poll_token"`
+	Code         string `json:"code"`
+	ExpiresIn    int    `json:"expires_in"`
+}
+
+// LoginResult is the state of a login attempt as reported by PollLogin.
+type LoginResult struct {
+	Status  string   `json:"status"`
+	User    User     `json:"user"`
+	Project *Project `json:"project"`
 }
 
 // Me returns the user associated with the client's CLI key.
@@ -78,6 +95,34 @@ func (c *Client) Me(ctx context.Context) (*User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// StartLogin creates a browser login attempt for deviceName without sending a
+// CLI key.
+func (c *Client) StartLogin(ctx context.Context, deviceName string) (*LoginAttempt, error) {
+	body := struct {
+		DeviceName string `json:"device_name"`
+	}{DeviceName: deviceName}
+
+	var attempt LoginAttempt
+	if err := c.post(ctx, "cli/auth", body, &attempt); err != nil {
+		return nil, err
+	}
+	return &attempt, nil
+}
+
+// PollLogin reports the state of a login attempt: pending until the user
+// approves it in the browser, then approved with the user's CLI key.
+func (c *Client) PollLogin(ctx context.Context, pollToken string) (*LoginResult, error) {
+	body := struct {
+		PollToken string `json:"poll_token"`
+	}{PollToken: pollToken}
+
+	var result LoginResult
+	if err := c.post(ctx, "cli/auth/poll", body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // Organization represents the organization a project belongs to.
@@ -174,16 +219,38 @@ func (c *Client) GetProjectBySlugs(ctx context.Context, organizationSlug, projec
 }
 
 func (c *Client) get(ctx context.Context, path string, out interface{}) error {
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
+func (c *Client) post(ctx context.Context, path string, in, out interface{}) error {
+	return c.do(ctx, http.MethodPost, path, in, out)
+}
+
+// do sends one request and decodes the response.
+func (c *Client) do(ctx context.Context, method, path string, in, out interface{}) error {
 	u := c.base.API(path)
 	if u == nil {
 		return fmt.Errorf("hookspot API endpoint is not configured")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+
+	var requestBody io.Reader
+	if in != nil {
+		payload, err := json.Marshal(in)
+		if err != nil {
+			return fmt.Errorf("encode Hookspot API request: %w", err)
+		}
+		requestBody = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), requestBody)
 	if err != nil {
 		return err
 	}
 	if c.cliKey != "" {
 		req.Header.Set("X-CLI-KEY", c.cliKey)
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	resp, err := c.http.Do(req)
@@ -192,7 +259,8 @@ func (c *Client) get(ctx context.Context, path string, out interface{}) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	// Reads are always 200; creating a login attempt returns 201.
+	if resp.StatusCode != http.StatusOK && !(method == http.MethodPost && resp.StatusCode == http.StatusCreated) {
 		return decodeErrorResponse(req, resp)
 	}
 
