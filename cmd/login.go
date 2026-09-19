@@ -1,16 +1,22 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/api"
+	"hookspot/internal/browser"
 )
+
+var loginInteractive bool
 
 var loginCmd = &cobra.Command{
 	Use:         "login",
-	Short:       "Authenticate hookspot with a CLI key",
+	Short:       "Authenticate hookspot via the browser",
 	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := resolveCommandConfig(cmd, false)
@@ -18,38 +24,69 @@ var loginCmd = &cobra.Command{
 			return wrapCommandError("resolve login configuration", configRecoveryHint(), err)
 		}
 
-		cliKey := cfg.CLIKey
-		if cliKey == "" {
-			line, err := readLoginKey(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
-			_, newlineErr := fmt.Fprintln(cmd.OutOrStdout())
-			if err != nil {
-				return fmt.Errorf("read CLI key: %w", err)
+		explicitKey := explicitLoginKey(cmd)
+		if explicitKey || loginInteractive {
+			cliKey := ""
+			if explicitKey {
+				cliKey = cfg.CLIKey
 			}
-			if newlineErr != nil {
-				return fmt.Errorf("write CLI key prompt: %w", newlineErr)
-			}
-			cliKey = line
+			return runKeyLogin(cmd.Context(), cliKey, cmd.InOrStdin(), cmd.OutOrStdout())
 		}
 
-		if cliKey == "" {
-			return newCommandError("no CLI key provided", "Pass a CLI key when prompted or set HOOKSPOT_CLI_KEY.")
-		}
-
-		client := api.New(activeEndpoint, cliKey)
-		user, err := client.Me(cmd.Context())
-		if err != nil {
-			return fmt.Errorf("validate CLI key: %w", err)
-		}
-
-		if err := store.SaveCLIKey(cliKey); err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s\n", safeDisplayText(user.Email))
-		return nil
+		return runBrowserLogin(cmd.Context(), browserLoginDeps{
+			api:          api.New(activeEndpoint, ""),
+			endpoint:     activeEndpoint,
+			openBrowser:  browser.Open,
+			store:        store,
+			pollInterval: browserLoginPollInterval,
+			out:          cmd.OutOrStdout(),
+		})
 	},
 }
 
+// explicitLoginKey reports whether this invocation supplied a CLI key through
+// the flag or environment. A key that is merely saved in config is not an
+// explicit key and must still start the browser flow.
+func explicitLoginKey(cmd *cobra.Command) bool {
+	if cmd.Flags().Changed("cli-key") {
+		return true
+	}
+	value, set := os.LookupEnv("HOOKSPOT_CLI_KEY")
+	return set && value != ""
+}
+
+func runKeyLogin(ctx context.Context, cliKey string, in io.Reader, out io.Writer) error {
+	if cliKey == "" {
+		line, err := readLoginKey(ctx, in, out)
+		_, newlineErr := fmt.Fprintln(out)
+		if err != nil {
+			return fmt.Errorf("read CLI key: %w", err)
+		}
+		if newlineErr != nil {
+			return fmt.Errorf("write CLI key prompt: %w", newlineErr)
+		}
+		cliKey = line
+	}
+
+	if cliKey == "" {
+		return newCommandError("no CLI key provided", "Pass a CLI key when prompted, set HOOKSPOT_CLI_KEY, or run 'hookspot login' to authenticate via the browser.")
+	}
+
+	client := api.New(activeEndpoint, cliKey)
+	user, err := client.Me(ctx)
+	if err != nil {
+		return fmt.Errorf("validate CLI key: %w", err)
+	}
+
+	if err := store.SaveCLIKey(cliKey); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+
+	fmt.Fprintf(out, "Logged in as %s\n", safeDisplayText(user.Email))
+	return nil
+}
+
 func init() {
+	loginCmd.Flags().BoolVarP(&loginInteractive, "interactive", "i", false, "enter a CLI key interactively")
 	rootCmd.AddCommand(loginCmd)
 }

@@ -107,8 +107,8 @@ Key design decisions:
 | `device_name` | string, null | from CLI (hostname), truncated to 100 chars in `Create`, display only |
 | `user_id` | references users, on_delete: delete_all, null | set on approval |
 | `project_id` | references projects, on_delete: nilify_all, null | set on approval, optional |
-| `approved_at` | utc_datetime, null | |
-| `expires_at` | utc_datetime, not null | inserted_at + 10 min |
+| `approved_at` | utc_datetime_usec, null | repo convention is usec everywhere |
+| `expires_at` | utc_datetime_usec, not null | inserted_at + 10 min |
 | timestamps | | |
 
 Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` — unpadded so they are valid path segments for the CLI's `endpoint.validRelativePath`.
@@ -169,11 +169,11 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Create: `test/support/fixtures/studio_fixtures.ex`
 - Create: `test/app/iam/models/cli_login_attempt_test.exs`
 
-- [ ] add migration for `cli_login_attempts` per the table above, unique indexes on both hash columns, index on `expires_at`
-- [ ] create `App.IAM.CLILoginAttempt` schema with `belongs_to :user`, `belongs_to :project`, and `hash_token/1` (sha256), modelled on `App.IAM.UserToken` (no changeset, no struct predicates)
-- [ ] add `App.StudioFixtures.project_fixture/1` (needed by Tasks 2–4; none exists today)
-- [ ] write tests for `hash_token/1` (deterministic, differs per token) and that `project_fixture` yields a project visible through `ProjectQuery.by_user`
-- [ ] run `docker-compose exec app mix test` - must pass before task 2
+- [x] add migration for `cli_login_attempts` per the table above, unique indexes on both hash columns, index on `expires_at`
+- [x] create `App.IAM.CLILoginAttempt` schema with `belongs_to :user`, `belongs_to :project`, and `hash_token/1` (sha256), modelled on `App.IAM.UserToken` (no changeset, no struct predicates)
+- [x] add `App.StudioFixtures.project_fixture/1` (needed by Tasks 2–4; none exists today)
+- [x] write tests for `hash_token/1` (deterministic, differs per token) and that `project_fixture` yields a project visible through `ProjectQuery.by_user`
+- [x] run `docker-compose exec app mix test` - must pass before task 2
 
 ### Task 2 (hookspot): login-attempt operations (create / approve / claim)
 
@@ -290,17 +290,17 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Create: `cmd/login_browser.go`
 - Create: `cmd/login_test.go`
 
-- [ ] add `-i/--interactive` flag; restructure `RunE` into the decision order from Technical Details, detecting an explicit key via `cmd.Flags().Changed(...)` / `os.LookupEnv("HOOKSPOT_CLI_KEY")` — NOT via `cfg.CLIKey`; update `Short` to "Authenticate hookspot via the browser" and reword the "Pass a CLI key when prompted…" hint at `cmd/login.go:35`
-- [ ] implement `runBrowserLogin(ctx, deps)` in `cmd/login_browser.go`; `deps` carries `loginAPI` interface, `openBrowser func(string) error`, a store interface (`SaveLogin`), poll interval, in/out writers — no package-level `store` access, so it is testable in-process
-- [ ] device name from `os.Hostname()` (empty on error); browser URL from `activeEndpoint.API("cli/login/" + BrowserToken)`, erroring if that returns nil (malformed token)
-- [ ] map `StartLogin` 404/405 to the "server does not support browser login" command error
-- [ ] print code + URL (through `safeDisplayText`), attempt `openBrowser`, on failure print the manual-open notice and continue
-- [ ] poll loop: 2s ticker; stop on ctx cancel (Ctrl+C returns promptly), clamped deadline, or `PollLogin` 404 → `newCommandError("login attempt expired", "Run 'hookspot login' again.")`; retry transient network errors, abort on other API errors
-- [ ] on approval: reject empty `User.CLIKey`; `SaveLogin(key, project UID or "")`; print `Logged in as …`, then `Active project set to <projectDisplayName>` or a hint to run `hookspot project use`
-- [ ] write tests: happy path with project; happy path without project (hint shown, old project preserved); **saved key in config still starts the browser flow**
-- [ ] write tests: browser open failure still succeeds; malformed browser token aborts before opening; unsupported server (404 on start); expiry (404 on poll); empty key rejected; oversized `ExpiresIn` clamped; context cancellation returns promptly; transient poll error retried
-- [ ] write tests: `--cli-key`/env path and `-i` path behave exactly as before
-- [ ] run `make test` and `make vet` - must pass before task 10
+- [x] add `-i/--interactive` flag; restructure `RunE` into the decision order from Technical Details, detecting an explicit key via `cmd.Flags().Changed(...)` / `os.LookupEnv("HOOKSPOT_CLI_KEY")` — NOT via `cfg.CLIKey`; update `Short` to "Authenticate hookspot via the browser" and reword the "Pass a CLI key when prompted…" hint at `cmd/login.go:35`
+- [x] implement `runBrowserLogin(ctx, deps)` in `cmd/login_browser.go`; `deps` carries `loginAPI` interface, `openBrowser func(string) error`, a store interface (`SaveLogin`), poll interval, in/out writers — no package-level `store` access, so it is testable in-process
+- [x] device name from `os.Hostname()` (empty on error); browser URL from `activeEndpoint.API("cli/login/" + BrowserToken)`, erroring if that returns nil (malformed token)
+- [x] map `StartLogin` 404/405 to the "server does not support browser login" command error
+- [x] print code + URL (through `safeDisplayText`), attempt `openBrowser`, on failure print the manual-open notice and continue
+- [x] poll loop: 2s ticker; stop on ctx cancel (Ctrl+C returns promptly), clamped deadline, or `PollLogin` 404 → `newCommandError("login attempt expired", "Run 'hookspot login' again.")`; retry transient network errors, abort on other API errors
+- [x] on approval: reject empty `User.CLIKey`; `SaveLogin(key, project UID or "")`; print `Logged in as …`, then `Active project set to <projectDisplayName>` or a hint to run `hookspot project use`
+- [x] write tests: happy path with project; happy path without project (hint shown, old project preserved); **saved key in config still starts the browser flow**
+- [x] write tests: browser open failure still succeeds; malformed browser token aborts before opening; unsupported server (404 on start); expiry (404 on poll); empty key rejected; oversized `ExpiresIn` clamped; context cancellation returns promptly; transient poll error retried
+- [x] write tests: `--cli-key`/env path and `-i` path behave exactly as before
+- [x] run `make test` and `make vet` - must pass before task 10
 
 ### Task 10: Verify acceptance criteria
 - [ ] `hookspot login` → browser → org/project select → submit → CLI has key + project, against the local backend (`https://hookspot.localhost`), driving the browser side with the Playwright tooling from `docs/browser-automation.md`
