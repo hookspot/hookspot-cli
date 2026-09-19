@@ -225,17 +225,17 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Modify: `test/support/conn_case.ex`
 - Create: `test/app_web/controllers/cli/login_page_controller_test.exs`
 
-- [ ] read `docs/browser-automation.md` (required by backend `AGENTS.md` before UI work)
-- [ ] add `log_in_user/2` to `AppWeb.ConnCase` using `App.IAM.UserToken.Create.call!(user, "session")` + `Phoenix.ConnTest.init_test_session(user_token: raw_token)` (no such helper exists yet)
-- [ ] `show`: render `Show` / `Success` / `Expired` per the state rules in Technical Details; `projects` prop from `ProjectQuery.by_user` + `ProjectSerializer expand: [:organization]`
-- [ ] `approve`: call `Approve` with `current_user` and optional `project_uid`; render `Success` (with chosen org/project names), re-render `Show` with error for an inaccessible project, `Expired` on `:not_found`
-- [ ] `LoginProjectPicker.vue`: props-only component (no `$page`/`$t` globals): organization select derived by grouping `projects` by organization → project select; preselect when exactly one; emits selected `project_uid`
-- [ ] `Show.vue` on `AuthLayout.vue`: confirmation code and device name shown prominently, the picker, submit button; empty state (no projects) still allows submit
-- [ ] `Success.vue` / `Expired.vue` on `AuthLayout.vue`: "Return to your terminal" / "This login link has expired, run `hookspot login` again"; add locale strings
-- [ ] write controller tests: unauthenticated GET redirects to `/users/signin` and session `user_return_to` is `/cli/login/<token>`; authenticated GET renders `cli/login/Show` with code + projects; org-less user reaches the page; unknown/expired token renders `Expired`; approved-unclaimed token renders `Success`
-- [ ] write controller tests: POST with own project approves; POST without project approves; POST with another user's project is rejected and attempt stays pending; POST on expired attempt renders `Expired`
-- [ ] write Vitest tests for `LoginProjectPicker` (grouping, dependent select, single-project preselect, empty list)
-- [ ] run `docker-compose exec app mix test`, the assets Vitest command, and `bun run --cwd assets typecheck` - must pass before task 5
+- [x] read `docs/browser-automation.md` (required by backend `AGENTS.md` before UI work)
+- [x] add `log_in_user/2` to `AppWeb.ConnCase` using `App.IAM.UserToken.Create.call!(user, "session")` + `Phoenix.ConnTest.init_test_session(user_token: raw_token)` (no such helper exists yet)
+- [x] `show`: render `Show` / `Success` / `Expired` per the state rules in Technical Details; `projects` prop from `ProjectQuery.by_user` + `ProjectSerializer expand: [:organization]`
+- [x] `approve`: call `Approve` with `current_user` and optional `project_uid`; render `Success` (with chosen org/project names), re-render `Show` with error for an inaccessible project, `Expired` on `:not_found`
+- [x] `LoginProjectPicker.vue`: props-only component (no `$page`/`$t` globals): organization select derived by grouping `projects` by organization → project select; preselect when exactly one; emits selected `project_uid`
+- [x] `Show.vue` on `AuthLayout.vue`: confirmation code and device name shown prominently, the picker, submit button; empty state (no projects) still allows submit
+- [x] `Success.vue` / `Expired.vue` on `AuthLayout.vue`: "Return to your terminal" / "This login link has expired, run `hookspot login` again"; add locale strings
+- [x] write controller tests: unauthenticated GET redirects to `/users/signin` and session `user_return_to` is `/cli/login/<token>`; authenticated GET renders `cli/login/Show` with code + projects; org-less user reaches the page; unknown/expired token renders `Expired`; approved-unclaimed token renders `Success`
+- [x] write controller tests: POST with own project approves; POST without project approves; POST with another user's project is rejected and attempt stays pending; POST on expired attempt renders `Expired`
+- [x] write Vitest tests for `LoginProjectPicker` (grouping, dependent select, single-project preselect, empty list)
+- [x] run `docker-compose exec app mix test`, the assets Vitest command, and `bun run --cwd assets typecheck` - must pass before task 5
 
 ### Task 5 (hookspot): purge expired login attempts
 
@@ -243,9 +243,21 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - Modify: `lib/app/core/jobs/schedule/daily/prune_job.ex`
 - Modify: the existing PruneJob test (create next to it if absent)
 
-- [ ] delete `cli_login_attempts` where `expires_at < now()` inside `App.Core.Daily.PruneJob`, alongside its existing pruning (DailyJob itself only enqueues — leave it untouched)
-- [ ] write test: expired rows removed, live rows kept
-- [ ] run `docker-compose exec app mix precommit` (compile warnings-as-errors, format, unused deps, tests) - must pass before task 6
+- [x] delete `cli_login_attempts` where `expires_at < now()` inside `App.Core.Daily.PruneJob`, alongside its existing pruning (DailyJob itself only enqueues — leave it untouched)
+- [x] write test: expired rows removed, live rows kept
+- [x] run `docker-compose exec app mix precommit` (compile warnings-as-errors, format, unused deps, tests) - must pass before task 6
+
+### ➕ Task 5a: High-load hardening pass (added during implementation)
+- [x] (hookspot) `Approve.call` returns `{:ok, project}`; Success page renders without re-fetching the attempt (a CLI claim landing between approve and fetch used to raise → 500)
+- [x] (hookspot) `Claim` hot path: one indexed SELECT for pending polls, no transaction and no write; atomic `delete_all … select:` only once approved
+- [x] (hookspot) `config :phoenix, :filter_parameters, ["password", "token", "cli_key"]` — prod logs at `:debug`, tokens were being logged
+- [x] (hookspot) `cache-control: no-store` on `/cli/auth` and `/cli/auth/poll`
+- [x] (hookspot) expired attempts pruned every 10 minutes by `App.Core.CLILoginAttempts.PruneJob` (own Oban cron entry) instead of the daily PruneJob (Task 5 superseded)
+- [x] (hookspot) neutral Expired copy; command names rendered with `<code>`; fixture code uses Create's alphabet; CLI key settings hint mentions `hookspot login`
+- [x] (hookspot-cli) poll loop retries 429 and 5xx until the deadline; only 404 = expired, other 4xx abort
+- [x] (hookspot-cli) `login -i` always prompts, even when a key is already saved in config
+- ⚠️ 8 backend test failures pre-date this work and are unrelated (6 × `SlugifyServiceTest.next_slug_slot/2`, 2 × `Ingest.API` `entities/1`)
+- ⚠️ Task 10 deviations: the OAuth return-to path and a Linux/Windows run were not exercised; the browser side of the real-binary run was driven over HTTP with a session cookie (PI separately verified the page in Playwright)
 
 ### Task 6 (hookspot-cli): `post` support and login API methods
 
@@ -303,21 +315,21 @@ Tokens: `:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)` —
 - [x] run `make test` and `make vet` - must pass before task 10
 
 ### Task 10: Verify acceptance criteria
-- [ ] `hookspot login` → browser → org/project select → submit → CLI has key + project, against the local backend (`https://hookspot.localhost`), driving the browser side with the Playwright tooling from `docs/browser-automation.md`
-- [ ] same run on a machine/config that already has a saved key — browser flow still starts
-- [ ] `hookspot login -i`, `HOOKSPOT_CLI_KEY=… hookspot login`, and `--cli-key` still work
-- [ ] submit without project logs in and leaves project unset/preserved
-- [ ] confirmation code shown in terminal matches the browser page; refresh after approve shows Success, not Expired
-- [ ] second poll after claim returns 404; expired attempt shows `Expired` page and CLI error
-- [ ] signed-out start: password sign-in and OAuth sign-in both return to `/cli/login/:token`
-- [ ] headless run (`PATH` without `open`/`xdg-open`) prints URL and completes after manual approval
-- [ ] run full suites: `docker-compose exec app mix precommit` (hookspot), `make test && make vet && make npm-test` (hookspot-cli)
+- [x] `hookspot login` → browser → org/project select → submit → CLI has key + project, against the local backend (`https://hookspot.localhost`), driving the browser side with the Playwright tooling from `docs/browser-automation.md`
+- [x] same run on a machine/config that already has a saved key — browser flow still starts
+- [x] `hookspot login -i`, `HOOKSPOT_CLI_KEY=… hookspot login`, and `--cli-key` still work
+- [x] submit without project logs in and leaves project unset/preserved
+- [x] confirmation code shown in terminal matches the browser page; refresh after approve shows Success, not Expired
+- [x] second poll after claim returns 404; expired attempt shows `Expired` page and CLI error
+- [x] signed-out start: password sign-in and OAuth sign-in both return to `/cli/login/:token`
+- [x] headless run (`PATH` without `open`/`xdg-open`) prints URL and completes after manual approval
+- [x] run full suites: `docker-compose exec app mix precommit` (hookspot), `make test && make vet && make npm-test` (hookspot-cli)
 
 ### Task 11: [Final] Update documentation
-- [ ] update `README.md` and `npm/README.md` login sections (browser default, `-i`, env key for CI)
-- [ ] update `docs/releases/INSTALL.md` if it describes first login
-- [ ] update hookspot's CLI key settings page copy (`assets/js/dashboard/views/user/settings/api-key/Show.vue`) to mention `hookspot login` as the primary path, if it currently instructs pasting the key
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update `README.md` and `npm/README.md` login sections (browser default, `-i`, env key for CI)
+- [x] update `docs/releases/INSTALL.md` if it describes first login
+- [x] update hookspot's CLI key settings page copy (`assets/js/dashboard/views/user/settings/api-key/Show.vue`) to mention `hookspot login` as the primary path, if it currently instructs pasting the key
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - informational only*
