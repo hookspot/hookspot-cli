@@ -76,27 +76,51 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 }
 
 func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
-	projects := selectionProjects()[:2]
-	prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
-		if err := ctx.Err(); err != nil {
-			t.Fatal(err)
-		}
-		wantOptions := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments (current)"}
-		if strings.Join(options, "\n") != strings.Join(wantOptions, "\n") {
-			t.Fatalf("options = %q, want %q", options, wantOptions)
-		}
-		if defaultIndex != 1 {
-			t.Fatalf("default index = %d, want 1", defaultIndex)
-		}
-		return 0, nil
+	marked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments (current)"}
+	unmarked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments"}
+	tests := []struct {
+		name             string
+		listedPrefixed   bool
+		savedUID         string
+		wantOptions      []string
+		wantDefaultIndex int
+	}{
+		{name: "prefixed saved and listed", listedPrefixed: true, savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "raw saved and listed", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "raw saved prefixed listed", listedPrefixed: true, savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "prefixed saved raw listed", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "no saved project", listedPrefixed: true, savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "other entity prefix", listedPrefixed: true, savedUID: "org_payments", wantOptions: unmarked, wantDefaultIndex: 0},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projects := selectionProjects()[:2]
+			if !tt.listedPrefixed {
+				for index := range projects {
+					projects[index].UID = strings.TrimPrefix(projects[index].UID, "proj_")
+				}
+			}
+			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
+				if err := ctx.Err(); err != nil {
+					t.Fatal(err)
+				}
+				if strings.Join(options, "\n") != strings.Join(tt.wantOptions, "\n") {
+					t.Fatalf("options = %q, want %q", options, tt.wantOptions)
+				}
+				if defaultIndex != tt.wantDefaultIndex {
+					t.Fatalf("default index = %d, want %d", defaultIndex, tt.wantDefaultIndex)
+				}
+				return 0, nil
+			}
 
-	selected, err := selectProject(context.Background(), strings.NewReader(""), io.Discard, projects, "proj_payments", prompt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selected.UID != "proj_storefront" {
-		t.Fatalf("selected UID = %q, want proj_storefront", selected.UID)
+			selected, err := selectProject(context.Background(), strings.NewReader(""), io.Discard, projects, tt.savedUID, prompt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if selected.UID != projects[0].UID {
+				t.Fatalf("selected UID = %q, want %q", selected.UID, projects[0].UID)
+			}
+		})
 	}
 }
 

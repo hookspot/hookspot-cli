@@ -172,7 +172,7 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 	defaultIndex := 0
 	for index, project := range projects {
 		options[index] = projectDisplayName(project)
-		if project.UID == currentUID {
+		if sameProjectUID(project.UID, currentUID) {
 			defaultIndex = index
 			options[index] += " (current)"
 		}
@@ -188,6 +188,15 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 		return nil, err
 	}
 	return &projects[selectedIndex], nil
+}
+
+// projectUIDPrefix is the type prefix the platform may add to project uids.
+const projectUIDPrefix = "proj_"
+
+// sameProjectUID reports whether two project uids name one project, so a saved
+// raw uid still matches a listed prefixed uid and vice versa.
+func sameProjectUID(a, b string) bool {
+	return strings.TrimPrefix(a, projectUIDPrefix) == strings.TrimPrefix(b, projectUIDPrefix)
 }
 
 func persistProjectSelection(ctx context.Context, store *config.Store, project api.Project, out io.Writer) error {

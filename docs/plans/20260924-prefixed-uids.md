@@ -119,10 +119,10 @@
 - Modify: `cmd/project.go`
 - Modify: `cmd/project_test.go`
 
-- [ ] add `projectUIDPrefix` and `sameProjectUID` in `cmd/project.go`, and use `sameProjectUID` in `selectProject`
-- [ ] write table-driven tests (extend `TestSelectProjectMarksAndDefaultsSavedProject`): saved `payments` against listed `proj_payments`, saved `proj_payments` against listed `payments`, and both same-form cases mark "(current)" with default index 1
-- [ ] write tests for edge cases: an empty saved project and a saved `org_payments` mark nothing (default index 0)
-- [ ] run tests - must pass before next task
+- [x] add `projectUIDPrefix` and `sameProjectUID` in `cmd/project.go`, and use `sameProjectUID` in `selectProject`
+- [x] write table-driven tests (extend `TestSelectProjectMarksAndDefaultsSavedProject`): saved `payments` against listed `proj_payments`, saved `proj_payments` against listed `payments`, and both same-form cases mark "(current)" with default index 1
+- [x] write tests for edge cases: an empty saved project and a saved `org_payments` mark nothing (default index 0)
+- [x] run tests - must pass before next task
 
 ### Task 3: Explain a `not_found` channel join rejection
 
