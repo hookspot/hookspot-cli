@@ -83,8 +83,8 @@
 | `config migrate` (`cmd/config.go:49-52`) | Validates the legacy project uid with `GetProject` and stores it as given; the server accepts raw uids. |
 | `listen` topic (`cmd/listen.go:126`) | Built from the API's `project.UID`: raw before Phase 2, prefixed after. Phase 1+ nodes accept both join topics, and the dual broadcast reaches either one. |
 | `listen` `sources` join param | Built from API source uids; the server matches raw and prefixed. |
-| `delivery_response.attempt_uid` (`internal/ws/client.go:446`) | Echoed verbatim; the server accepts both forms. |
-| WS frame topic filters (`internal/ws/client.go:385,411,529`) | Each Phoenix channel receives only its own topic, so the frame topic always equals the joined topic. |
+| `delivery_response.attempt_uid` (`internal/ws/client.go:447`) | Echoed verbatim; the server accepts both forms. |
+| WS frame topic filters (`internal/ws/client.go:386,412,530`) | Each Phoenix channel receives only its own topic, so the frame topic always equals the joined topic. |
 | `internal/endpoint` | `Segment` and `validRelativePath` already allow `_`. |
 | Printer request id, ingest URLs, `project list` | `request_uid` ends the line unpadded, the ingest `source.URL` is printed as received, and `project list` uses `tabwriter`. Longer uids just render longer. |
 | `listen [source...]` | Matches sources by **name**, not uid. |
@@ -141,10 +141,10 @@
 - [x] run tests - must pass before next task
 
 ### Task 4: Verify acceptance criteria
-- [ ] verify both comparison sites handle raw and prefixed forms in either direction, and that a `not_found` join rejection stops `listen` with the new message and hint
-- [ ] re-grep `cmd/` and `internal/` for other uid equality/map lookups (`UID ==`, `[...UID]`, `SourceUID`, `AttemptUID`) and confirm the No change needed table is still accurate
-- [ ] run full test suite: `make test`
-- [ ] run `make vet`
+- [x] verify both comparison sites handle raw and prefixed forms in either direction, and that a `not_found` join rejection stops `listen` with the new message and hint
+- [x] re-grep `cmd/` and `internal/` for other uid equality/map lookups (`UID ==`, `[...UID]`, `SourceUID`, `AttemptUID`) and confirm the No change needed table is still accurate (only the `internal/ws/client.go` line refs shifted by one after Task 3; updated)
+- [x] run full test suite: `make test`
+- [x] run `make vet`
 
 ### Task 5: [Final] Update documentation
 - [ ] README.md "Log in and select a project": add one sentence that holds before and after Phase 2, e.g. "Project UIDs may be prefixed (`proj_…`); older unprefixed UIDs, including those in saved configs, keep working."
