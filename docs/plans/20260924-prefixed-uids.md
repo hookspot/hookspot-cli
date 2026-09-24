@@ -106,12 +106,12 @@
 - Modify: `internal/printer/printer.go`
 - Modify: `internal/printer/printer_test.go`
 
-- [ ] add `sourceUIDPrefix` and `sourceKey` in `internal/printer/printer.go`
-- [ ] re-key the sources map by `sourceKey` in `New`, and look up and color by `sourceKey(uid)` in `sourceToken`
-- [ ] write tests for the form matrix: map `{"stripe01": "stripe"}` with delivery `src_stripe01`, map `{"src_stripe01": "stripe"}` with delivery `stripe01`, and both same-form cases all print `● stripe`; a raw and a prefixed delivery for one source get the same color (unset `NO_COLOR` as `TestSourceTokensAlignAndUseStableColor` does, and assert the exact ANSI token)
-- [ ] write tests for edge cases: `dst_stripe01`, an unmapped uid, and an empty `source_uid` print `● unknown`
-- [ ] update the existing color assertion (`printer_test.go:392`, `sourceColor("src_stripe")`) to the raw-keyed hash
-- [ ] run tests - must pass before next task
+- [x] add `sourceUIDPrefix` and `sourceKey` in `internal/printer/printer.go`
+- [x] re-key the sources map by `sourceKey` in `New`, and look up and color by `sourceKey(uid)` in `sourceToken`
+- [x] write tests for the form matrix: map `{"stripe01": "stripe"}` with delivery `src_stripe01`, map `{"src_stripe01": "stripe"}` with delivery `stripe01`, and both same-form cases all print `● stripe`; a raw and a prefixed delivery for one source get the same color (unset `NO_COLOR` as `TestSourceTokensAlignAndUseStableColor` does, and assert the exact ANSI token)
+- [x] write tests for edge cases: `dst_stripe01`, an unmapped uid, and an empty `source_uid` print `● unknown`
+- [x] update the existing color assertion (`printer_test.go:392`, `sourceColor("src_stripe")`) to the raw-keyed hash
+- [x] run tests - must pass before next task
 
 ### Task 2: Mark the saved project regardless of uid prefix
 

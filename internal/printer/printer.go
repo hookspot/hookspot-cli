@@ -66,8 +66,10 @@ func New(out io.Writer, options Options) *Printer {
 		options.Color = false
 	}
 
+	sources := make(map[string]string, len(options.Sources))
 	sourceLen := 0
-	for _, name := range options.Sources {
+	for uid, name := range options.Sources {
+		sources[sourceKey(uid)] = name
 		if n := utf8.RuneCountInString(singleLine(name)); n > sourceLen {
 			sourceLen = n
 		}
@@ -75,6 +77,7 @@ func New(out io.Writer, options Options) *Printer {
 	if sourceLen == 0 {
 		sourceLen = len("unknown")
 	}
+	options.Sources = sources
 
 	return &Printer{
 		out:       out,
@@ -367,8 +370,18 @@ func (p *Printer) timestamp() string {
 	return p.now().Format("15:04:05.000")
 }
 
+// sourceUIDPrefix is the type prefix the platform may add to source uids.
+const sourceUIDPrefix = "src_"
+
+// sourceKey returns the raw form of a source uid, so raw and prefixed uids of
+// one source share a label and a color.
+func sourceKey(uid string) string {
+	return strings.TrimPrefix(uid, sourceUIDPrefix)
+}
+
 func (p *Printer) sourceToken(uid string) string {
-	name := p.options.Sources[uid]
+	key := sourceKey(uid)
+	name := p.options.Sources[key]
 	if name == "" {
 		name = "unknown"
 	}
@@ -381,7 +394,7 @@ func (p *Printer) sourceToken(uid string) string {
 	if !p.options.Color {
 		return token
 	}
-	return ansiColor(sourceColor(uid), token)
+	return ansiColor(sourceColor(key), token)
 }
 
 var sourceColorCodes = [...]int{32, 33, 34, 35, 36, 92, 93, 94, 95, 96}

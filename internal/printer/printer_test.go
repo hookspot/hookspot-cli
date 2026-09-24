@@ -389,9 +389,68 @@ func TestSourceTokensAlignAndUseStableColor(t *testing.T) {
 	_, _ = p.Handle(d)
 	_, _ = p.Handle(d)
 
-	color := fmt.Sprintf("\x1b[%dm● stripe \x1b[0m", sourceColor("src_stripe"))
+	color := fmt.Sprintf("\x1b[%dm● stripe \x1b[0m", sourceColor("stripe"))
 	if got := strings.Count(output.String(), color); got != 2 {
 		t.Fatalf("stable aligned color token count = %d, want 2:\n%q", got, output.String())
+	}
+}
+
+func TestSourceTokenMatchesRawAndPrefixedSourceUIDs(t *testing.T) {
+	tests := []struct {
+		name      string
+		sources   map[string]string
+		sourceUID string
+		want      string
+	}{
+		{name: "raw map, prefixed delivery", sources: map[string]string{"stripe01": "stripe"}, sourceUID: "src_stripe01", want: "● stripe"},
+		{name: "prefixed map, raw delivery", sources: map[string]string{"src_stripe01": "stripe"}, sourceUID: "stripe01", want: "● stripe"},
+		{name: "raw map, raw delivery", sources: map[string]string{"stripe01": "stripe"}, sourceUID: "stripe01", want: "● stripe"},
+		{name: "prefixed map, prefixed delivery", sources: map[string]string{"src_stripe01": "stripe"}, sourceUID: "src_stripe01", want: "● stripe"},
+		{name: "other type prefix", sources: map[string]string{"stripe01": "stripe"}, sourceUID: "dst_stripe01", want: "● unknown"},
+		{name: "unmapped uid", sources: map[string]string{"stripe01": "stripe"}, sourceUID: "src_shopify01", want: "● unknown"},
+		{name: "empty uid", sources: map[string]string{"stripe01": "stripe"}, sourceUID: "", want: "● unknown"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p := New(&bytes.Buffer{}, Options{Sources: test.sources})
+			if got := strings.TrimRight(p.sourceToken(test.sourceUID), " "); got != test.want {
+				t.Fatalf("sourceToken(%q) = %q, want %q", test.sourceUID, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNewKeepsCallerSourcesMap(t *testing.T) {
+	sources := map[string]string{"src_stripe01": "stripe"}
+	New(&bytes.Buffer{}, Options{Sources: sources})
+	if len(sources) != 1 || sources["src_stripe01"] != "stripe" {
+		t.Fatalf("caller sources map changed: %v", sources)
+	}
+}
+
+func TestSourceTokenColorIgnoresSourceUIDPrefix(t *testing.T) {
+	oldNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if hadNoColor {
+			_ = os.Setenv("NO_COLOR", oldNoColor)
+		} else {
+			_ = os.Unsetenv("NO_COLOR")
+		}
+	})
+
+	p := New(&bytes.Buffer{}, Options{
+		Color:   true,
+		Sources: map[string]string{"stripe01": "stripe"},
+	})
+	const want = "\x1b[33m● stripe\x1b[0m"
+	for _, uid := range []string{"stripe01", "src_stripe01"} {
+		if got := p.sourceToken(uid); got != want {
+			t.Fatalf("sourceToken(%q) = %q, want %q", uid, got, want)
+		}
 	}
 }
 
