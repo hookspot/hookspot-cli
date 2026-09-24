@@ -50,7 +50,7 @@
 - **`internal/api/client.go`:** `Base.API` builds URLs on the app origin. The browser-login URL is built this way, and so is the dashboard (`/:org/:project/requests`).
 - **`cmd/login_browser.go`:** 10-minute default wait. The timeout message doesn't mention new accounts.
 - **Tests:** `make test` / `make vet` run in Docker.
-- **Pending:** the untracked `docs/plans/20260924-prefixed-uids.md` edits `internal/printer` and `cmd/project_test.go`. Land it first.
+- **Prerequisite landed:** the CLI prefixed-uids plan is complete (`docs/plans/completed/20260924-prefixed-uids.md`, `7c5418f`…`1e6e5ea`). It touched `internal/printer` and `cmd/project_test.go`, so line numbers cited here may have shifted.
 
 **hookspot backend**
 - **Ingest:** `lib/ingest/router.ex` pipes the catch-all through `plug :accepts, ["json"]`. `Accept: text/plain`, `application/xml`, and `text/html` get **406** and aren't stored (reproduced on Phoenix 1.8.13, research T3).
@@ -64,7 +64,8 @@
   - OAuth returns via `UserAuth.return_to`.
   - `Approve.call` requires a project (`approve.ex:52`), and the approval page only offers a picker (`cli/login/Show.vue`).
   - Onboarding redirects to the dashboard, not back to `/cli/login/:token`.
-- **Pending backend plan `hookspot/docs/plans/20260924-prefixed-uids.md`:** Task 5 normalizes join `sources` to raw uids, and Task 6 edits `project_channel.ex`. Land it first.
+- **Prerequisite landed:** the backend prefixed-uids plan is complete (`hookspot/docs/plans/completed/20260924-prefixed-uids.md`, `d834cc2`). Presence is keyed by raw uids, deliveries are broadcast to both topics, and channel joins are access-checked. Build the delivery filter on that code.
+- ⚠️ **Uncommitted changes that aren't this plan's** are in the backend working tree (`docker-compose.yml`, `lib/ingest/models/request.ex`). Never stage or commit them with this plan's tasks: stage exact paths only.
 - **Conventions (`AGENTS.md`):**
   - Run commands through `docker-compose exec app …`; run `mix precommit` before committing.
   - Use `Repo.transact/1`.
@@ -390,7 +391,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
 
 **Release order**
-- Land both prefixed-uids plans first.
+- Both prefixed-uids plans have landed.
 - Deploy backend Tasks 1–5, then release the CLI.
 - Task 1 (ingest 406) and Task 3 (delivery filter) can ship as independent backend hotfixes. Older CLIs benefit immediately.
 
