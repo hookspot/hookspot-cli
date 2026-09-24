@@ -108,6 +108,16 @@ func TestHandleError(t *testing.T) {
 			want:     "authentication failed: the WebSocket session was rejected\n\nRun 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
 		},
 		{
+			name: "wrapped WebSocket project not found",
+			err: fmt.Errorf("listen: %w", &ws.SessionError{
+				Kind: ws.SessionNotFound,
+				Err:  errors.New("channel join rejected: not_found"),
+			}),
+			wantCode: 1,
+			want: "project not found: the WebSocket channel join was rejected\n\n" +
+				"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.\n",
+		},
+		{
 			name:     "generic error",
 			err:      errors.New("something failed"),
 			wantCode: 1,

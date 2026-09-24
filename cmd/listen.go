@@ -151,9 +151,9 @@ type reconnectPolicy struct {
 }
 
 // superviseListen keeps transient WebSocket failures inside the long-running
-// command. Authentication, protocol, and handler failures are fatal; an
-// initial connection is bounded, while a session that connected once retries
-// until cancellation.
+// command. Authentication, not-found, protocol, and handler failures are
+// fatal; an initial connection is bounded, while a session that connected once
+// retries until cancellation.
 func superviseListen(ctx context.Context, errOut io.Writer, listener websocketListener, handler ws.Handler, policy reconnectPolicy) error {
 	initialAttempts := 0
 	connectedOnce := false

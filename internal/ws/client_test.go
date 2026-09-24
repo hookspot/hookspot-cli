@@ -293,6 +293,56 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 	}
 }
 
+func TestClient_Listen_JoinNotFoundReturns(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		join := readFrame(t, conn)
+		reply, _ := encode(message{
+			JoinRef: join.JoinRef,
+			Ref:     join.Ref,
+			Topic:   join.Topic,
+			Event:   "phx_reply",
+			Payload: json.RawMessage(`{"status":"error","response":{"reason":"not_found"}}`),
+		})
+		if err := conn.WriteMessage(websocket.TextMessage, reply); err != nil {
+			t.Errorf("write reply: %v", err)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
+
+	client := New(wsURL, "test-key", "project:proj_1", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := client.Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
+	var sessionErr *SessionError
+	if !errors.As(err, &sessionErr) {
+		t.Fatalf("Listen error = %T %v, want *SessionError", err, err)
+	}
+	if sessionErr.Kind != SessionNotFound {
+		t.Fatalf("session error kind = %v, want not found", sessionErr.Kind)
+	}
+	if sessionErr.Connected {
+		t.Fatal("not found error reports a connected session")
+	}
+	if sessionErr.Retryable() {
+		t.Fatal("not found error is retryable")
+	}
+}
+
 func TestClient_Listen_HandshakeAuthenticationErrorReturns(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -327,6 +377,7 @@ func TestSessionErrorRetryPolicy(t *testing.T) {
 		{SessionAuthentication, false},
 		{SessionProtocol, false},
 		{SessionHandler, false},
+		{SessionNotFound, false},
 	}
 	for _, test := range tests {
 		err := &SessionError{Kind: test.kind, Err: errors.New("failure")}

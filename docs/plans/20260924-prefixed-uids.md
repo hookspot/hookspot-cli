@@ -133,12 +133,12 @@
 - Modify: `cmd/errors_test.go`
 - Modify: `cmd/listen.go`
 
-- [ ] add `SessionNotFound` to `SessionErrorKind` and map a `not_found` join reason to it in `internal/ws/client.go`
-- [ ] add the `ws.SessionNotFound` message and hint to `fatalErrorMessage` in `cmd/errors.go`
-- [ ] add not-found to the fatal failures listed in the `superviseListen` doc comment (`cmd/listen.go:153-156`)
-- [ ] write a ws test next to the `unauthorized` one: a join reply `{"status":"error","response":{"reason":"not_found"}}` yields `SessionNotFound`, not connected and not retryable; add `{SessionNotFound, false}` to `TestSessionErrorRetryPolicy`
-- [ ] write an errors test (table case in `cmd/errors_test.go`): a `SessionNotFound` error wrapped as `listen` returns it (`fmt.Errorf("listen: %w", …)`) prints the new message and hint
-- [ ] run tests - must pass before next task
+- [x] add `SessionNotFound` to `SessionErrorKind` and map a `not_found` join reason to it in `internal/ws/client.go`
+- [x] add the `ws.SessionNotFound` message and hint to `fatalErrorMessage` in `cmd/errors.go`
+- [x] add not-found to the fatal failures listed in the `superviseListen` doc comment (`cmd/listen.go:153-156`)
+- [x] write a ws test next to the `unauthorized` one: a join reply `{"status":"error","response":{"reason":"not_found"}}` yields `SessionNotFound`, not connected and not retryable; add `{SessionNotFound, false}` to `TestSessionErrorRetryPolicy`
+- [x] write an errors test (table case in `cmd/errors_test.go`): a `SessionNotFound` error wrapped as `listen` returns it (`fmt.Errorf("listen: %w", …)`) prints the new message and hint
+- [x] run tests - must pass before next task
 
 ### Task 4: Verify acceptance criteria
 - [ ] verify both comparison sites handle raw and prefixed forms in either direction, and that a `not_found` join rejection stops `listen` with the new message and hint

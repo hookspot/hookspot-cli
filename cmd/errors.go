@@ -103,6 +103,9 @@ func fatalErrorMessage(err error) (string, string) {
 			return err.Error(), "The server sent an invalid WebSocket message. Retry the command; if it continues, report the error."
 		case ws.SessionHandler:
 			return err.Error(), "The delivery could not be processed. Check the error and retry the command."
+		case ws.SessionNotFound:
+			return "project not found: the WebSocket channel join was rejected",
+				"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 		}
 	}
 

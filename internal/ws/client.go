@@ -37,6 +37,7 @@ const (
 	SessionAuthentication
 	SessionProtocol
 	SessionHandler
+	SessionNotFound
 )
 
 // SessionError retains the original failure and whether the session completed
@@ -544,6 +545,9 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 			err := fmt.Errorf("channel join rejected%s", detail)
 			if strings.EqualFold(reply.Response.Reason, "unauthorized") || strings.EqualFold(reply.Response.Reason, "forbidden") {
 				return "", sessionError(SessionAuthentication, false, err)
+			}
+			if strings.EqualFold(reply.Response.Reason, "not_found") {
+				return "", sessionError(SessionNotFound, false, err)
 			}
 			return "", sessionError(SessionProtocol, false, err)
 		}
