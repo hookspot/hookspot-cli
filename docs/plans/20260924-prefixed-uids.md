@@ -40,7 +40,7 @@
 ## Testing Strategy
 - **unit tests**: required for every task (see Development Approach above)
 - **form matrix**: each comparison is tested with raw↔raw, prefixed↔prefixed, raw map/saved + prefixed incoming, and prefixed map/saved + raw incoming. A uid with another type's prefix (`dst_…` against a source) still doesn't match.
-- **join rejection**: a test WebSocket server answers the join with `not_found`, like the existing `unauthorized` test in `internal/ws/client_test.go`. `TestClientJoinRejectionReportsOnlyShortParsedDetails` (`internal/ws/session_test.go`) already guards that other reasons stay `SessionProtocol`. `superviseListen` is unchanged and `Retryable()` is its only reconnect gate, so `TestSessionErrorRetryPolicy` covers that `listen` stops instead of reconnecting.
+- **join rejection**: a test WebSocket server answers the join with `not_found`, like the existing `unauthorized` test in `internal/ws/client_test.go`. `TestClientJoinRejectionReportsOnlyShortParsedDetails` (`internal/ws/session_test.go`) already guards that other reasons stay `SessionProtocol`. `superviseListen`'s logic is unchanged (only its doc comment gains not-found) and `Retryable()` is its only reconnect gate, so `TestSessionErrorRetryPolicy` covers that `listen` stops instead of reconnecting.
 - **e2e**: there is no e2e suite in this repo. Live verification against the platform's phases is listed in Post-Completion.
 
 ## Progress Tracking
@@ -71,7 +71,7 @@
 
 ### `not_found` join rejection (`internal/ws/client.go`, `cmd/errors.go`)
 - Append `SessionNotFound` to `SessionErrorKind`. In the join reply handling, a `not_found` reason (case-insensitive, like `unauthorized`/`forbidden`) returns `sessionError(SessionNotFound, false, err)`. `Retryable()` is unchanged, so the new kind isn't retried.
-- `fatalErrorMessage` gets a `ws.SessionNotFound` case with the message `project not found: the WebSocket channel join was rejected` and the hint `The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.` The hint names every way `listen` gets its project, like the existing no-project hint (`cmd/listen.go:69`), because `--project` and the slug variables override the saved project.
+- `fatalErrorMessage` gets a `ws.SessionNotFound` case with the message `project not found: the WebSocket channel join was rejected` and the hint `The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.` The hint names every way `listen` gets its project, because `--project` and the slug variables override the saved project. The existing no-project hint (`cmd/listen.go:69`) omits `--project` and is left unchanged.
 - When users see it: `listen` resolves the project through the API first, so a stale config fails there with a 404. The join rejection shows up when a running `listen` reconnects (a network drop or a server deploy) after the project was deleted or the user's access was removed.
 
 ### No change needed (server compatibility covers it)

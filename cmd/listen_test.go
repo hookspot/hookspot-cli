@@ -504,6 +504,32 @@ func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	}
 }
 
+func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
+	listener := &scriptedWebSocketListener{errors: []error{
+		&ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped")},
+		&ws.SessionError{Kind: ws.SessionNotFound, Err: errors.New("channel join rejected")},
+		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not be reached")},
+	}}
+	var stderr bytes.Buffer
+
+	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	if listener.calls != 2 {
+		t.Fatalf("Listen calls = %d, want 2", listener.calls)
+	}
+	if got := strings.Count(stderr.String(), "reconnecting"); got != 1 {
+		t.Fatalf("reconnect notices = %d, want 1:\n%s", got, stderr.String())
+	}
+	var output bytes.Buffer
+	if got := HandleError(&output, err); got != 1 {
+		t.Fatalf("HandleError exit code = %d, want 1", got)
+	}
+	wantOutput := "project not found: the WebSocket channel join was rejected\n\n" +
+		"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.\n"
+	if output.String() != wantOutput {
+		t.Fatalf("HandleError output = %q, want %q", output.String(), wantOutput)
+	}
+}
+
 func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 	listener := &scriptedWebSocketListener{errors: []error{
 		&ws.SessionError{Kind: ws.SessionProtocol, Connected: true, Err: errors.New("invalid delivery payload")},

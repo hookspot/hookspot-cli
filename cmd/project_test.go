@@ -92,30 +92,35 @@ func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
 		{name: "no saved project", listedPrefixed: true, savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
 		{name: "other entity prefix", listedPrefixed: true, savedUID: "org_payments", wantOptions: unmarked, wantDefaultIndex: 0},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			projects := selectionProjects()[:2]
-			if !tt.listedPrefixed {
+			if !test.listedPrefixed {
 				for index := range projects {
 					projects[index].UID = strings.TrimPrefix(projects[index].UID, "proj_")
 				}
 			}
+			promptCalled := false
 			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
+				promptCalled = true
 				if err := ctx.Err(); err != nil {
 					t.Fatal(err)
 				}
-				if strings.Join(options, "\n") != strings.Join(tt.wantOptions, "\n") {
-					t.Fatalf("options = %q, want %q", options, tt.wantOptions)
+				if strings.Join(options, "\n") != strings.Join(test.wantOptions, "\n") {
+					t.Fatalf("options = %q, want %q", options, test.wantOptions)
 				}
-				if defaultIndex != tt.wantDefaultIndex {
-					t.Fatalf("default index = %d, want %d", defaultIndex, tt.wantDefaultIndex)
+				if defaultIndex != test.wantDefaultIndex {
+					t.Fatalf("default index = %d, want %d", defaultIndex, test.wantDefaultIndex)
 				}
 				return 0, nil
 			}
 
-			selected, err := selectProject(context.Background(), strings.NewReader(""), io.Discard, projects, tt.savedUID, prompt)
+			selected, err := selectProject(context.Background(), strings.NewReader(""), io.Discard, projects, test.savedUID, prompt)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if !promptCalled {
+				t.Fatal("selectProject did not prompt")
 			}
 			if selected.UID != projects[0].UID {
 				t.Fatalf("selected UID = %q, want %q", selected.UID, projects[0].UID)

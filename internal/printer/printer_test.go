@@ -430,23 +430,16 @@ func TestNewKeepsCallerSourcesMap(t *testing.T) {
 }
 
 func TestSourceTokenColorIgnoresSourceUIDPrefix(t *testing.T) {
-	oldNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
+	t.Setenv("NO_COLOR", "")
 	if err := os.Unsetenv("NO_COLOR"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if hadNoColor {
-			_ = os.Setenv("NO_COLOR", oldNoColor)
-		} else {
-			_ = os.Unsetenv("NO_COLOR")
-		}
-	})
 
 	p := New(&bytes.Buffer{}, Options{
 		Color:   true,
 		Sources: map[string]string{"stripe01": "stripe"},
 	})
-	const want = "\x1b[33m● stripe\x1b[0m"
+	want := fmt.Sprintf("\x1b[%dm● stripe\x1b[0m", sourceColor("stripe01"))
 	for _, uid := range []string{"stripe01", "src_stripe01"} {
 		if got := p.sourceToken(uid); got != want {
 			t.Fatalf("sourceToken(%q) = %q, want %q", uid, got, want)

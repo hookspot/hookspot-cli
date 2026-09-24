@@ -89,7 +89,9 @@ export HOOKSPOT_PROJECT_SLUG='payments'
 ```
 
 Organization and project slug variables must be set together. A saved CLI key
-and selected project are stored separately for each environment.
+and selected project are stored separately for each environment. To listen on
+another project for one run, pass `--project PROJECT_UID`; it overrides the
+slug variables and the saved project.
 
 ## Listen and forward
 
