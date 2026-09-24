@@ -80,26 +80,22 @@ func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
 	unmarked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments"}
 	tests := []struct {
 		name             string
-		listedPrefixed   bool
+		listedUID        string
 		savedUID         string
 		wantOptions      []string
 		wantDefaultIndex int
 	}{
-		{name: "prefixed saved and listed", listedPrefixed: true, savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "raw saved and listed", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "raw saved prefixed listed", listedPrefixed: true, savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "prefixed saved raw listed", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "no saved project", listedPrefixed: true, savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
-		{name: "other entity prefix", listedPrefixed: true, savedUID: "org_payments", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "prefixed saved and listed", listedUID: "proj_payments", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "raw saved and listed", listedUID: "payments", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "raw saved prefixed listed", listedUID: "proj_payments", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "prefixed saved raw listed", listedUID: "payments", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "no saved project", listedUID: "proj_payments", savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "other entity prefix", listedUID: "proj_payments", savedUID: "org_payments", wantOptions: unmarked, wantDefaultIndex: 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			projects := selectionProjects()[:2]
-			if !test.listedPrefixed {
-				for index := range projects {
-					projects[index].UID = strings.TrimPrefix(projects[index].UID, "proj_")
-				}
-			}
+			projects[1].UID = test.listedUID
 			promptCalled := false
 			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
 				promptCalled = true

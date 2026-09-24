@@ -40,7 +40,7 @@
 ## Testing Strategy
 - **unit tests**: required for every task (see Development Approach above)
 - **form matrix**: each comparison is tested with raw↔raw, prefixed↔prefixed, raw map/saved + prefixed incoming, and prefixed map/saved + raw incoming. A uid with another type's prefix (`dst_…` against a source) still doesn't match.
-- **join rejection**: a test WebSocket server answers the join with `not_found`, like the existing `unauthorized` test in `internal/ws/client_test.go`. `TestClientJoinRejectionReportsOnlyShortParsedDetails` (`internal/ws/session_test.go`) already guards that other reasons stay `SessionProtocol`. `superviseListen`'s logic is unchanged (only its doc comment gains not-found) and `Retryable()` is its only reconnect gate, so `TestSessionErrorRetryPolicy` covers that `listen` stops instead of reconnecting.
+- **join rejection**: a test WebSocket server answers the join with `not_found`, like the existing `unauthorized` test in `internal/ws/client_test.go`. `TestClientJoinRejectionReportsOnlyShortParsedDetails` (`internal/ws/session_test.go`) already guards that other reasons stay `SessionProtocol`. `superviseListen`'s logic is unchanged (only its doc comment gains not-found) and `Retryable()` is its only reconnect gate. `TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect` (`cmd/listen_test.go`) covers that `listen` stops instead of reconnecting when the join after a reconnect is rejected with not-found.
 - **e2e**: there is no e2e suite in this repo. Live verification against the platform's phases is listed in Post-Completion.
 
 ## Progress Tracking
@@ -61,7 +61,7 @@
 
 ### Printer source lookup (`internal/printer/printer.go`)
 - Add `const sourceUIDPrefix = "src_"` and `func sourceKey(uid string) string { return strings.TrimPrefix(uid, sourceUIDPrefix) }`.
-- `New` builds a new map keyed by `sourceKey(uid)` and stores it in `options.Sources`, leaving the caller's map untouched (the `sourceLen` computation is unchanged). `sourceToken` looks up the name and computes `sourceColor` with `sourceKey(uid)`.
+- `New` builds a new map keyed by `sourceKey(uid)` and stores it in a `sources` field on `Printer`, leaving `options` and the caller's map untouched (the `sourceLen` computation is unchanged). `sourceToken` looks up the name and computes `sourceColor` with `sourceKey(uid)`.
 - `Options.Sources` keeps its meaning (uid → name, either form), so `cmd/listen.go` `sourceNamesByUID` is unchanged.
 - Colors stay the same for real users: today's uids are raw, and trimming changes nothing for them. Without this change, every source's color would shift once Phase 2 sends prefixed uids. Only the existing test's expected color changes, because its fixture uses the prefixed-looking `src_stripe`.
 

@@ -267,18 +267,7 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 				}
 				defer conn.Close()
 
-				// Report failures with Errorf: Fatal does not stop the test from
-				// this handler goroutine.
-				_, data, err := conn.ReadMessage()
-				if err != nil {
-					t.Errorf("read join: %v", err)
-					return
-				}
-				join, err := decode(data)
-				if err != nil {
-					t.Errorf("decode join: %v", err)
-					return
-				}
+				join := readFrame(t, conn)
 				reply, _ := encode(message{
 					JoinRef: join.JoinRef,
 					Ref:     join.Ref,

@@ -56,6 +56,7 @@ type Printer struct {
 	out       io.Writer
 	options   Options
 	now       func() time.Time
+	sources   map[string]string
 	sourceLen int
 	mu        sync.Mutex
 }
@@ -77,12 +78,12 @@ func New(out io.Writer, options Options) *Printer {
 	if sourceLen == 0 {
 		sourceLen = len("unknown")
 	}
-	options.Sources = sources
 
 	return &Printer{
 		out:       out,
 		options:   options,
 		now:       time.Now,
+		sources:   sources,
 		sourceLen: sourceLen,
 	}
 }
@@ -370,10 +371,10 @@ func (p *Printer) timestamp() string {
 	return p.now().Format("15:04:05.000")
 }
 
-// sourceUIDPrefix is the type prefix the platform may add to source uids.
+// sourceUIDPrefix is the type prefix the platform may add to source UIDs.
 const sourceUIDPrefix = "src_"
 
-// sourceKey returns the raw form of a source uid, so raw and prefixed uids of
+// sourceKey returns the raw form of a source UID, so raw and prefixed UIDs of
 // one source share a label and a color.
 func sourceKey(uid string) string {
 	return strings.TrimPrefix(uid, sourceUIDPrefix)
@@ -381,7 +382,7 @@ func sourceKey(uid string) string {
 
 func (p *Printer) sourceToken(uid string) string {
 	key := sourceKey(uid)
-	name := p.options.Sources[key]
+	name := p.sources[key]
 	if name == "" {
 		name = "unknown"
 	}

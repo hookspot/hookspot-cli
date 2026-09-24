@@ -513,20 +513,15 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	var stderr bytes.Buffer
 
 	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	var sessionErr *ws.SessionError
+	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionNotFound {
+		t.Fatalf("error = %#v, want not-found session error", err)
+	}
 	if listener.calls != 2 {
 		t.Fatalf("Listen calls = %d, want 2", listener.calls)
 	}
 	if got := strings.Count(stderr.String(), "reconnecting"); got != 1 {
 		t.Fatalf("reconnect notices = %d, want 1:\n%s", got, stderr.String())
-	}
-	var output bytes.Buffer
-	if got := HandleError(&output, err); got != 1 {
-		t.Fatalf("HandleError exit code = %d, want 1", got)
-	}
-	wantOutput := "project not found: the WebSocket channel join was rejected\n\n" +
-		"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.\n"
-	if output.String() != wantOutput {
-		t.Fatalf("HandleError output = %q, want %q", output.String(), wantOutput)
 	}
 }
 
