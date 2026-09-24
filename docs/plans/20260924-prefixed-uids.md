@@ -147,8 +147,8 @@
 - [x] run `make vet`
 
 ### Task 5: [Final] Update documentation
-- [ ] README.md "Log in and select a project": add one sentence that holds before and after Phase 2, e.g. "Project UIDs may be prefixed (`proj_…`); older unprefixed UIDs, including those in saved configs, keep working."
-- [ ] move this plan to `docs/plans/completed/`
+- [x] README.md "Log in and select a project": add one sentence that holds before and after Phase 2, e.g. "Project UIDs may be prefixed (`proj_…`); older unprefixed UIDs, including those in saved configs, keep working."
+- [x] move this plan to `docs/plans/completed/` (skipped - the harness moves the plan after all phases finish)
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
