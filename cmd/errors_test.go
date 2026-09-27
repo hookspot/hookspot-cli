@@ -27,6 +27,8 @@ func TestRootCommandSilencesCobraErrorOutput(t *testing.T) {
 }
 
 func TestHandleError(t *testing.T) {
+	const wantNotFoundHint = "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. " +
+		"Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.\n"
 	tests := []struct {
 		name     string
 		err      error
@@ -80,13 +82,24 @@ func TestHandleError(t *testing.T) {
 		{
 			name: "ordinary API response preserves command context",
 			err: fmt.Errorf("resolve project: %w", &api.Error{
-				StatusCode: 404,
+				StatusCode: 400,
 				Method:     "GET",
-				URL:        "https://example.test/cli/projects/missing",
-				Message:    "project not found",
+				URL:        "https://example.test/cli/projects/proj_1",
+				Message:    "bad request",
 			}),
 			wantCode: 1,
-			want:     "resolve project: GET https://example.test/cli/projects/missing: 404 Not Found: project not found\n",
+			want:     "resolve project: GET https://example.test/cli/projects/proj_1: 400 Bad Request: bad request\n",
+		},
+		{
+			name: "API not found for an unprefixed saved project UID",
+			err: fmt.Errorf("resolve project: %w", &api.Error{
+				StatusCode: 404,
+				Method:     "GET",
+				URL:        "https://example.test/cli/projects/01jfrawprojectuid",
+				Message:    "not_found",
+			}),
+			wantCode: 1,
+			want:     "resolve project: GET https://example.test/cli/projects/01jfrawprojectuid: 404 Not Found: not_found\n\n" + wantNotFoundHint,
 		},
 		{
 			name: "API transport failure",
@@ -114,8 +127,7 @@ func TestHandleError(t *testing.T) {
 				Err:  errors.New("channel join rejected: not_found"),
 			}),
 			wantCode: 1,
-			want: "project not found: the WebSocket channel join was rejected\n\n" +
-				"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG.\n",
+			want:     "project not found: the WebSocket channel join was rejected\n\n" + wantNotFoundHint,
 		},
 		{
 			name:     "generic error",

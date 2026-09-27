@@ -197,8 +197,9 @@ hookspot config migrate --from "$HOME/.config/hookspot/config.toml" \
 ```
 
 Migration contacts the backend to validate both the stored key and the selected
-project. It never substitutes an environment-variable key, refuses an existing
-destination, and leaves the legacy source unchanged.
+project. A legacy project UID without the `proj_` prefix fails that check; run
+`hookspot login` instead. Migration never substitutes an environment-variable
+key, refuses an existing destination, and leaves the legacy source unchanged.
 
 The selected config is access-restricted plaintext, not encrypted. Logout
 removes only the saved key in that selected config; service-side revocation or

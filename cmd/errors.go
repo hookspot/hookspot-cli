@@ -85,6 +85,8 @@ func fatalErrorMessage(err error) (string, string) {
 			return "authentication failed: the Hookspot CLI key was rejected", "Check the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
 		case apiErr.StatusCode == http.StatusForbidden:
 			return "authorization failed: the Hookspot CLI key cannot access this resource", "Check that the key belongs to the selected project and has the required access."
+		case apiErr.StatusCode == http.StatusNotFound:
+			return err.Error(), projectNotFoundHint()
 		case apiErr.StatusCode == http.StatusTooManyRequests:
 			return "Hookspot API rate limit exceeded", "Wait briefly and try the command again."
 		case apiErr.StatusCode >= 500:
@@ -104,8 +106,7 @@ func fatalErrorMessage(err error) (string, string) {
 		case ws.SessionHandler:
 			return err.Error(), "The delivery could not be processed. Check the error and retry the command."
 		case ws.SessionNotFound:
-			return "project not found: the WebSocket channel join was rejected",
-				"The project may have been deleted or your access removed. Select another with 'hookspot project use', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
+			return "project not found: the WebSocket channel join was rejected", projectNotFoundHint()
 		}
 	}
 
@@ -119,6 +120,12 @@ func fatalErrorMessage(err error) (string, string) {
 	}
 
 	return err.Error(), ""
+}
+
+// projectNotFoundHint also covers configs from older CLI versions, which may
+// hold an unprefixed project UID that the server no longer accepts.
+func projectNotFoundHint() string {
+	return "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 }
 
 func safeErrorText(value string) string {

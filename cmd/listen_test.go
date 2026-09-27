@@ -3,15 +3,20 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"hookspot/internal/api"
 	"hookspot/internal/printer"
@@ -538,6 +543,56 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	}
 	if got := strings.Count(stderr.String(), "reconnecting"); got != 1 {
 		t.Fatalf("reconnect notices = %d, want 1:\n%s", got, stderr.String())
+	}
+}
+
+func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
+	joins := make(chan []json.RawMessage, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cli/projects/proj_payments":
+			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
+		case "/cli/projects/proj_payments/sources":
+			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","routes":[{"uid":"rte_stripe","destination":{"uid":"dst_local","path":"/"}}]}]`))
+		case "/cli/websocket":
+			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			var join []json.RawMessage
+			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
+				return
+			}
+			select {
+			case joins <- join:
+			default:
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{
+				"status":   "error",
+				"response": map[string]string{"reason": "not_found"},
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", configPath, "listen", "stripe")
+	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
+		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+	}
+	select {
+	case join := <-joins:
+		if got := string(join[2]) + " " + string(join[3]) + " " + string(join[4]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
+			t.Fatalf("join = %s", got)
+		}
+	default:
+		t.Fatal("listen did not join a channel")
 	}
 }
 

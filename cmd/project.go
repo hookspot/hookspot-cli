@@ -18,9 +18,6 @@ import (
 
 var projectUseLocal bool
 
-// projectUIDPrefix is the type prefix the platform may add to project UIDs.
-const projectUIDPrefix = "proj_"
-
 var projectCmd = &cobra.Command{
 	Use:   "project",
 	Short: "Manage the active hookspot project",
@@ -175,7 +172,7 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 	defaultIndex := 0
 	for index, project := range projects {
 		options[index] = projectDisplayName(project)
-		if sameProjectUID(project.UID, currentUID) {
+		if project.UID == currentUID {
 			defaultIndex = index
 			options[index] += " (current)"
 		}
@@ -191,12 +188,6 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 		return nil, err
 	}
 	return &projects[selectedIndex], nil
-}
-
-// sameProjectUID reports whether two project UIDs name one project, so a saved
-// raw UID still matches a listed prefixed UID and vice versa.
-func sameProjectUID(a, b string) bool {
-	return strings.TrimPrefix(a, projectUIDPrefix) == strings.TrimPrefix(b, projectUIDPrefix)
 }
 
 func persistProjectSelection(ctx context.Context, store *config.Store, project api.Project, out io.Writer) error {

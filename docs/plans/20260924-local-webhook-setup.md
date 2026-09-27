@@ -56,7 +56,7 @@
 - **Ingest:** `lib/ingest/router.ex` pipes the catch-all through `plug :accepts, ["json"]`. `Accept: text/plain`, `application/xml`, and `text/html` get **406** and aren't stored (reproduced on Phoenix 1.8.13, research T3).
 - **Delivery:**
   - `DeliverJob` delivers only if `CLIPresence.connected?`, which is true once a CLI has **joined** with `[]` or that source. Otherwise the delivery is `cli_offline` and never retried.
-  - It broadcasts to every CLI on `project:<uid>`. `ProjectChannel` has no `intercept`.
+  - It broadcasts to every CLI on `project:proj_…`. `ProjectChannel` has no `intercept`.
 - **CLI sources endpoint:** `cli/project/source_controller.ex` `put_project` assigns `nil` for an unknown or inaccessible project, which gives a 500. `ProjectController.show` returns `404 {"status":"not_found"}`.
 - **Source validation:** `SourceValidator.name` uses only `unsafe_validate_unique`, with no `unique_constraint` on `sources_project_id_name_index`. A concurrent duplicate raises `Ecto.ConstraintError`, which gives a 500.
 - **Sign-up and CLI login (research note 02, code-read, not run):**
@@ -64,7 +64,7 @@
   - OAuth returns via `UserAuth.return_to`.
   - `Approve.call` requires a project (`approve.ex:52`), and the approval page only offers a picker (`cli/login/Show.vue`).
   - Onboarding redirects to the dashboard, not back to `/cli/login/:token`.
-- **Prerequisite landed:** the backend prefixed-uids plan is complete (`hookspot/docs/plans/completed/20260924-prefixed-uids.md`, `d834cc2`). Presence is keyed by raw uids, deliveries are broadcast to both topics, and channel joins are access-checked. Build the delivery filter on that code.
+- **Prerequisite landed:** the backend prefixed-uids plan is complete (`hookspot/docs/plans/completed/20260924-prefixed-uids.md`, `d834cc2`), and channel joins are access-checked. A follow-up server change removes the legacy fallbacks: only prefixed uids are accepted and emitted, and deliveries are broadcast on `project:proj_…` only. Build the delivery filter on that code.
 - ⚠️ **Uncommitted changes that aren't this plan's** are in the backend working tree (`docker-compose.yml`, `lib/ingest/models/request.ex`). Never stage or commit them with this plan's tasks: stage exact paths only.
 - **Conventions (`AGENTS.md`):**
   - Run commands through `docker-compose exec app …`; run `mix precommit` before committing.
@@ -153,7 +153,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 
 ### Delivery filter (backend)
 - `ProjectChannel` adds `intercept ["delivery"]`.
-- `handle_out("delivery", payload, socket)` pushes when `socket.assigns.sources == []`, or when `PrefixedUID.raw(:source, payload.source_uid)` is among the socket's raw sources. Otherwise it does `{:noreply, socket}`.
+- `handle_out("delivery", payload, socket)` pushes when `socket.assigns.sources == []`, or when `payload.source_uid` is among the socket's sources. Both are prefixed. Otherwise it does `{:noreply, socket}`.
 - Presence semantics don't change: a delivery is `sent` if any CLI listens to its source.
 - Intercepting disables fastlane for `delivery`. The cost is one extra channel-process message per joined CLI, which is acceptable at CLI scale.
 
@@ -213,7 +213,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 | 4 | Join rejected (e.g. no access) | no `Ready`; the existing fatal error |
 | 5 | `listen stripe` while another CLI listens to github | receives only stripe deliveries |
 | 6 | Old CLI joined with `[]` | receives everything (unchanged) |
-| 7 | Prefixed vs raw source uids in the payload or join | match either way |
+| 7 | Raw (unprefixed) or `conn_` uid in the topic or join sources | not found: the join is rejected |
 | 8 | Provider sends `Accept: text/plain` / `application/xml` / `text/html` | stored and relayed (was 406) |
 | 9 | Brand-new user runs `hookspot login` and signs up (password) | after confirmation and sign-in, lands on the approval page; creates the first project; the CLI saves the key and project |
 | 10 | Same via OAuth | returns to the approval page (unchanged), then creates the first project |
@@ -285,7 +285,6 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 
 - [ ] add `intercept ["delivery"]` and `handle_out/3` per Technical Details
 - [ ] write tests: a socket joined with `[src_a]` gets an `a` delivery but not a `b` delivery; a socket joined with `[]` gets both
-- [ ] write tests: prefixed payload uid vs raw join entry, and the reverse, match
 - [ ] run tests and `mix precommit` - must pass before next task
 
 ### Task 4: Backend: sign-up return path and expiry copy

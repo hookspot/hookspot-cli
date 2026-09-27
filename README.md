@@ -77,8 +77,10 @@ hookspot project use "Acme Inc." Payments
 Names match exactly without regard to case; quote names containing spaces. A
 single path-safe argument is tried as a project UID first, then as an exact
 organization name only when the UID lookup returns 404. Two arguments always
-mean organization and project names. Project UIDs may be prefixed (`proj_…`);
-older unprefixed UIDs, including those in saved configs, keep working.
+mean organization and project names. Project UIDs are prefixed (`proj_…`). A
+config saved by an older CLI may hold an unprefixed UID, which the server no
+longer accepts; run `hookspot project use` or `hookspot login` to select the
+project again.
 
 For a noninteractive process, pass only the variables it needs:
 

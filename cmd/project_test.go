@@ -80,22 +80,17 @@ func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
 	unmarked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments"}
 	tests := []struct {
 		name             string
-		listedUID        string
 		savedUID         string
 		wantOptions      []string
 		wantDefaultIndex int
 	}{
-		{name: "prefixed saved and listed", listedUID: "proj_payments", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "raw saved and listed", listedUID: "payments", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "raw saved prefixed listed", listedUID: "proj_payments", savedUID: "payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "prefixed saved raw listed", listedUID: "payments", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "no saved project", listedUID: "proj_payments", savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
-		{name: "other entity prefix", listedUID: "proj_payments", savedUID: "org_payments", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "saved project listed", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
+		{name: "no saved project", savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "saved project not listed", savedUID: "proj_billing", wantOptions: unmarked, wantDefaultIndex: 0},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			projects := selectionProjects()[:2]
-			projects[1].UID = test.listedUID
 			promptCalled := false
 			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
 				promptCalled = true
