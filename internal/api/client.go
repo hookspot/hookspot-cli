@@ -134,15 +134,15 @@ type Organization struct {
 
 // Source represents a webhook source belonging to a project.
 type Source struct {
-	UID         string       `json:"uid"`
-	Name        string       `json:"name"`
-	URL         string       `json:"url"`
-	Active      bool         `json:"active"`
-	Connections []Connection `json:"connections"`
+	UID    string  `json:"uid"`
+	Name   string  `json:"name"`
+	URL    string  `json:"url"`
+	Active bool    `json:"active"`
+	Routes []Route `json:"routes"`
 }
 
-// Connection represents a source connection and its forwarding destination.
-type Connection struct {
+// Route represents a source route and its forwarding destination.
+type Route struct {
 	UID         string      `json:"uid"`
 	Name        *string     `json:"name"`
 	Active      bool        `json:"active"`
@@ -150,7 +150,7 @@ type Connection struct {
 	DisplayName string      `json:"display_name"`
 }
 
-// Destination represents the target path configured for a connection.
+// Destination represents the target path configured for a route.
 type Destination struct {
 	UID    string `json:"uid"`
 	Path   string `json:"path"`
@@ -188,7 +188,7 @@ func (c *Client) GetProject(ctx context.Context, uid string) (*Project, error) {
 	return &project, nil
 }
 
-// ListProjectSources returns the sources and connections belonging to a project.
+// ListProjectSources returns the sources and routes belonging to a project.
 func (c *Client) ListProjectSources(ctx context.Context, projectUID string) ([]Source, error) {
 	projectUID, err := endpoint.Segment(projectUID)
 	if err != nil {

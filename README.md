@@ -96,7 +96,7 @@ slug variables and the saved project.
 ## Listen and forward
 
 ```sh
-# Print deliveries for every source with a connection.
+# Print deliveries for every source with a route.
 hookspot listen
 
 # Select sources by name.

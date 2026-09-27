@@ -206,7 +206,7 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 	}
 }
 
-func TestClient_ListProjectSources_ReturnsSourcesWithConnections(t *testing.T) {
+func TestClient_ListProjectSources_ReturnsSourcesWithRoutes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/cli/projects/proj_1/sources" {
 			t.Errorf("path = %q, want /cli/projects/proj_1/sources", r.URL.Path)
@@ -220,10 +220,10 @@ func TestClient_ListProjectSources_ReturnsSourcesWithConnections(t *testing.T) {
 				"name": "shopify",
 				"uid": "src_1",
 				"url": "https://events.example.com/src_1",
-				"connections": [{
+				"routes": [{
 					"active": true,
 					"name": "local-shopify",
-					"uid": "conn_1",
+					"uid": "rte_1",
 					"display_name": "shopify -> local-shopify",
 					"destination": {"active": true, "path": "/webhooks/shopify", "uid": "dst_1"}
 				}]
@@ -239,15 +239,15 @@ func TestClient_ListProjectSources_ReturnsSourcesWithConnections(t *testing.T) {
 	if len(sources) != 1 || sources[0].UID != "src_1" {
 		t.Fatalf("sources = %+v, want source src_1", sources)
 	}
-	if len(sources[0].Connections) != 1 {
-		t.Fatalf("connections = %+v, want one connection", sources[0].Connections)
+	if len(sources[0].Routes) != 1 {
+		t.Fatalf("routes = %+v, want one route", sources[0].Routes)
 	}
-	connection := sources[0].Connections[0]
-	if connection.Destination.Path != "/webhooks/shopify" {
-		t.Fatalf("Destination.Path = %q, want /webhooks/shopify", connection.Destination.Path)
+	route := sources[0].Routes[0]
+	if route.Destination.Path != "/webhooks/shopify" {
+		t.Fatalf("Destination.Path = %q, want /webhooks/shopify", route.Destination.Path)
 	}
-	if connection.Name == nil || *connection.Name != "local-shopify" {
-		t.Fatalf("Name = %v, want local-shopify", connection.Name)
+	if route.Name == nil || *route.Name != "local-shopify" {
+		t.Fatalf("Name = %v, want local-shopify", route.Name)
 	}
 }
 

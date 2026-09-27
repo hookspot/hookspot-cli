@@ -55,8 +55,8 @@ func TestResolveSources_SelectsNamesInArgumentOrder(t *testing.T) {
 		Organization: api.Organization{Slug: "acme"},
 	}
 	available := []api.Source{
-		{Name: "shopify", UID: "src_shopify", Connections: []api.Connection{{UID: "conn_shopify"}}},
-		{Name: "stripe", UID: "src_stripe", Connections: []api.Connection{{UID: "conn_stripe"}}},
+		{Name: "shopify", UID: "src_shopify", Routes: []api.Route{{UID: "rte_shopify"}}},
+		{Name: "stripe", UID: "src_stripe", Routes: []api.Route{{UID: "rte_stripe"}}},
 	}
 
 	sources, uids, err := resolveSources(project, available, []string{"stripe", "shopify"})
@@ -71,10 +71,10 @@ func TestResolveSources_SelectsNamesInArgumentOrder(t *testing.T) {
 	}
 }
 
-func TestResolveSources_SelectsOnlySourcesWithConnectionsWithoutFilter(t *testing.T) {
+func TestResolveSources_SelectsOnlySourcesWithRoutesWithoutFilter(t *testing.T) {
 	project := &api.Project{Slug: "payments", Organization: api.Organization{Slug: "acme"}}
 	available := []api.Source{
-		{Name: "shopify", UID: "src_shopify", Connections: []api.Connection{{UID: "conn_shopify"}}},
+		{Name: "shopify", UID: "src_shopify", Routes: []api.Route{{UID: "rte_shopify"}}},
 		{Name: "stripe", UID: "src_stripe"},
 	}
 
@@ -93,7 +93,7 @@ func TestResolveSources_SelectsOnlySourcesWithConnectionsWithoutFilter(t *testin
 	}
 }
 
-func TestResolveSources_ReturnsErrorWithoutMatchingConnections(t *testing.T) {
+func TestResolveSources_ReturnsErrorWithoutMatchingRoutes(t *testing.T) {
 	project := &api.Project{Slug: "payments", Organization: api.Organization{Slug: "acme"}}
 	available := []api.Source{{Name: "shopify", UID: "src_shopify"}}
 
@@ -101,7 +101,7 @@ func TestResolveSources_ReturnsErrorWithoutMatchingConnections(t *testing.T) {
 	if err == nil {
 		t.Fatal("resolveSources() returned nil error")
 	}
-	if got, want := err.Error(), "no matching connections found"; got != want {
+	if got, want := err.Error(), "no matching routes found"; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }
@@ -122,16 +122,16 @@ func TestResolveSources_RejectsNameMissingFromProject(t *testing.T) {
 	}
 }
 
-func TestPrintListenInfo_ShowsSourceURLsAndConnections(t *testing.T) {
+func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 	var buf bytes.Buffer
-	connectionName := "cli-shopify"
+	routeName := "cli-shopify"
 	sources := []api.Source{
 		{
 			Name: "shopify",
 			URL:  "https://events.example.com/shopify",
-			Connections: []api.Connection{
+			Routes: []api.Route{
 				{
-					Name:        &connectionName,
+					Name:        &routeName,
 					DisplayName: "shopify -> cli-shopify",
 					Destination: api.Destination{Path: "/webhooks/shopify"},
 				},
@@ -147,7 +147,7 @@ func TestPrintListenInfo_ShowsSourceURLsAndConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 connection\n" +
+	want := "Listening on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"│  Requests to → https://events.example.com/shopify\n" +
@@ -165,9 +165,9 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 	var buf bytes.Buffer
 	sources := []api.Source{
 		{
-			Name:        "shopify",
-			URL:         "https://events.example.com/shopify",
-			Connections: []api.Connection{{UID: "conn_shopify"}},
+			Name:   "shopify",
+			URL:    "https://events.example.com/shopify",
+			Routes: []api.Route{{UID: "rte_shopify"}},
 		},
 	}
 
@@ -175,7 +175,7 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 connection\n" +
+	want := "Listening on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"├ Requests to → https://events.example.com/shopify\n" +
@@ -189,8 +189,24 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 	}
 }
 
+func TestPrintListenInfo_CountsRoutesAcrossSources(t *testing.T) {
+	var buf bytes.Buffer
+	sources := []api.Source{
+		{Name: "shopify", Routes: []api.Route{{UID: "rte_1"}, {UID: "rte_2"}}},
+		{Name: "stripe", Routes: []api.Route{{UID: "rte_3"}}},
+	}
+
+	if err := printListenInfoWithReplay(&buf, sources, nil, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := strings.SplitN(buf.String(), "\n", 2)[0], "Listening on 2 sources • 3 routes"; got != want {
+		t.Fatalf("banner = %q, want %q", got, want)
+	}
+}
+
 func TestPrintListenInfoReturnsWriterAndShortWriteFailures(t *testing.T) {
-	sources := []api.Source{{Name: "shopify", URL: "https://events.example.invalid", Connections: []api.Connection{{UID: "conn_1"}}}}
+	sources := []api.Source{{Name: "shopify", URL: "https://events.example.invalid", Routes: []api.Route{{UID: "rte_1"}}}}
 	wantErr := errors.New("stdout unavailable")
 	if err := printListenInfoWithReplay(failingWriter{err: wantErr}, sources, nil, false); !errors.Is(err, wantErr) {
 		t.Fatalf("writer error = %v, want output failure", err)
@@ -204,7 +220,7 @@ func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
 	sources := []api.Source{{
 		Name: "source\nInjected\x1b",
 		URL:  "https://example.invalid/path\tPrompt\x1b",
-		Connections: []api.Connection{{
+		Routes: []api.Route{{
 			Destination: api.Destination{Path: "/webhook"},
 		}},
 	}}
@@ -229,21 +245,21 @@ func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
 	}
 }
 
-func TestConnectionLabel(t *testing.T) {
+func TestRouteLabel(t *testing.T) {
 	name := "named-destination"
 	tests := []struct {
-		name       string
-		connection api.Connection
-		want       string
+		name  string
+		route api.Route
+		want  string
 	}{
-		{"name", api.Connection{Name: &name, DisplayName: "shopify -> fallback"}, "named-destination"},
-		{"generated display name", api.Connection{DisplayName: "shopify -> /webhooks/shopify"}, ""},
-		{"missing", api.Connection{}, ""},
+		{"name", api.Route{Name: &name, DisplayName: "shopify -> fallback"}, "named-destination"},
+		{"generated display name", api.Route{DisplayName: "shopify -> /webhooks/shopify"}, ""},
+		{"missing", api.Route{}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := connectionLabel(tt.connection); got != tt.want {
-				t.Fatalf("connectionLabel() = %q, want %q", got, tt.want)
+			if got := routeLabel(tt.route); got != tt.want {
+				t.Fatalf("routeLabel() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -265,7 +281,7 @@ func TestPrintListenInfo_ShowsReplayHintOnlyWhenEnabled(t *testing.T) {
 	sources := []api.Source{{
 		Name: "stripe",
 		URL:  "https://events.example.com/stripe",
-		Connections: []api.Connection{{
+		Routes: []api.Route{{
 			Destination: api.Destination{Path: "/api/webhooks"},
 		}},
 	}}

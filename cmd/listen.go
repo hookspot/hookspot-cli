@@ -216,9 +216,9 @@ func formatProjectLabel(project *api.Project) string {
 
 func resolveSources(project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, error) {
 	if len(sourceNames) == 0 {
-		selectedSources := sourcesWithConnections(availableSources)
+		selectedSources := sourcesWithRoutes(availableSources)
 		if len(selectedSources) == 0 {
-			return nil, nil, fmt.Errorf("no matching connections found")
+			return nil, nil, fmt.Errorf("no matching routes found")
 		}
 		return selectedSources, nil, nil
 	}
@@ -235,23 +235,23 @@ func resolveSources(project *api.Project, availableSources []api.Source, sourceN
 		if !ok {
 			return nil, nil, fmt.Errorf("source %q is not present in project %s", sourceName, formatProjectLabel(project))
 		}
-		if len(source.Connections) == 0 {
+		if len(source.Routes) == 0 {
 			continue
 		}
 		selectedSources = append(selectedSources, source)
 		sourceUIDs = append(sourceUIDs, source.UID)
 	}
 	if len(selectedSources) == 0 {
-		return nil, nil, fmt.Errorf("no matching connections found")
+		return nil, nil, fmt.Errorf("no matching routes found")
 	}
 
 	return selectedSources, sourceUIDs, nil
 }
 
-func sourcesWithConnections(sources []api.Source) []api.Source {
+func sourcesWithRoutes(sources []api.Source) []api.Source {
 	selected := make([]api.Source, 0, len(sources))
 	for _, source := range sources {
-		if len(source.Connections) > 0 {
+		if len(source.Routes) > 0 {
 			selected = append(selected, source)
 		}
 	}
@@ -268,20 +268,20 @@ func sourceNamesByUID(sources []api.Source) map[string]string {
 
 func printListenInfoWithReplay(out io.Writer, sources []api.Source, forwarder *proxy.Forwarder, replay bool) error {
 	var output strings.Builder
-	connectionCount := 0
+	routeCount := 0
 	for _, source := range sources {
-		connectionCount += len(source.Connections)
+		routeCount += len(source.Routes)
 	}
 
 	sourceSuffix := "s"
 	if len(sources) == 1 {
 		sourceSuffix = ""
 	}
-	connectionSuffix := "s"
-	if connectionCount == 1 {
-		connectionSuffix = ""
+	routeSuffix := "s"
+	if routeCount == 1 {
+		routeSuffix = ""
 	}
-	fmt.Fprintf(&output, "Listening on %d source%s • %d connection%s\n", len(sources), sourceSuffix, connectionCount, connectionSuffix)
+	fmt.Fprintf(&output, "Listening on %d source%s • %d route%s\n", len(sources), sourceSuffix, routeCount, routeSuffix)
 
 	for _, source := range sources {
 		fmt.Fprintln(&output)
@@ -291,16 +291,16 @@ func printListenInfoWithReplay(out io.Writer, sources []api.Source, forwarder *p
 			fmt.Fprintln(&output, "└ Output      → terminal")
 		} else {
 			fmt.Fprintf(&output, "│  Requests to → %s\n", safeDisplayText(source.URL))
-			for i, connection := range source.Connections {
+			for i, route := range source.Routes {
 				branch := "├─"
-				if i == len(source.Connections)-1 {
+				if i == len(source.Routes)-1 {
 					branch = "└─"
 				}
-				label := safeDisplayText(connectionLabel(connection))
+				label := safeDisplayText(routeLabel(route))
 				if label != "" {
 					label = " (" + label + ")"
 				}
-				destination, err := forwarder.DestinationURL(connection.Destination.Path, "")
+				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
 				if err != nil {
 					return fmt.Errorf("resolve forwarding destination: %w", err)
 				}
@@ -330,9 +330,9 @@ func writeCommandText(out io.Writer, value string) error {
 	return nil
 }
 
-func connectionLabel(connection api.Connection) string {
-	if connection.Name != nil && *connection.Name != "" {
-		return *connection.Name
+func routeLabel(route api.Route) string {
+	if route.Name != nil && *route.Name != "" {
+		return *route.Name
 	}
 	return ""
 }

@@ -19,8 +19,8 @@
     - A 404 at the root URL suggests adding the route to `--forward-to`.
   - **Clearer `listen` output and errors:**
     - The banner names the project and warns about disabled sources.
-    - "no matching connections found" becomes an actionable message.
-    - A named source with no connection is reported instead of silently skipped.
+    - "no matching routes found" becomes an actionable message.
+    - A named source with no route is reported instead of silently skipped.
     - A case-only name mismatch suggests the right name.
   - **Backend robustness:** an unknown project on `/cli/projects/:uid/sources` returns 404 (was 500), and a concurrent duplicate source name in the dashboard returns a validation error (was 500).
 - **Spans two repos:** **hookspot** (`~/projects/my/hookspot`, Phoenix + Inertia/Vue) and **hookspot-cli** (this repo). Backend tasks come first.
@@ -33,7 +33,7 @@
 - **`cmd/listen.go`:**
   - `printListenInfoWithReplay` prints `Waiting for requests...` before `superviseListen` connects and joins.
   - `superviseListen` prints `connection lost: …; reconnecting in 2s...` to stderr (`:192`), but never says it reconnected.
-  - `resolveSources` matches names exactly and silently skips a named source with no connections (`continue`). It errors with `no matching connections found` or `source %q is not present in project …`, asserted in `cmd/listen_test.go:95-122` and `cmd/project_test.go:742`.
+  - `resolveSources` matches names exactly and silently skips a named source with no routes (`continue`). It errors with `no matching routes found` or `source %q is not present in project …`, asserted in `cmd/listen_test.go:95-122` and `cmd/project_test.go:742`.
   - The banner doesn't name the project.
   - `forwardSession` handles forwarding and replay.
 - **`internal/ws/client.go`:**
@@ -115,7 +115,7 @@
 `listen` after the fixes (stdout and stderr interleaved as a terminal shows them):
 ```
 $ hookspot listen stripe --forward-to 3000/webhooks/stripe
-Listening in Acme | Payments on 1 source • 1 connection                       (stdout)
+Listening in Acme | Payments on 1 source • 1 route                            (stdout)
 
 stripe
 │  Requests to → https://in.hookspot.io/src_8f2k…
@@ -138,7 +138,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 3. **Fix sign-up rather than add guest mode.** `hookspot login` → sign up in the browser → back to the approval page → create the first organization and project if none exist → approve. No guest mode, and no sign-up in the terminal (research §4c).
 4. **The stream rule for lines this plan adds:**
    - stdout carries the banner, `Connecting…`, and `Ready`.
-   - stderr carries `Reconnected …`, warnings (disabled source, unconnected source), and forwarding hints (redirect, Docker, root 404).
+   - stderr carries `Reconnected …`, warnings (disabled source, route-less source), and forwarding hints (redirect, Docker, root 404).
    - Existing lines keep their stream.
 5. **Forwarding fixes stay inside `--forward-to`.** No new flags: a bare port is parsed, the typed trailing slash is honored, and the proxy is bypassed for the local hop only.
 
@@ -191,13 +191,13 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - **Root 404 hint:** the first 404 or 405 from a forward whose final URL path is `/` prints a one-time hint (stderr): `http://localhost:3000/ returned 404. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to 3000/webhooks`. It isn't printed in print-only mode.
 
 ### `listen` messages (`cmd/listen.go`)
-- **Banner:** starts with `Listening in <Org | Project> on N sources • M connections`.
+- **Banner:** starts with `Listening in <Org | Project> on N sources • M routes`.
 - **Disabled source:** a selected source with `active == false` gets `⚠ stripe is disabled: requests to it are rejected. Enable it in the dashboard.` (stderr).
-- **Named source with no connections:** instead of a silent skip, `⚠ shopify has no connection and is skipped. Add one in the dashboard.` (stderr). If every named source is skipped, the command errors (next item).
-- **No connected sources:**
-  - Replaces `no matching connections found`.
-  - With no args: `no connected sources in <Org | Project>`, with the hint `Add a connection in the dashboard: <…/connections/new URL>`.
-  - With names: `none of the named sources has a connection`, plus the same hint.
+- **Named source with no routes:** instead of a silent skip, `⚠ shopify has no route and is skipped. Add one in the dashboard.` (stderr). If every named source is skipped, the command errors (next item).
+- **No sources with routes:**
+  - Replaces `no matching routes found`.
+  - With no args: `no sources with routes in <Org | Project>`, with the hint `Add a route in the dashboard: <new-route URL>`.
+  - With names: `none of the named sources has a route`, plus the same hint.
 - **Unknown name:** `source "Stripe" is not present in <project>` gains `; did you mean "stripe"?` when exactly one case-insensitive match exists.
 
 ### Backend robustness
@@ -229,7 +229,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 | 20 | Root forward returns 404/405 | one-time hint; not repeated; not in print-only mode |
 | 21 | Stale local config pointing at another project | the banner names the project |
 | 22 | Selected source disabled | warning on stderr |
-| 23 | Named source without connections | warning; skipped; error if all are skipped |
+| 23 | Named source without routes | warning; skipped; error if all are skipped |
 | 24 | `listen Stripe` when only `stripe` exists | error with "did you mean" |
 | 25 | Unknown or inaccessible project on `/cli/projects/:uid/sources` | 404 (was 500) |
 | 26 | Two dashboard users create the same source name at once | validation error (was 500) |
@@ -335,9 +335,9 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - Modify: `cmd/listen_test.go` (incl. `:95-122`)
 - Modify: `cmd/project_test.go` (`:742`)
 
-- [ ] banner starts with `Listening in <Org | Project> …`; disabled-source warning; unconnected named source warning instead of a silent skip
-- [ ] replace `no matching connections found` with the two messages and the dashboard hint; add "did you mean" for a single case-insensitive match
-- [ ] write tests: the project in the banner; disabled and unconnected warnings on stderr; the all-skipped error; no-args error text and hint URL; "did you mean" only for exactly one fold match
+- [ ] banner starts with `Listening in <Org | Project> …`; disabled-source warning; route-less named source warning instead of a silent skip
+- [ ] replace `no matching routes found` with the two messages and the dashboard hint; add "did you mean" for a single case-insensitive match
+- [ ] write tests: the project in the banner; disabled and route-less warnings on stderr; the all-skipped error; no-args error text and hint URL; "did you mean" only for exactly one fold match
 - [ ] update the existing assertions that expected the old messages or the silent skip
 - [ ] run tests - must pass before next task
 
