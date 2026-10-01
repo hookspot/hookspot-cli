@@ -1,0 +1,72 @@
+╭─ #1 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ connection refused  4ms  → http://localhost:3000/api/webhooks             │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://localhost:3000/api/webhooks is not reachable — is your server         │
+│ running?                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #2 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ timeout  4ms  → http://localhost:3000/api/webhooks  req_01JFULLREQUESTUID │
+│                                                                              │
+│ http://localhost:3000/api/webhooks timed out — check that your server        │
+│ responds within 30s                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #3 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ DNS lookup failed  4ms  → http://app.invalid:3000/api/webhooks            │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://app.invalid:3000/api/webhooks could not be resolved (app.invalid) —   │
+│ check the hostname                                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #4 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ TLS error  4ms  → https://localhost:3443/api/webhooks                     │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ TLS connection to https://localhost:3443/api/webhooks failed — check its     │
+│ certificate and HTTPS configuration                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #5 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ transport error  4ms  → http://localhost:3000/api/webhooks                │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://localhost:3000/api/webhooks failed: dial tcp 10.0.0.1:443: i/o        │
+│ \x1b[2Jfailure — check the target URL and server logs                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #6 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ transport error  4ms  → http://localhost:3000/api/webhooks                │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://localhost:3000/api/webhooks failed: dial tcp 10.… — check the target  │
+│ URL and server logs                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #7 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ connection refused  4ms  → http://localhost:3000/api/webhooks             │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://localhost:3000/api/webhooks is not reachable — is your server         │
+│ running?                                                                     │
+│ inside a container, localhost is the container itself; use the service name  │
+│ (http://app:3000) or host.docker.internal                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #8 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ connection refused  4ms  → http://[::1]:3000/api/webhooks                 │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://[::1]:3000/api/webhooks is not reachable — is your server running?    │
+│ inside a container, localhost is the container itself; use the service name  │
+│ (http://app:3000) or host.docker.internal                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #9 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  ✗ connection refused  4ms  → http://app:3000/api/webhooks                   │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://app:3000/api/webhooks is not reachable — is your server running?      │
+╰──────────────────────────────────────────────────────────────────────────────╯

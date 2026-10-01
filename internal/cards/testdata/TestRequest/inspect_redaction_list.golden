@@ -1,0 +1,30 @@
+╭─ #1 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│                                                        req_01JFULLREQUESTUID │
+├─ headers · 9 ────────────────────────────────────────────────────────────────┤
+│ api-key               hidden  --show-sensitive-headers to reveal             │
+│ authorization         hidden  --show-sensitive-headers to reveal             │
+│ content-type         application/json                                        │
+│ cookie                hidden  --show-sensitive-headers to reveal             │
+│ proxy-authorization   hidden  --show-sensitive-headers to reveal             │
+│ set-cookie            hidden  --show-sensitive-headers to reveal             │
+│ x-api-key             hidden  --show-sensitive-headers to reveal             │
+│ x-cli-key             hidden  --show-sensitive-headers to reveal             │
+│ x-hookspot-cli-key    hidden  --show-sensitive-headers to reveal             │
+├─ body · empty ───────────────────────────────────────────────────────────────┤
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+╭─ #1 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│                                                        req_01JFULLREQUESTUID │
+├─ headers · 9 ────────────────────────────────────────────────────────────────┤
+│ api-key              sentinel-Api-Key                                        │
+│ authorization        sentinel-Authorization                                  │
+│ content-type         application/json                                        │
+│ cookie               sentinel-Cookie                                         │
+│ proxy-authorization  sentinel-Proxy-Authorization                            │
+│ set-cookie           sentinel-Set-Cookie                                     │
+│ x-api-key            sentinel-X-API-Key                                      │
+│ x-cli-key            sentinel-X-CLI-Key                                      │
+│ x-hookspot-cli-key   sentinel-X-Hookspot-CLI-Key                             │
+├─ body · empty ───────────────────────────────────────────────────────────────┤
+╰──────────────────────────────────────────────────────────────────────────────╯

@@ -310,12 +310,18 @@
 - Create: `internal/cards/listen_test.go`
 - Create: `internal/cards/testdata/`
 
-- [ ] banner box: project, one line per route (source, public URL, → destination, label), key hints, and the prerequisite's warnings; connection state isn't part of the box
-- [ ] success row: method badge, source, path, summary, status badge, latency, time, and `↻ replay` / `test` marks
-- [ ] HTTP failure card (request and response sections, highlighted JSON, `--max-*` limits, redaction); transport failure card (hints moved from `printer.transportHint`); inspect card (query, headers, body); notice and connection-state chips
-- [ ] port the `printer_test.go` behaviours as golden cases: the redaction list, limits and omitted counts, MIME fallback, summary key priority (`type`, `event`, `event_type`, `action`), binary bodies
-- [ ] write golden tests per the Testing Strategy, plus hostile input (control characters in names, headers, bodies)
-- [ ] run tests - must pass before next task
+- [x] banner box: project, one line per route (source, public URL, → destination, label), key hints, and the prerequisite's warnings; connection state isn't part of the box
+- [x] success row: method badge, source, path, summary, status badge, latency, time, and `↻ replay` / `test` marks
+- [x] HTTP failure card (request and response sections, highlighted JSON, `--max-*` limits, redaction); transport failure card (hints moved from `printer.transportHint`); inspect card (query, headers, body); notice and connection-state chips
+- [x] port the `printer_test.go` behaviours as golden cases: the redaction list, limits and omitted counts, MIME fallback, summary key priority (`type`, `event`, `event_type`, `action`), binary bodies
+- [x] write golden tests per the Testing Strategy, plus hostile input (control characters in names, headers, bodies)
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 7–12: `cards.Banner(project, []BannerRoute, hints, width)`; `cards.Listen{Sources, Limits, ShowSensitiveHeaders, Container}.Request(cards.Request, width)`, which picks the row or card; `Connecting`, `Ready`, `ConnectionLost`, `Reconnected`; `DisabledSource`, `SkippedSource`, `RootNotFound`. Route labels and destinations come in as plain data. `box` now draws through the shared `frame` (titled section rules, a footer, title truncation); `TestPalette` also pins the JSON highlight colors
+- ⚠️ the prerequisite's warnings stay out of the box (Task 1): they're the `DisabledSource`/`SkippedSource` notices. Connection states and notices color today's wording instead of adding padded badges, so their ANSI-stripped text is today's line, `Ready …` byte for byte
+- ⚠️ rows and card titles show `#N`, so `r N`, `c N` and `e N` have numbers to refer to; `cards.Request.Replay` is a bool for the `↻ replay` mark until Task 9
+- ⚠️ the HTTP failure card shows request and response bodies, not headers, as today and on the canvas; redaction applies to the inspect card's headers, which now read `hidden`, and limits end in `…`, `… N more lines` and `… N more headers`
+- ⚠️ banner routes move below their source when a line doesn't fit; an unnamed route's label (its path) is hidden when the destination already ends with it; inspect mode shows `→ terminal only`
+- ⚠️ transport hints name the full forwarded-to URL (`Request.Target`); `Listen.Container` is data, so Task 7 moves `printer.runningInContainer` to fill it
 
 ### Task 6: `session` core: history, forwarding, ordered events
 

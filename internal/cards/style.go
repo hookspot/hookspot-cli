@@ -26,6 +26,10 @@ var (
 	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Green)
 	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Red)
+
+	keyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Blue)
+	stringStyle  = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
+	literalStyle = lipgloss.NewStyle().Foreground(lipgloss.Magenta)
 )
 
 // DefaultWidth is the card width when the output isn't a terminal or its size

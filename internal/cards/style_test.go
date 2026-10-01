@@ -21,7 +21,7 @@ func TestPalette(t *testing.T) {
 		out.WriteString(ColorBadge(StatusColor(status), strconv.Itoa(status)) + "\n")
 	}
 	out.WriteString(Badge("POST") + "\n")
-	for _, style := range []lipgloss.Style{faintStyle, boldStyle, okStyle, warnStyle, errorStyle} {
+	for _, style := range []lipgloss.Style{faintStyle, boldStyle, okStyle, warnStyle, errorStyle, keyStyle, stringStyle, literalStyle} {
 		out.WriteString(style.Render("text") + "\n")
 	}
 	golden.RequireEqual(t, out.String())

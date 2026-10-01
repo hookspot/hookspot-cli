@@ -1,0 +1,9 @@
+#1   POST  stripe   /api/webhooks  first                                                        200   38ms  12:34:56.789
+#2   POST  stripe   /api/webhooks  second                                                       200  112ms  12:34:56.789
+#3   POST  stripe   /api/webhooks  third                                                        200  999ms  12:34:56.789
+#4   POST  stripe   /api/webhooks  fallback                                                     200    9ms  12:34:56.789
+#5   POST  stripe   /api/webhooks  application/json · 14 B                                      204   1.2s  12:34:56.789
+#6   POST  shopify  /api/webhooks  empty                                              ↻ replay  201    1ms  12:34:56.789
+#7   POST  stripe   /api/webhooks  third                                                 test   202    12s  12:34:56.789
+#1234 POST  unknown  /very-long-segment/very-long-segment/very-long-segment/very-long-segmen…   200    4ms  12:34:56.789
+#9   POST  stripe   /api/webhooks  payme…                                                       200    1ms  12:34:56.789

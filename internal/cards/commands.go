@@ -117,33 +117,72 @@ func textLines(text string) []string {
 // optional label at its right end. It fits its content up to width columns;
 // longer lines wrap. Lines must not contain newlines or tabs.
 func box(title, label string, border lipgloss.Style, width int, sections ...[]string) string {
-	end := "─╮"
+	inner := lipgloss.Width(title) + 3
 	if label != "" {
-		end = " " + label + " ─╮"
+		inner += lipgloss.Width(label) + 2
+		label = border.Render(label)
 	}
-	minimum := lipgloss.Width(title) + lipgloss.Width(end) + 1
-	inner := minimum
-	for _, section := range sections {
-		for _, line := range section {
+	parts := make([]section, len(sections))
+	for i, lines := range sections {
+		parts[i] = section{lines: lines}
+		for _, line := range lines {
 			inner = max(inner, lipgloss.Width(line))
 		}
 	}
-	inner = max(1, min(inner, width-4))
+	return frame(border, max(1, min(inner, width-4)), title, label, "", parts...)
+}
 
+// section is a run of box lines; its title sits in the rule above it.
+type section struct {
+	title string
+	lines []string
+}
+
+// frame draws a box inner columns wide. title and label sit at the ends of
+// the top border, footer at the right end of the bottom one; title and footer
+// are cut to fit, and a label too wide for the box overflows it. Every section
+// after the first opens with a rule. Lines wrap; they must not contain
+// newlines or tabs.
+func frame(border lipgloss.Style, inner int, title, label, footer string, sections ...section) string {
 	var out strings.Builder
-	out.WriteString(border.Render("╭─ ") + title + border.Render(" "+strings.Repeat("─", max(1, inner-minimum+1))+end) + "\n")
+	end := border.Render("─╮")
+	if label != "" {
+		end = " " + label + border.Render(" ─╮")
+	}
+	title = truncate(title, inner-lipgloss.Width(end)-1)
+	out.WriteString(border.Render("╭─ ") + title + border.Render(" "+strings.Repeat("─", max(0, inner-lipgloss.Width(title)-lipgloss.Width(end)))) + end + "\n")
 	side := border.Render("│")
 	for i, section := range sections {
-		if i > 0 {
+		if i > 0 && section.title != "" {
+			title := truncate(section.title, inner-3)
+			out.WriteString(border.Render("├─ ") + title + border.Render(" "+strings.Repeat("─", max(0, inner-lipgloss.Width(title)-2))+"─┤") + "\n")
+		} else if i > 0 {
 			out.WriteString(border.Render("├"+strings.Repeat("─", inner+2)+"┤") + "\n")
 		}
-		for _, line := range section {
+		for _, line := range section.lines {
 			for _, wrapped := range strings.Split(lipgloss.Wrap(line, inner, ""), "\n") {
 				padding := strings.Repeat(" ", max(0, inner-lipgloss.Width(wrapped)))
 				out.WriteString(side + " " + wrapped + padding + " " + side + "\n")
 			}
 		}
 	}
-	out.WriteString(border.Render("╰" + strings.Repeat("─", inner+2) + "╯"))
+	if footer == "" {
+		out.WriteString(border.Render("╰" + strings.Repeat("─", inner+2) + "╯"))
+		return out.String()
+	}
+	footer = truncate(footer, inner-2)
+	out.WriteString(border.Render("╰"+strings.Repeat("─", max(0, inner-lipgloss.Width(footer)-1))+" ") + footer + border.Render(" ─╯"))
 	return out.String()
+}
+
+// truncate cuts s, which may be styled, to width columns, ending it with "…"
+// when cut.
+func truncate(s string, width int) string {
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	if width <= 1 {
+		return strings.Repeat("…", max(0, width))
+	}
+	return lipgloss.NewStyle().MaxWidth(width-1).Render(s) + "…"
 }

@@ -1,0 +1,5 @@
+╭─ Listening in Acme Inc. | Billing ───────────────────── 1 source • 2 routes ─╮
+│ billing  https://in.hookspot.test/src_billing                                │
+│   → terminal only  /hooks/invoices                                           │
+│   → terminal only  refunds                                                   │
+╰──────────────────────────────────────────────────────────────── ctrl-c quit ─╯

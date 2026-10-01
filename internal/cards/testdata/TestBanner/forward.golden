@@ -1,0 +1,7 @@
+╭─ Listening in Acme Inc. | Payments ─────────────────── 2 sources • 3 routes ─╮
+│ stripe  https://in.hookspot.test/src_stripe                                  │
+│   → http://localhost:3000/webhooks/stripe                                    │
+│ github  https://in.hookspot.test/src_github                                  │
+│   → http://localhost:3000/webhooks/github                                    │
+│   → http://localhost:3000/ci/github  ci-hook                                 │
+╰──────────────────────────────────────────────── ↵ replay last · ctrl-c quit ─╯

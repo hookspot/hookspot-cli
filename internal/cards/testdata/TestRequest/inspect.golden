@@ -1,0 +1,21 @@
+╭─ #12 stripe · POST /api/webhooks ─────────────────────  test   12:34:56.789 ─╮
+│ query  page=1&x=2                                      req_01JFULLREQUESTUID │
+├─ headers · 4 ────────────────────────────────────────────────────────────────┤
+│ authorization      hidden  --show-sensitive-headers to reveal                │
+│ content-type      application/json; charset=utf-8                            │
+│ stripe-signature  t=1690,v1=5f8e                                             │
+│ x-long            unlimited unlimited unlimited unlimited unlimited          │
+│ unlimited unlimited unlimited unlimited unlimited unlimited unlimited        │
+│ unlimited unlimited unlimited unlimited unlimited unlimited unlimited        │
+│ unlimited                                                                    │
+├─ body · application/json · 96 B ─────────────────────────────────────────────┤
+│ {                                                                            │
+│   "id": "evt_1",                                                             │
+│   "type": "payment_intent.succeeded",                                        │
+│   "data": {                                                                  │
+│     "amount": 2000,                                                          │
+│     "live": false,                                                           │
+│     "note": null                                                             │
+│   }                                                                          │
+│ }                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
