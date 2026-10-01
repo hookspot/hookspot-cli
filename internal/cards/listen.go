@@ -464,7 +464,7 @@ func (l Listen) headers(headers http.Header) []string {
 	lines := make([]string, 0, len(keys)+1)
 	for _, key := range keys {
 		value := Badge("hidden") + " " + faintStyle.Render("--show-sensitive-headers to reveal")
-		if !sensitiveHeader(key) || l.ShowSensitiveHeaders {
+		if !session.SensitiveHeader(key) || l.ShowSensitiveHeaders {
 			values := make([]string, len(headers[key]))
 			for i, v := range headers[key] {
 				values[i] = l.value(Line(v))
@@ -626,16 +626,6 @@ func timestamp(r Request) string {
 func localhostTarget(target string) bool {
 	parsed, err := url.Parse(target)
 	return err == nil && slices.Contains([]string{"localhost", "127.0.0.1", "::1"}, parsed.Hostname())
-}
-
-func sensitiveHeader(key string) bool {
-	switch strings.ToLower(key) {
-	case "authorization", "proxy-authorization", "cookie", "set-cookie",
-		"x-cli-key", "x-api-key", "api-key", "x-hookspot-cli-key":
-		return true
-	default:
-		return false
-	}
 }
 
 // bodyTitle describes a body by media type and size.

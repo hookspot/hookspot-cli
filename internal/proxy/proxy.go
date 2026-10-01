@@ -197,15 +197,21 @@ func (f *Forwarder) Forward(ctx context.Context, method, path, query string, bod
 		return nil, err
 	}
 
-	forwardHeaders := canonicalHeaders(headers)
-	removeHopByHopHeaders(forwardHeaders)
-	for key, values := range forwardHeaders {
+	for key, values := range Headers(headers) {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
 	}
 
 	return f.client.Do(req)
+}
+
+// Headers returns the headers Forward sends: canonical names, without
+// hop-by-hop headers or Host.
+func Headers(headers http.Header) http.Header {
+	forwarded := canonicalHeaders(headers)
+	removeHopByHopHeaders(forwarded)
+	return forwarded
 }
 
 func canonicalHeaders(headers http.Header) http.Header {

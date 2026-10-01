@@ -16,15 +16,26 @@ type Replayer interface {
 	ReplayLast() error
 }
 
+// Exporter copies requests as cURL and exports them as fixtures, as
+// *session.Session does.
+type Exporter interface {
+	Curl(n int, redact bool) (session.Curl, error)
+	ExportFixture(n int, redact bool) (session.Fixture, error)
+}
+
 // Stream is listen's terminal stream: cards scroll above a status line and,
 // when stdin is a terminal, the › prompt for request commands.
 type Stream struct {
 	Replayer Replayer
+	Exporter Exporter
 	Project  string
 	// Forwarding is set with --forward-to; without it nothing replays.
 	Forwarding bool
 	// Prompt is set when stdin is a terminal.
 	Prompt bool
+	// ShowSensitiveHeaders keeps sensitive header values in shown commands
+	// and fixtures.
+	ShowSensitiveHeaders bool
 
 	width  int
 	state  cards.State
@@ -52,6 +63,9 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state, m.reply = cards.StateStopped, ""
 	case replyMsg:
 		m.reply = string(msg)
+	case copiedMsg:
+		m.reply = msg.notes
+		return m, tea.Batch(tea.SetClipboard(msg.command), tea.Println(msg.shown))
 	case tea.KeyPressMsg:
 		if m.prompting() {
 			return m.key(msg)
@@ -75,6 +89,12 @@ func (m Stream) View() tea.View {
 
 // replyMsg answers a command; it shows above the status line until the next.
 type replyMsg string
+
+// copiedMsg carries a request's cURL command: the full one for the clipboard,
+// the shown one to print above the stream.
+type copiedMsg struct {
+	notes, command, shown string
+}
 
 // connection follows the connection until listening stops.
 func (m Stream) connection(state cards.State, lost error) Stream {
@@ -135,12 +155,55 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 			replayer := m.Replayer
 			return m.replay(func() error { return replayer.Replay(n) })
 		}
+	case len(fields) == 2 && fields[0] == "c":
+		if n, err := strconv.Atoi(fields[1]); err == nil {
+			return m, m.copyCurl(n)
+		}
+	case len(fields) == 2 && fields[0] == "e":
+		if n, err := strconv.Atoi(fields[1]); err == nil {
+			return m, m.exportFixture(n)
+		}
 	case len(fields) == 1 && fields[0] == "?":
 		m.reply = m.help()
 		return m, nil
 	}
-	m.reply = "commands: " + strings.Join(m.commands(), " · ")
+	m.reply = m.usage()
 	return m, nil
+}
+
+// usage is the one-line help, naming every command.
+func (m Stream) usage() string {
+	commands := []string{"c N copy as cURL", "e N export fixture", "? help"}
+	if m.Forwarding {
+		commands = append([]string{"↵ replay last", "r N replay #N"}, commands...)
+	}
+	return "commands: " + strings.Join(commands, " · ")
+}
+
+// copyCurl builds request n's cURL command off the event loop. The full
+// command goes to the clipboard; the shown one, redacted unless
+// --show-sensitive-headers, prints above the stream.
+func (m Stream) copyCurl(n int) tea.Cmd {
+	exporter, redact := m.Exporter, !m.ShowSensitiveHeaders
+	return func() tea.Msg {
+		curl, err := exporter.Curl(n, redact)
+		if err != nil {
+			return replyMsg(cards.Line(err.Error()))
+		}
+		return copiedMsg{notes: cards.CurlNotes(n, curl, true), command: curl.Command, shown: cards.Sanitize(curl.Shown)}
+	}
+}
+
+// exportFixture writes request n's fixture off the event loop.
+func (m Stream) exportFixture(n int) tea.Cmd {
+	exporter, redact := m.Exporter, !m.ShowSensitiveHeaders
+	return func() tea.Msg {
+		fixture, err := exporter.ExportFixture(n, redact)
+		if err != nil {
+			return replyMsg(cards.Line(err.Error()))
+		}
+		return replyMsg(cards.Exported(n, fixture))
+	}
 }
 
 // replay runs off the event loop, which must never wait on the session; only
@@ -159,10 +222,11 @@ func (m Stream) replay(replay func() error) (tea.Model, tea.Cmd) {
 }
 
 func (m Stream) help() string {
+	requests := "c N     copy request #N as cURL\ne N     export request #N as a fixture\n"
 	if !m.Forwarding {
-		return "replays need --forward-to\nctrl-c  stop listening"
+		return requests + "replays need --forward-to\nctrl-c  stop listening"
 	}
-	return "↵       replay the last request\nr N     replay request #N\nctrl-c  stop listening"
+	return "↵       replay the last request\nr N     replay request #N\n" + requests + "ctrl-c  stop listening"
 }
 
 // StreamSink prints each request's card, the reconnect notice and the root

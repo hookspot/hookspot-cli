@@ -818,14 +818,14 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	sess := session.New(context.Background(), sources, forwarder, writer)
 
 	// ↵ before the first request has nothing to replay.
-	if err := runLineCommand(sess, writer, ""); err != nil || stdout.Len()+stderr.Len() != 0 {
+	if err := runLineCommand(sess, writer, true, ""); err != nil || stdout.Len()+stderr.Len() != 0 {
 		t.Fatalf("↵ before any request = %v, output %q %q", err, stdout.String(), stderr.String())
 	}
 	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range []string{"", "r 1", " r  2 ", "r 9", "r x", "?"} {
-		if err := runLineCommand(sess, writer, line); err != nil {
+		if err := runLineCommand(sess, writer, true, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
@@ -839,9 +839,46 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 			t.Fatalf("row %d = %q", i+1, row)
 		}
 	}
-	help := "commands: ↵ replay last · r N replay #N\n"
+	help := "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture\n"
 	if want := "#9: no such request\n" + help + help; stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
+	}
+}
+
+func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
+	t.Chdir(t.TempDir())
+	sources := []api.Source{{UID: "src_stripe", Name: "stripe", URL: "https://in.hookspot.test/src_stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
+	var stdout, stderr bytes.Buffer
+	writer := cards.NewWriter(&stdout, &stderr, cards.Listen{Sources: sourceNamesByUID(sources)}, "")
+	sess := session.New(context.Background(), sources, nil, writer)
+	if _, err := sess.Handle(ws.Delivery{
+		AttemptUID: "att_1", RequestUID: "req_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks",
+		Headers: http.Header{"Authorization": []string{"Bearer secret"}}, Body: []byte(`{"type":"paid"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	for _, line := range []string{"c 1", "e 1", "e 9", "", "r 1", "?"} {
+		if err := runLineCommand(sess, writer, false, line); err != nil {
+			t.Fatalf("line %q: %v", line, err)
+		}
+	}
+
+	dir, err := filepath.Abs("hookspot-fixtures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := "nothing to replay without --forward-to\n"
+	want := "#1 as cURL, which resends it through Hookspot\n" +
+		"sensitive headers are hidden; --show-sensitive-headers shows the full command\n" +
+		"curl -X POST 'https://in.hookspot.test/src_stripe' \\\n" +
+		"  -H 'Authorization: [redacted]' \\\n" +
+		"  --data-binary '{\"type\":\"paid\"}'\n" +
+		"exported #1 to " + filepath.Join(dir, "req_1.json") + " and " + filepath.Join(dir, "req_1.body") + " · sensitive headers redacted\n" +
+		"#9: no such request\n" + refused + refused +
+		"commands: c N copy as cURL · e N export fixture\n"
+	if stderr.String() != want || stdout.Len() != 0 {
+		t.Fatalf("stderr:\n%s\nwant:\n%s\nstdout: %q", stderr.String(), want, stdout.String())
 	}
 }
 
