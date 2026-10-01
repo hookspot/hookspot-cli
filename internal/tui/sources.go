@@ -1,0 +1,505 @@
+package tui
+
+import (
+	"cmp"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"hookspot/internal/cards"
+	"hookspot/internal/proxy"
+	"hookspot/internal/session"
+	"hookspot/internal/ws"
+)
+
+// activityWidth is the activity panel's width beside the route detail.
+const activityWidth = 50
+
+// sourcesPage is the Sources page's state. The requests view keeps its own
+// selection while the page is open.
+type sourcesPage struct {
+	open bool
+	// selected is the selected route's index in Routes.
+	selected int
+	// copying is set by c until the next key: a field's number copies it.
+	copying bool
+}
+
+// sourcesKeys are the Sources page's own keys; ↑↓, t, ? and q work as in the
+// requests view.
+var sourcesKeys = struct {
+	open, back, copy, field, cancel key.Binding
+}{
+	open:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sources")),
+	back:   key.NewBinding(key.WithKeys("esc", "s"), key.WithHelp("esc", "back")),
+	copy:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy…")),
+	field:  key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6"), key.WithHelp("1-6", "copy that field")),
+	cancel: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+}
+
+func (m Fullscreen) sourcesKey(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
+	if m.sources.copying {
+		m.sources.copying = false
+		if key.Matches(msg, sourcesKeys.field) {
+			n, _ := strconv.Atoi(msg.String())
+			return m.copyField(n)
+		}
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, keys.up):
+		m.sources.selected = max(0, m.sources.selected-1)
+	case key.Matches(msg, keys.down):
+		m.sources.selected = max(0, min(len(m.Routes)-1, m.sources.selected+1))
+	case key.Matches(msg, sourcesKeys.copy):
+		m.sources.copying = len(m.Routes) > 0
+	case key.Matches(msg, keys.test):
+		if len(m.Routes) > 0 {
+			return m, sendTest(m.Tester, m.Routes[m.sources.selected].Source)
+		}
+	case key.Matches(msg, sourcesKeys.back):
+		m.sources.open = false
+	case key.Matches(msg, keys.help):
+		m.help = !m.help
+	case key.Matches(msg, keys.quit):
+		return m, Stop
+	}
+	return m, nil
+}
+
+// copyField copies the selected route's field n. Server data may hold control
+// characters, which would end a bracketed paste, so the copy is the escaped
+// value the toast shows.
+func (m Fullscreen) copyField(n int) (Fullscreen, tea.Cmd) {
+	value := cards.Line(m.routeFields(m.Routes[m.sources.selected])[n-1].value)
+	m, expire := m.show("copied " + value + "\ncopying needs a terminal with OSC 52 (Terminal.app has none)")
+	return m, tea.Batch(tea.SetClipboard(value), expire)
+}
+
+// routeField is one of a route's numbered, copyable fields.
+type routeField struct {
+	label, value string
+}
+
+func (m Fullscreen) routeFields(route cards.BannerRoute) []routeField {
+	listen := "hookspot listen " + shellWord(route.Source)
+	if m.Target != "" {
+		listen += " --forward-to " + shellWord(m.Target)
+	}
+	return []routeField{
+		{"public URL", route.PublicURL},
+		{"source ID", route.SourceUID},
+		{"destination", m.routeDestination(route)},
+		{"route ID", route.RouteUID},
+		{"listen", listen},
+		{"test", session.TestCurl(route.PublicURL)},
+	}
+}
+
+// routeDestination is where the route's requests go: its URL, or in inspect
+// mode only its path.
+func (m Fullscreen) routeDestination(route cards.BannerRoute) string {
+	if m.Target == "" {
+		return route.Path
+	}
+	return route.Destination
+}
+
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// shellWord quotes s for a POSIX shell unless it's plain.
+func shellWord(s string) string {
+	if plainWord.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// sourcesView lists every route with its stats, then the selected route's
+// fields and activity, beside each other when wide.
+func (m Fullscreen) sourcesView() tea.View {
+	width, height := m.size()
+	toasts, footer := m.toastLines(width), m.sourcesFooter(width)
+	panes := max(0, height-2-len(toasts)-len(footer))
+	// Many routes leave half the room to the selected one.
+	table := min(panes, len(m.Routes)+4, max(panes/2, 5))
+	lines := append([]string{m.header(width), m.sourcesTitle()}, m.sourcesTable(width, table)...)
+	if rest := 2 + panes - len(lines); len(m.Routes) > 0 && rest > 0 {
+		route := m.Routes[m.sources.selected]
+		fields, activity := m.routeDetail(route), m.activity(route)
+		title := sourceStyle(route.SourceUID).Render(cards.Line(route.Source)) + faintStyle.Render(" → ") + cards.Line(route.Label)
+		label := faintStyle.Render("press c, then a number, to copy")
+		if width >= splitWidth {
+			left := panel(title, label, width-activityWidth-1, rest, fields)
+			right := panel("Activity", "", activityWidth, rest, activity)
+			for i := range left {
+				lines = append(lines, left[i]+" "+right[i])
+			}
+		} else {
+			detail := min(rest, len(fields)+2)
+			lines = append(lines, panel(title, label, width, detail, fields)...)
+			lines = append(lines, panel("Activity", "", width, rest-detail, activity)...)
+		}
+	}
+	lines = append(lines, make([]string, max(0, 2+panes-len(lines)))...)
+	lines = append(append(lines, toasts...), footer...)
+	lines = lines[:min(len(lines), height)]
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+	view := tea.NewView(strings.Join(lines, "\n"))
+	view.AltScreen = true
+	return view
+}
+
+// sourcesTitle names the page and what it counts.
+func (m Fullscreen) sourcesTitle() string {
+	sources := 0
+	for i, route := range m.Routes {
+		if i == 0 || m.Routes[i-1].SourceUID != route.SourceUID {
+			sources++
+		}
+	}
+	return boldStyle.Render("Sources") + faintStyle.Render(" · "+counted(sources, "source")+" · "+counted(len(m.Routes), "route")+" · stats since listen started")
+}
+
+func counted(n int, noun string) string {
+	if n != 1 {
+		noun += "s"
+	}
+	return strconv.Itoa(n) + " " + noun
+}
+
+// cell is a table cell's text and style.
+type cell struct {
+	text  string
+	style lipgloss.Style
+}
+
+// sourcesTable frames a row per route, the selected one marked as in the
+// request list and scrolled into view, then the totals, the only row that
+// counts unmatched requests. URLs are cut at the start, since they differ at
+// the end.
+func (m Fullscreen) sourcesTable(width, height int) []string {
+	rows := make([]map[string]cell, len(m.Routes))
+	matched := 0
+	for i, route := range m.Routes {
+		stats := m.routes[route.RouteUID]
+		matched += stats.Count
+		rows[i] = m.statsCells(stats)
+		rows[i]["ROUTE"] = cell{text: cards.Line(route.Label)}
+		rows[i]["DESTINATION"] = cell{text: cards.Line(m.routeDestination(route))}
+		if i > 0 && m.Routes[i-1].SourceUID == route.SourceUID {
+			rows[i]["SOURCE"] = cell{text: " └", style: faintStyle}
+		} else {
+			rows[i]["SOURCE"] = cell{text: cards.Line(route.Source), style: sourceStyle(route.SourceUID)}
+			rows[i]["PUBLIC URL"] = cell{text: cards.Line(route.PublicURL), style: faintStyle}
+		}
+	}
+	totals := m.statsCells(m.totals)
+	delete(totals, "LAST")
+
+	// The marker and a space come first.
+	inner := max(0, width-6)
+	numbers := []string{"REQS", "OK", "FAIL", "P50", "LAST"}
+	if m.Target == "" {
+		numbers = []string{"REQS", "LAST"}
+	}
+	numberColumns := sized(numbers, slices.Concat(rows, []map[string]cell{totals}))
+	names := sizedNames(sized([]string{"SOURCE", "PUBLIC URL", "ROUTE", "DESTINATION"}, rows), inner-2-rowWidth(numberColumns))
+	for _, cells := range rows {
+		for _, c := range names {
+			if text := cells[c.title].text; urlColumn(c) && lipgloss.Width(text) > c.width {
+				cells[c.title] = cell{text: ansi.TruncateLeft(text, lipgloss.Width(text)-c.width+1, "…"), style: cells[c.title].style}
+			}
+		}
+	}
+	row := func(cells map[string]cell, plain bool) string {
+		return render(names, texts(names, cells), styles(names, cells, plain)) + "  " + render(numberColumns, texts(numberColumns, cells), styles(numberColumns, cells, plain))
+	}
+
+	titles := map[string]cell{}
+	for _, c := range slices.Concat(names, numberColumns) {
+		titles[c.title] = cell{text: c.title}
+	}
+	lines := []string{"  " + faintStyle.Render(row(titles, true))}
+	// The borders, column titles and totals take four lines.
+	visible := max(1, height-4)
+	first := max(0, m.sources.selected-visible+1)
+	for i := first; i < min(len(rows), first+visible); i++ {
+		cells := rows[i]
+		if i == m.sources.selected {
+			lines = append(lines, "› "+selectedStyle.Render(pad(row(cells, true), inner)))
+		} else {
+			lines = append(lines, "  "+row(cells, false))
+		}
+	}
+	label := "total"
+	if unmatched := m.totals.Count - matched; unmatched > 0 {
+		label += " · " + strconv.Itoa(unmatched) + " unmatched"
+	}
+	span := rowWidth(names)
+	totalsRow := faintStyle.Render(pad(ansi.Truncate(label, span, "…"), span)) + "  " + render(numberColumns, texts(numberColumns, totals), styles(numberColumns, totals, false))
+	lines = append(lines, "  "+totalsRow)
+	return panel("Sources & routes", "", width, height, lines)
+}
+
+// statsCells are the table's numbers for stats; nothing forwards in inspect
+// mode, so only counts and times show there.
+func (m Fullscreen) statsCells(stats session.Stats) map[string]cell {
+	cells := map[string]cell{"REQS": {text: strconv.Itoa(stats.Count)}, "LAST": {text: "—", style: faintStyle}}
+	if stats.Last.Number != 0 {
+		last := stats.Last.Received.Format(time.TimeOnly)
+		cells["LAST"] = cell{text: last, style: faintStyle}
+		if m.Target != "" {
+			text, style := outcome(stats.Last)
+			cells["LAST"] = cell{text: last + " " + text, style: style}
+		}
+	}
+	failed := lipgloss.Style{}
+	if stats.Failed > 0 {
+		failed = errorStyle
+	}
+	cells["OK"] = cell{text: strconv.Itoa(stats.OK)}
+	cells["FAIL"] = cell{text: strconv.Itoa(stats.Failed), style: failed}
+	cells["P50"] = cell{text: "—", style: faintStyle}
+	if stats.Max > 0 {
+		cells["P50"] = cell{text: cards.FormatLatency(stats.P50)}
+	}
+	return cells
+}
+
+// sized are columns titled titles, as wide as their widest text; counts and
+// latencies line up right.
+func sized(titles []string, rows []map[string]cell) []column {
+	columns := make([]column, len(titles))
+	for i, title := range titles {
+		columns[i] = column{title: title, width: len(title), right: slices.Contains([]string{"REQS", "OK", "FAIL", "P50"}, title)}
+		for _, cells := range rows {
+			columns[i].width = max(columns[i].width, lipgloss.Width(cells[title].text))
+		}
+	}
+	return columns
+}
+
+// sizedNames fits the name columns into width. The source and route label
+// are capped; the public URL and destination share what's left, and the
+// public URL goes when either would get under minPath, then the destination.
+func sizedNames(columns []column, width int) []column {
+	for i, c := range columns {
+		switch c.title {
+		case "SOURCE":
+			columns[i].width = min(c.width, 12)
+		case "ROUTE":
+			columns[i].width = min(c.width, 16)
+		}
+	}
+	// room is what the URL columns get.
+	room := func() int {
+		used := 2 * (len(columns) - 1)
+		for _, c := range columns {
+			if !urlColumn(c) {
+				used += c.width
+			}
+		}
+		return width - used
+	}
+	if room()/2 < minPath {
+		columns = without(columns, "PUBLIC URL")
+		if room() < minPath {
+			columns = without(columns, "DESTINATION")
+		}
+	}
+	url, destination := titled(columns, "PUBLIC URL"), titled(columns, "DESTINATION")
+	switch {
+	case url >= 0:
+		columns[destination].width = min(columns[destination].width, max(room()/2, room()-columns[url].width))
+		columns[url].width = min(columns[url].width, room()-columns[destination].width)
+	case destination >= 0:
+		columns[destination].width = min(columns[destination].width, room())
+	}
+	return columns
+}
+
+func urlColumn(c column) bool {
+	return c.title == "PUBLIC URL" || c.title == "DESTINATION"
+}
+
+func titled(columns []column, title string) int {
+	return slices.IndexFunc(columns, func(c column) bool { return c.title == title })
+}
+
+func without(columns []column, title string) []column {
+	return slices.DeleteFunc(columns, func(c column) bool { return c.title == title })
+}
+
+func rowWidth(columns []column) int {
+	width := 2 * max(0, len(columns)-1)
+	for _, c := range columns {
+		width += c.width
+	}
+	return width
+}
+
+func texts(columns []column, cells map[string]cell) []string {
+	texts := make([]string, len(columns))
+	for i, c := range columns {
+		texts[i] = cells[c.title].text
+	}
+	return texts
+}
+
+// styles are nil for plain, the selected row, which shows in reverse.
+func styles(columns []column, cells map[string]cell, plain bool) []lipgloss.Style {
+	if plain {
+		return nil
+	}
+	styles := make([]lipgloss.Style, len(columns))
+	for i, c := range columns {
+		styles[i] = cells[c.title].style
+	}
+	return styles
+}
+
+// routeDetail numbers the route's fields; after c, the numbers stand out.
+func (m Fullscreen) routeDetail(route cards.BannerRoute) []string {
+	var lines []string
+	for i, f := range m.routeFields(route) {
+		number := faintStyle.Render(" " + strconv.Itoa(i+1) + " ")
+		if m.sources.copying {
+			number = cards.Badge(strconv.Itoa(i + 1))
+		}
+		lines = append(lines, number+"  "+faintStyle.Render(pad(f.label, 13))+cards.Line(f.value))
+	}
+	return lines
+}
+
+// activity sums up the route's requests: counts, latency, a sparkline of the
+// last 15 minutes, the newest request and how forwarded ones ended. Inspect
+// mode forwards nothing, so it shows only counts and times.
+func (m Fullscreen) activity(route cards.BannerRoute) []string {
+	stats := m.routes[route.RouteUID]
+	now := time.Now
+	if m.now != nil {
+		now = m.now
+	}
+	requests := strconv.Itoa(stats.Count)
+	if m.Target != "" {
+		failed := strconv.Itoa(stats.Failed) + " failed"
+		if stats.Failed > 0 {
+			failed = errorStyle.Render(failed)
+		}
+		requests += faintStyle.Render(" · ") + strconv.Itoa(stats.OK) + " ok" + faintStyle.Render(" · ") + failed
+	}
+	lines := []string{activityLine("requests", requests)}
+	if m.Target != "" {
+		latency := faintStyle.Render("—")
+		if stats.Max > 0 {
+			latency = "p50 " + cards.FormatLatency(stats.P50) + faintStyle.Render(" · ") + "p95 " + cards.FormatLatency(stats.P95) + faintStyle.Render(" · ") + "max " + cards.FormatLatency(stats.Max)
+		}
+		lines = append(lines, activityLine("latency", latency))
+	}
+	lines = append(lines, activityLine("per minute", sparkline(stats.PerMinuteAt(now()))+faintStyle.Render("  last 15 min")))
+	last := faintStyle.Render("—")
+	if e := stats.Last; e.Number != 0 {
+		last = "#" + strconv.Itoa(e.Number) + "  " + faintStyle.Render(e.Received.Format(time.TimeOnly))
+		if m.Target != "" {
+			text, style := outcome(e)
+			last += "  " + style.Render(text)
+		}
+	}
+	lines = append(lines, activityLine("last", last))
+	if m.Target == "" {
+		return lines
+	}
+	return append(lines, statusBars(stats.Outcomes)...)
+}
+
+func activityLine(label, value string) string {
+	return faintStyle.Render(pad(label, 12)) + value
+}
+
+// statusBars break forwarded requests down by outcome, most common first,
+// with bars scaled to the most common.
+func statusBars(outcomes map[session.Outcome]int) []string {
+	type bar struct {
+		text  string
+		style lipgloss.Style
+		count int
+	}
+	var bars []bar
+	labelWidth, countWidth, most := 0, 0, 0
+	for o, count := range outcomes {
+		e := session.Entry{Response: ws.Response{Status: o.Status}}
+		if o.Failure != "" {
+			e.Failure = &proxy.TransportFailure{Kind: o.Failure}
+		}
+		text, style := outcome(e)
+		bars = append(bars, bar{text, style, count})
+		labelWidth, countWidth, most = max(labelWidth, len(text)), max(countWidth, len(strconv.Itoa(count))), max(most, count)
+	}
+	slices.SortFunc(bars, func(a, b bar) int { return cmp.Or(b.count-a.count, strings.Compare(a.text, b.text)) })
+	// The panel's borders, the label, the gaps and the count leave the rest.
+	longest := max(1, activityWidth-4-12-labelWidth-2-1-countWidth)
+	var lines []string
+	for i, b := range bars {
+		label := ""
+		if i == 0 {
+			label = "status"
+		}
+		lines = append(lines, activityLine(label, pad(b.text, labelWidth)+"  "+b.style.Render(strings.Repeat("█", max(1, b.count*longest/most)))+" "+strconv.Itoa(b.count)))
+	}
+	return lines
+}
+
+var sparks = []rune("▁▂▃▄▅▆▇█")
+
+// sparkline draws counts as bars scaled to the largest; any request at all
+// rises above the floor.
+func sparkline(counts [15]int) string {
+	most := slices.Max(counts[:])
+	var line strings.Builder
+	for _, count := range counts {
+		level := 0
+		if count > 0 {
+			level = (count*(len(sparks)-1) + most - 1) / most
+		}
+		line.WriteRune(sparks[level])
+	}
+	return line.String()
+}
+
+// sourcesFooter lists the page's keys, or all of them in columns after ?.
+func (m Fullscreen) sourcesFooter(width int) []string {
+	h := help.New()
+	h.ShowAll = m.help && !m.sources.copying
+	h.ShortSeparator = "  "
+	h.Styles = helpStyles
+	h.SetWidth(width)
+	return strings.Split(h.View(sourcesKeyMap{copying: m.sources.copying}), "\n")
+}
+
+// sourcesKeyMap lists the page's keys; after c, only the field numbers.
+type sourcesKeyMap struct{ copying bool }
+
+func (k sourcesKeyMap) ShortHelp() []key.Binding {
+	if k.copying {
+		return []key.Binding{sourcesKeys.field, sourcesKeys.cancel}
+	}
+	return []key.Binding{keys.up, sourcesKeys.copy, keys.test, sourcesKeys.back, keys.help, keys.quit}
+}
+
+func (k sourcesKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{described(keys.up, "select a route"), described(sourcesKeys.copy, "copy a field by its number"), described(keys.test, "send a test event")},
+		{described(sourcesKeys.back, "back to requests"), described(keys.help, "close help"), described(keys.quit, "stop listening")},
+	}
+}

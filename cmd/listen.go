@@ -428,7 +428,7 @@ func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.Ban
 	var routes []cards.BannerRoute
 	for _, source := range sources {
 		for _, route := range source.Routes {
-			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, RouteUID: route.UID, Label: session.RouteLabel(route)}
+			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, RouteUID: route.UID, Path: route.Destination.Path, Label: session.RouteLabel(route)}
 			if forwarder != nil {
 				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
 				if err != nil {

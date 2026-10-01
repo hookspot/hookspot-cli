@@ -1,0 +1,30 @@
+● live · Acme | Payments · 6 requests · 2 ok · 4 failed · p50 42ms
+Sources · 2 sources · 3 routes · stats since listen started
+╭─ Sources & routes ───────────────────────────────────────────────────────────╮
+│   SOURCE  ROUTE     DESTINATION           REQS  OK  FAIL   P50  LAST         │
+│ › stripe  payments  …ocalhost:3000/hooks     3   1     2  42ms  14:02:06 422 │
+│    └      refunds   …alhost:3000/refunds     1   1     0  28ms  14:02:04 200 │
+│   github  /github   …calhost:3000/github     1   0     1  14ms  14:02:02 500 │
+│   total · 1 unmatched                        6   2     4  42ms               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ stripe → payments ──────────────────────── press c, then a number, to copy ─╮
+│  1   public URL   https://in.hookspot.test/src_stripe                        │
+│  2   source ID    src_stripe                                                 │
+│  3   destination  http://localhost:3000/hooks                                │
+│  4   route ID     rte_stripe                                                 │
+│  5   listen       hookspot listen stripe --forward-to http://localhost:3000  │
+│  6   test         curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Co… │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Activity ───────────────────────────────────────────────────────────────────╮
+│ requests    3 · 1 ok · 2 failed                                              │
+│ latency     p50 42ms · p95 42ms · max 42ms                                   │
+│ per minute  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█  last 15 min                                     │
+│ last        #6  14:02:06  422                                                │
+│ status      200      ███████████████████████ 1                               │
+│             422      ███████████████████████ 1                               │
+│             refused  ███████████████████████ 1                               │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  c copy…  t test  esc back  ? help  q quit

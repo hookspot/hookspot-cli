@@ -85,6 +85,7 @@ type Fullscreen struct {
 	// notices are the source warnings, shown until a request arrives.
 	notices []string
 	hint    *session.TestHint
+	sources sourcesPage
 	toast   string
 	toastID int
 	help    bool
@@ -222,6 +223,9 @@ var keys = struct {
 }
 
 func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
+	if m.sources.open {
+		return m.sourcesKey(msg)
+	}
 	i := m.selectedIndex()
 	switch {
 	case key.Matches(msg, keys.up):
@@ -262,6 +266,8 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		return m.startWait(i)
 	case key.Matches(msg, escKey):
 		m = m.escape()
+	case key.Matches(msg, sourcesKeys.open):
+		m.sources.open = true
 	}
 	return m, nil
 }
@@ -346,6 +352,9 @@ func (m Fullscreen) size() (int, int) {
 }
 
 func (m Fullscreen) View() tea.View {
+	if m.sources.open {
+		return m.sourcesView()
+	}
 	width, height := m.size()
 	l := m.layout()
 	lines := []string{m.header(width), m.sourceLine()}
@@ -458,7 +467,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 	if k.forwarding {
 		actions = append([]key.Binding{keys.replay}, actions...)
 	}
-	return slices.Concat([]key.Binding{keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{keys.help, keys.quit})
+	return slices.Concat([]key.Binding{keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{sourcesKeys.open, keys.help, keys.quit})
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -469,7 +478,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), described(keys.follow, "follow the newest"), described(filterKey, "filter the list")},
 		actions,
-		{described(keys.help, "close help"), described(keys.quit, "stop listening")},
+		{described(sourcesKeys.open, "sources and routes"), described(keys.help, "close help"), described(keys.quit, "stop listening")},
 	}
 }
 
