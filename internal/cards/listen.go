@@ -27,6 +27,8 @@ type BannerRoute struct {
 	Source    string
 	PublicURL string
 	RouteUID  string
+	// Path is the route's destination path.
+	Path string
 	// Destination is the URL the route forwards to; "" in inspect mode.
 	Destination string
 	Label       string

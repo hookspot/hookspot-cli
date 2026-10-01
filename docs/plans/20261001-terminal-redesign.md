@@ -507,12 +507,16 @@
 - Create: `internal/tui/sources_test.go`
 - Modify: `internal/tui/fullscreen.go`
 
-- [ ] `s` opens the page; `esc` or `s` returns to the list with the selection kept
-- [ ] table: source, public URL, route label, destination, REQS/OK/FAIL/P50/LAST, and a totals row (unmatched requests count here only); it updates live from event snapshots
-- [ ] route detail: the six copy fields; `c` then a number copies one, with a toast showing the value; an activity panel (counts, status breakdown, latency, per-minute sparkline, last request)
-- [ ] `t` sends a test event to the selected source
-- [ ] write teatest tests: open, move, copy mode, a live update while open, inspect-mode fields, back to the list
-- [ ] run tests - must pass before next task
+- [x] `s` opens the page; `esc` or `s` returns to the list with the selection kept
+- [x] table: source, public URL, route label, destination, REQS/OK/FAIL/P50/LAST, and a totals row (unmatched requests count here only); it updates live from event snapshots
+- [x] route detail: the six copy fields; `c` then a number copies one, with a toast showing the value; an activity panel (counts, status breakdown, latency, per-minute sparkline, last request)
+- [x] `t` sends a test event to the selected source
+- [x] write teatest tests: open, move, copy mode, a live update while open, inspect-mode fields, back to the list
+- [x] run tests - must pass before next task
+- ➕ `session.Stats` gained `Outcomes` (forwarded requests by `session.Outcome{Status, Failure}`), for the status breakdown, and `Minute`, the end of `PerMinute`'s window, with `PerMinuteAt(now)` so an idle route's sparkline still ends at the current minute. `cards.BannerRoute` gained `Path` (filled by `bannerRoutes`) for the inspect-mode destination field
+- ⚠️ the requests view's short help adds `s sources` before `? help`, as on the canvas, so at 80 columns `? help` and `q quit` give way to `…`; the full help lists them
+- ⚠️ inspect mode drops OK/FAIL/P50 from the table and latency and statuses from the activity panel. When narrow, the table drops PUBLIC URL, then DESTINATION, and cuts URLs at the start, since they differ at the end; with many routes it gets half the height and scrolls the selection into view. Detail and activity sit side by side from 140 columns. The totals row reads `total · N unmatched`
+- ⚠️ field numbers always show and turn into badges after `c`; any key but `1`–`6` cancels. The copy is `cards.Line`-escaped, so the toast (`copied <value>` plus the OSC 52 note) shows exactly what was copied. The canvas's `space pause source` stays out (pausing is out of scope), and its "since listen started at 13:50:00" loses the time, which the model doesn't know
 
 ### Task 15: Cards for login, logout, version, project list, errors
 

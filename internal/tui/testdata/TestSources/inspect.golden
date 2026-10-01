@@ -1,0 +1,24 @@
+● live · Acme | Payments · 1 request                  → terminal only · 14:02:00
+Sources · 2 sources · 3 routes · stats since listen started
+╭─ Sources & routes ───────────────────────────────────────────────────────────╮
+│   SOURCE  PUBLIC URL                   ROUTE     DESTINATION  REQS  LAST     │
+│ › stripe  …n.hookspot.test/src_stripe  payments  /hooks          1  14:02:01 │
+│    └                                   refunds   /refunds        0  —        │
+│   github  …n.hookspot.test/src_github  /github   /github         0  —        │
+│   total                                                          1           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ stripe → payments ──────────────────────── press c, then a number, to copy ─╮
+│  1   public URL   https://in.hookspot.test/src_stripe                        │
+│  2   source ID    src_stripe                                                 │
+│  3   destination  /hooks                                                     │
+│  4   route ID     rte_stripe                                                 │
+│  5   listen       hookspot listen stripe                                     │
+│  6   test         curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Co… │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Activity ───────────────────────────────────────────────────────────────────╮
+│ requests    1                                                                │
+│ per minute  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█  last 15 min                                     │
+│ last        #1  14:02:01                                                     │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  c copy…  t test  esc back  ? help  q quit

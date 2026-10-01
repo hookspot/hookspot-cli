@@ -27,4 +27,4 @@
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  s sources …

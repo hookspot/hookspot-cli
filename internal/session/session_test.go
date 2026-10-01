@@ -355,10 +355,13 @@ func TestStats(t *testing.T) {
 		return stats
 	}
 	final := recorded[7]
+	minute := time.Date(2026, 10, 1, 12, 2, 0, 0, time.UTC)
 	wantRoute := Stats{
 		Count: 6, OK: 3, Failed: 3,
 		P50: 40 * time.Millisecond, P95: 100 * time.Millisecond, Max: 100 * time.Millisecond,
+		Outcomes:  map[Outcome]int{{Status: http.StatusOK}: 3, {Failure: proxy.TransportTimeout}: 1, {Failure: proxy.TransportOther}: 1, {Status: http.StatusInternalServerError}: 1},
 		PerMinute: [statsMinutes]int{12: 6},
+		Minute:    minute,
 		Last:      Entry{Number: 6},
 	}
 	if got := summary(final.Route); !reflect.DeepEqual(got, wantRoute) {
@@ -367,7 +370,9 @@ func TestStats(t *testing.T) {
 	wantTotals := Stats{
 		Count: 7, OK: 4, Failed: 3,
 		P50: 30 * time.Millisecond, P95: 100 * time.Millisecond, Max: 100 * time.Millisecond,
+		Outcomes:  map[Outcome]int{{Status: http.StatusOK}: 4, {Failure: proxy.TransportTimeout}: 1, {Failure: proxy.TransportOther}: 1, {Status: http.StatusInternalServerError}: 1},
 		PerMinute: [statsMinutes]int{12: 6, 14: 1},
+		Minute:    minute,
 		Last:      Entry{Number: 7},
 	}
 	if got := summary(final.Totals); !reflect.DeepEqual(got, wantTotals) {
@@ -386,6 +391,20 @@ func TestPerMinuteWindowDropsOldMinutes(t *testing.T) {
 	}
 	if got := s.snapshot(start.Add(time.Hour)).PerMinute; got != [statsMinutes]int{} {
 		t.Fatalf("per minute an hour later = %v, want none", got)
+	}
+}
+
+func TestPerMinuteAtMovesAnOldSnapshotOn(t *testing.T) {
+	start := time.Date(2026, 10, 1, 12, 0, 30, 0, time.UTC)
+	var s stats
+	s.add(Entry{Received: start})
+	s.add(Entry{Received: start.Add(time.Minute)})
+	snapshot := s.snapshot(start.Add(time.Minute))
+	if got, want := snapshot.PerMinuteAt(start.Add(3*time.Minute)), [statsMinutes]int{11: 1, 12: 1}; got != want {
+		t.Fatalf("per minute 2 minutes on = %v, want %v", got, want)
+	}
+	if got := snapshot.PerMinuteAt(start); got != snapshot.PerMinute {
+		t.Fatalf("per minute before the snapshot = %v, want it unmoved", got)
 	}
 }
 

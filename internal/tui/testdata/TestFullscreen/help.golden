@@ -18,7 +18,7 @@
 │                                                                              │
 │ replays are local: they never change the delivery's status in Hookspot       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select a request     r replay locally       ? close help    
-←→ switch tabs          c copy as cURL         q stop listening
-f  follow the newest    e export a fixture                     
-                        t send a test event                    
+↑↓ select a request     r replay locally       s sources and routes
+←→ switch tabs          c copy as cURL         ? close help        
+f  follow the newest    e export a fixture     q stop listening    
+                        t send a test event                        

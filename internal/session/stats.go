@@ -1,6 +1,7 @@
 package session
 
 import (
+	"maps"
 	"slices"
 	"time"
 
@@ -20,14 +21,26 @@ type Stats struct {
 	// P50, P95 and Max cover the newest 1000 forwarded requests that got a
 	// response or timed out.
 	P50, P95, Max time.Duration
-	// PerMinute counts requests in each of the last 15 minutes, oldest first.
+	// Outcomes counts forwarded requests by how they ended.
+	Outcomes map[Outcome]int
+	// PerMinute counts requests in each of the 15 minutes up to Minute,
+	// oldest first.
 	PerMinute [statsMinutes]int
+	Minute    time.Time
 	// Last is the newest request; its Number is 0 before the first.
 	Last Entry
 }
 
+// Outcome is how a forwarded request ended: its status, or the transport
+// failure that left it without one.
+type Outcome struct {
+	Status  int
+	Failure proxy.TransportErrorKind
+}
+
 type stats struct {
 	count, ok, failed int
+	outcomes          map[Outcome]int
 	// latencies is a ring of the newest samples; next is where the next goes.
 	latencies []time.Duration
 	next      int
@@ -52,6 +65,14 @@ func (s *stats) add(entry Entry) {
 	} else {
 		s.failed++
 	}
+	outcome := Outcome{Status: entry.Response.Status}
+	if entry.Failure != nil {
+		outcome = Outcome{Failure: entry.Failure.Kind}
+	}
+	if s.outcomes == nil {
+		s.outcomes = map[Outcome]int{}
+	}
+	s.outcomes[outcome]++
 	// Other transport failures end before the target answers, so their time says nothing about it.
 	if entry.Failure != nil && entry.Failure.Kind != proxy.TransportTimeout {
 		return
@@ -81,7 +102,7 @@ func (s *stats) shift(t time.Time) {
 
 func (s *stats) snapshot(now time.Time) Stats {
 	s.shift(now)
-	snapshot := Stats{Count: s.count, OK: s.ok, Failed: s.failed, PerMinute: s.minutes, Last: s.last}
+	snapshot := Stats{Count: s.count, OK: s.ok, Failed: s.failed, Outcomes: maps.Clone(s.outcomes), PerMinute: s.minutes, Minute: s.minute, Last: s.last}
 	if len(s.latencies) > 0 {
 		sorted := slices.Sorted(slices.Values(s.latencies))
 		snapshot.P50 = percentile(sorted, 50)
@@ -89,6 +110,14 @@ func (s *stats) snapshot(now time.Time) Stats {
 		snapshot.Max = sorted[len(sorted)-1]
 	}
 	return snapshot
+}
+
+// PerMinuteAt is PerMinute moved on to end at now's minute, for a snapshot
+// taken earlier.
+func (s Stats) PerMinuteAt(now time.Time) [statsMinutes]int {
+	window := stats{minutes: s.PerMinute, minute: s.Minute}
+	window.shift(now)
+	return window.minutes
 }
 
 // percentile is the nearest-rank percentile p of sorted samples.
