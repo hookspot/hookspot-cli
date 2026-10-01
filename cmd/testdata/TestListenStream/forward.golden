@@ -1,0 +1,19 @@
+╭─ Listening in Acme | Payments ──────────────────────────────────────────── 2 sources • 2 routes ─╮
+│ stripe  https://in.hookspot.test/src_stripe  → http://127.0.0.1:xxxxx/webhooks/stripe  payments  │
+│ github  https://in.hookspot.test/src_github  → http://127.0.0.1:xxxxx/webhooks/github            │
+╰──────────────────────────────────────────────────────────────────────────────────── ctrl-c quit ─╯
+Connecting…
+Ready. Waiting for requests (Ctrl-C to quit)
+#1  POST  stripe  /webhooks/stripe  payment_intent.succeeded  200  Nms  hh:mm:ss.mmm
+╭─ #2 github · POST /webhooks/github ─────────────────────────────────────────────── hh:mm:ss.mmm ─╮
+│  422 Unprocessable Entity  Nms  → http://127.0.0.1:xxxxx/webhooks/github  req_github_1 │
+├─ request · application/json · 19 B ──────────────────────────────────────────────────────────────┤
+│ {                                                                                                │
+│   "action": "opened"                                                                             │
+│ }                                                                                                │
+├─ response · application/json · 32 B ─────────────────────────────────────────────────────────────┤
+│ {                                                                                                │
+│   "error": "missing installation"                                                                │
+│ }                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+#3  POST  stripe  /webhooks/stripe  invoice.paid  200  Nms  hh:mm:ss.mmm

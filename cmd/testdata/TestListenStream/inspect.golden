@@ -1,0 +1,24 @@
+╭─ Listening in Acme | Payments ──────────────────────────────────────────── 2 sources • 2 routes ─╮
+│ stripe  https://in.hookspot.test/src_stripe  → terminal only  payments                           │
+│ github  https://in.hookspot.test/src_github  → terminal only  /webhooks/github                   │
+╰──────────────────────────────────────────────────────────────────────────────────── ctrl-c quit ─╯
+Connecting…
+Ready. Waiting for requests (Ctrl-C to quit)
+╭─ #1 stripe · POST /webhooks/stripe ─────────────────────────────────────────────── hh:mm:ss.mmm ─╮
+│ query  attempt=1                                                                    req_stripe_1 │
+├─ headers · 2 ────────────────────────────────────────────────────────────────────────────────────┤
+│ authorization   hidden  --show-sensitive-headers to reveal                                       │
+│ content-type   application/json                                                                  │
+├─ body · application/json · 49 B ─────────────────────────────────────────────────────────────────┤
+│ {                                                                                                │
+│   "type": "payment_intent.succeeded",                                                            │
+│   "amount": 2000                                                                                 │
+│ }                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ #2 github · POST /webhooks/github ─────────────────────────────────────────────── hh:mm:ss.mmm ─╮
+│                                                                                     req_github_1 │
+├─ headers · 1 ────────────────────────────────────────────────────────────────────────────────────┤
+│ x-github-event  push                                                                             │
+├─ body · text/plain · 19 B ───────────────────────────────────────────────────────────────────────┤
+│ ref=refs/heads/main                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

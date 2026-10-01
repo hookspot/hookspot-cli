@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,8 +16,8 @@ import (
 	"golang.org/x/term"
 
 	"hookspot/internal/api"
+	"hookspot/internal/cards"
 	"hookspot/internal/endpoint"
-	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/session"
 	"hookspot/internal/ws"
@@ -81,50 +82,60 @@ var listenCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("list project sources: %w", err)
 		}
-		sources, sourceUIDs, err := resolveSources(cmd.ErrOrStderr(), activeEndpoint, project, availableSources, sourceNames)
+		sources, sourceUIDs, warnings, err := resolveSources(activeEndpoint, project, availableSources, sourceNames)
+		writer := cards.NewWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), cards.Listen{
+			Sources:              sourceNamesByUID(sources),
+			ShowSensitiveHeaders: showSensitiveHeaders,
+			Container:            runningInContainer(),
+			Limits: cards.Limits{
+				MaxBodyLines:  maxBodyLines,
+				MaxHeaders:    maxHeaders,
+				MaxValueChars: maxValueChars,
+			},
+		}, dashboardRequestsURL(activeEndpoint, project))
+		// Warnings print even when no source is left; nothing else writes
+		// yet, so they skip the session.
+		for _, warning := range warnings {
+			if err := writer.Emit(warning); err != nil {
+				return fmt.Errorf("write source warnings: %w", err)
+			}
+		}
 		if err != nil {
 			return err
 		}
 
-		replayEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
-		sink := printerSink{
-			printer: printer.New(cmd.OutOrStdout(), printer.Options{
-				Sources:              sourceNamesByUID(sources),
-				ShowSensitiveHeaders: showSensitiveHeaders,
-				Color:                printer.SupportsColor(cmd.OutOrStdout()),
-				Notices:              cmd.ErrOrStderr(),
-				Limits: printer.Limits{
-					MaxBodyLines:  maxBodyLines,
-					MaxHeaders:    maxHeaders,
-					MaxValueChars: maxValueChars,
-				},
-			}),
-			out:         cmd.OutOrStdout(),
-			errOut:      cmd.ErrOrStderr(),
-			replay:      replayEnabled,
-			requestsURL: dashboardRequestsURL(activeEndpoint, project),
-		}
 		listenContext, stopListening := context.WithCancel(cmd.Context())
 		defer stopListening()
 		var local session.Forwarder
 		if forwarder != nil {
 			local = forwarder
 		}
-		sess := session.New(listenContext, sources, local, sink)
+		sess := session.New(listenContext, sources, local, writer)
 
 		wsURL := activeEndpoint.WebSocket()
 		if wsURL == nil {
 			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
 		}
-		if err := printListenInfo(cmd.OutOrStdout(), project, sources, forwarder); err != nil {
+		routes, err := bannerRoutes(sources, forwarder)
+		if err != nil {
+			return err
+		}
+		commandsEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
+		hints := []string{"ctrl-c quit"}
+		if commandsEnabled {
+			hints = append(lineCommandHints, hints...)
+		}
+		if err := writer.Banner(projectDisplayName(*project), routes, hints); err != nil {
 			return err
 		}
 		if err := sess.Emit(session.Connecting{}); err != nil {
 			return err
 		}
-		var replay *replayInputSession
-		if replayEnabled {
-			replay = startReplayInput(listenContext, cmd.InOrStdin(), sess.ReplayLast, stopListening)
+		var commands *lineCommandReader
+		if commandsEnabled {
+			commands = startLineCommands(listenContext, cmd.InOrStdin(), func(line string) error {
+				return runLineCommand(sess, writer, line)
+			}, stopListening)
 		}
 		topic := "project:" + project.UID
 
@@ -137,9 +148,9 @@ var listenCmd = &cobra.Command{
 			MaxInitialAttempts: maxInitialConnectAttempts,
 		})
 		stopListening()
-		if replay != nil {
-			if replayErr := replay.Stop(); replayErr != nil {
-				return fmt.Errorf("replay input: %w", replayErr)
+		if commands != nil {
+			if err := commands.Stop(); err != nil {
+				return fmt.Errorf("line commands: %w", err)
 			}
 		}
 		return listenErr
@@ -235,55 +246,6 @@ func (n *connectionNotices) lost(err error, retryIn time.Duration) error {
 	return n.emit(session.ConnectionLost{Err: err, RetryIn: retryIn})
 }
 
-// printerSink renders session events with the plain printer until the cards
-// writer replaces it.
-type printerSink struct {
-	printer     *printer.Printer
-	out         io.Writer
-	errOut      io.Writer
-	replay      bool
-	requestsURL string
-}
-
-func (s printerSink) Emit(event session.Event) error {
-	switch e := event.(type) {
-	case session.Connecting:
-		return writeCommandText(s.out, "Connecting…\n")
-	case session.Ready:
-		text := "Ready. Waiting for requests (Ctrl-C to quit)\n"
-		if s.replay {
-			text += "↵ replay last request\n"
-		}
-		return writeCommandText(s.out, text)
-	case session.ConnectionLost:
-		return writeCommandText(s.errOut, fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(e.Err.Error()), e.RetryIn))
-	case session.Reconnected:
-		return writeCommandText(s.errOut, fmt.Sprintf(
-			"Reconnected after %s offline. Requests that arrived meanwhile were not delivered; retry them from %s\n",
-			e.Offline, s.requestsURL,
-		))
-	case session.RootNotFound:
-		return s.printer.PrintNotice(fmt.Sprintf(
-			"%s returned %d. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to %swebhooks\n",
-			e.Root, e.Status, e.Root,
-		))
-	case session.Recorded:
-		entry := e.Entry
-		if entry.Target == "" {
-			_, err := s.printer.Handle(entry.Delivery)
-			return err
-		}
-		return s.printer.PrintForward(entry.Delivery, printer.ForwardOutcome{
-			Response:  entry.Response,
-			Latency:   entry.Latency,
-			Failure:   entry.Failure,
-			TargetURL: entry.Target,
-			Replay:    entry.ReplayOf > 0,
-		})
-	}
-	return nil
-}
-
 func dashboardRequestsURL(base endpoint.Base, project *api.Project) string {
 	if u := dashboardURL(base, project, "requests"); u != "" {
 		return u
@@ -323,16 +285,17 @@ func waitForReconnect(ctx context.Context, delay time.Duration) bool {
 }
 
 func formatProjectLabel(project *api.Project) string {
-	return safeDisplayText(project.Organization.Slug) + "/" + safeDisplayText(project.Slug)
+	return cards.Line(project.Organization.Slug) + "/" + cards.Line(project.Slug)
 }
 
-// resolveSources returns the sources to listen to and the UIDs to join with
-// (none means every source). It warns about named sources skipped for having
-// no route and about disabled sources, whose requests are rejected.
-func resolveSources(errOut io.Writer, base endpoint.Base, project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, error) {
+// resolveSources returns the sources to listen to, the UIDs to join with
+// (none means every source), and warnings about named sources skipped for
+// having no route and about disabled sources, whose requests are rejected.
+// The warnings come with the error when no source is left.
+func resolveSources(base endpoint.Base, project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, []session.Event, error) {
 	var selectedSources []api.Source
 	var sourceUIDs []string
-	var warnings strings.Builder
+	var warnings []session.Event
 	if len(sourceNames) == 0 {
 		selectedSources = sourcesWithRoutes(availableSources)
 	} else {
@@ -343,10 +306,10 @@ func resolveSources(errOut io.Writer, base endpoint.Base, project *api.Project, 
 		for _, sourceName := range sourceNames {
 			source, ok := availableByName[sourceName]
 			if !ok {
-				return nil, nil, unknownSourceError(project, availableSources, sourceName)
+				return nil, nil, nil, unknownSourceError(project, availableSources, sourceName)
 			}
 			if len(source.Routes) == 0 {
-				fmt.Fprintf(&warnings, "⚠ %s has no route and is skipped. Add one in the dashboard.\n", safeDisplayText(source.Name))
+				warnings = append(warnings, session.SkippedSource{Name: source.Name})
 				continue
 			}
 			selectedSources = append(selectedSources, source)
@@ -355,11 +318,8 @@ func resolveSources(errOut io.Writer, base endpoint.Base, project *api.Project, 
 	}
 	for _, source := range selectedSources {
 		if !source.Active {
-			fmt.Fprintf(&warnings, "⚠ %s is disabled: requests to it are rejected. Enable it in the dashboard.\n", safeDisplayText(source.Name))
+			warnings = append(warnings, session.DisabledSource{Name: source.Name})
 		}
-	}
-	if err := writeCommandText(errOut, warnings.String()); err != nil {
-		return nil, nil, fmt.Errorf("write source warnings: %w", err)
 	}
 
 	if len(selectedSources) == 0 {
@@ -367,9 +327,9 @@ func resolveSources(errOut io.Writer, base endpoint.Base, project *api.Project, 
 		if len(sourceNames) == 0 {
 			message = "no sources with routes in " + projectDisplayName(*project)
 		}
-		return nil, nil, newCommandError(message, addRouteHint(base, project))
+		return nil, nil, warnings, newCommandError(message, addRouteHint(base, project))
 	}
-	return selectedSources, sourceUIDs, nil
+	return selectedSources, sourceUIDs, warnings, nil
 }
 
 // unknownSourceError suggests a name only when it is unambiguous: exactly one
@@ -406,67 +366,58 @@ func sourceNamesByUID(sources []api.Source) map[string]string {
 	return names
 }
 
-func printListenInfo(out io.Writer, project *api.Project, sources []api.Source, forwarder *proxy.Forwarder) error {
-	var output strings.Builder
-	routeCount := 0
+// bannerRoutes lists every route listen delivers through; inspect mode has no
+// destinations.
+func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.BannerRoute, error) {
+	var routes []cards.BannerRoute
 	for _, source := range sources {
-		routeCount += len(source.Routes)
-	}
-
-	sourceSuffix := "s"
-	if len(sources) == 1 {
-		sourceSuffix = ""
-	}
-	routeSuffix := "s"
-	if routeCount == 1 {
-		routeSuffix = ""
-	}
-	fmt.Fprintf(&output, "Listening in %s on %d source%s • %d route%s\n", projectDisplayName(*project), len(sources), sourceSuffix, routeCount, routeSuffix)
-
-	for _, source := range sources {
-		fmt.Fprintln(&output)
-		fmt.Fprintln(&output, safeDisplayText(source.Name))
-		if forwarder == nil {
-			fmt.Fprintf(&output, "├ Requests to → %s\n", safeDisplayText(source.URL))
-			fmt.Fprintln(&output, "└ Output      → terminal")
-		} else {
-			fmt.Fprintf(&output, "│  Requests to → %s\n", safeDisplayText(source.URL))
-			for i, route := range source.Routes {
-				branch := "├─"
-				if i == len(source.Routes)-1 {
-					branch = "└─"
-				}
-				label := safeDisplayText(session.RouteLabel(route))
-				if label != "" {
-					label = " (" + label + ")"
-				}
+		for _, route := range source.Routes {
+			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, Label: session.RouteLabel(route)}
+			if forwarder != nil {
 				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
 				if err != nil {
-					return fmt.Errorf("resolve forwarding destination: %w", err)
+					return nil, fmt.Errorf("resolve forwarding destination: %w", err)
 				}
-				fmt.Fprintf(&output, "%s Forwards to → %s%s\n", branch, destination.String(), label)
+				banner.Destination = destination.String()
 			}
+			routes = append(routes, banner)
 		}
 	}
-
-	fmt.Fprintln(&output)
-	fmt.Fprintln(&output, "Requests ──────────────────────────────────────")
-	fmt.Fprintln(&output)
-	return writeCommandText(out, output.String())
+	return routes, nil
 }
 
-func writeCommandText(out io.Writer, value string) error {
-	written, err := io.WriteString(out, value)
-	if err != nil {
-		return err
-	}
-	if written != len(value) {
-		return io.ErrShortWrite
-	}
-	return nil
+func runningInContainer() bool {
+	_, docker := os.Stat("/.dockerenv")
+	_, podman := os.Stat("/run/.containerenv")
+	return docker == nil || podman == nil
 }
 
-type replayInputSession struct {
+// lineCommandHints name the stream's line commands.
+var lineCommandHints = []string{"↵ replay last", "r N replay #N"}
+
+// runLineCommand runs one line typed into the stream: ↵ replays the last
+// request, r N replays #N, and anything else gets the command list.
+func runLineCommand(sess *session.Session, writer *cards.Writer, line string) error {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return sess.ReplayLast()
+	}
+	if len(fields) == 2 && fields[0] == "r" {
+		if number, err := strconv.Atoi(fields[1]); err == nil {
+			err = sess.Replay(number)
+			// A number this run never reached or already dropped is a typo, not
+			// a reason to stop listening.
+			if errors.Is(err, session.ErrUnknown) || errors.Is(err, session.ErrEvicted) {
+				return writer.Reply(err.Error())
+			}
+			return err
+		}
+	}
+	return writer.Reply("commands: " + strings.Join(lineCommandHints, " · "))
+}
+
+// lineCommandReader feeds the lines typed into the stream to its commands.
+type lineCommandReader struct {
 	cancel       context.CancelFunc
 	closeInput   io.Closer
 	producerDone <-chan struct{}
@@ -475,27 +426,26 @@ type replayInputSession struct {
 	err          error
 }
 
-func startReplayInput(parent context.Context, input io.Reader, replay func() error, onError func()) *replayInputSession {
+// startLineCommands runs each line of input until parent ends. A failed
+// command calls onError and ends the reader with its error.
+func startLineCommands(parent context.Context, input io.Reader, run func(line string) error, onError func()) *lineCommandReader {
 	ctx, cancel := context.WithCancel(parent)
-	events := make(chan struct{}, 1)
+	lines := make(chan string, 1)
 	producerResult := make(chan error, 1)
 	producerDone := make(chan struct{})
-	closer, owned := ownedReplayInput(input)
+	closer, owned := ownedInput(input)
 
 	go func() {
 		defer close(producerDone)
-		defer close(events)
+		defer close(lines)
 		scanner := bufio.NewScanner(input)
 		for scanner.Scan() {
 			if ctx.Err() != nil {
 				producerResult <- nil
 				return
 			}
-			if scanner.Text() != "" {
-				continue
-			}
 			select {
-			case events <- struct{}{}:
+			case lines <- scanner.Text():
 			case <-ctx.Done():
 				producerResult <- nil
 				return
@@ -515,7 +465,7 @@ func startReplayInput(parent context.Context, input io.Reader, replay func() err
 			case <-ctx.Done():
 				consumerDone <- nil
 				return
-			case _, ok := <-events:
+			case line, ok := <-lines:
 				if !ok {
 					err := <-producerResult
 					if err != nil {
@@ -528,7 +478,7 @@ func startReplayInput(parent context.Context, input io.Reader, replay func() err
 					consumerDone <- nil
 					return
 				}
-				if err := replay(); err != nil {
+				if err := run(line); err != nil {
 					onError()
 					consumerDone <- err
 					return
@@ -537,18 +487,18 @@ func startReplayInput(parent context.Context, input io.Reader, replay func() err
 		}
 	}()
 
-	session := &replayInputSession{
+	reader := &lineCommandReader{
 		cancel:       cancel,
 		producerDone: producerDone,
 		consumerDone: consumerDone,
 	}
 	if owned {
-		session.closeInput = closer
+		reader.closeInput = closer
 	}
-	return session
+	return reader
 }
 
-func ownedReplayInput(input io.Reader) (io.Closer, bool) {
+func ownedInput(input io.Reader) (io.Closer, bool) {
 	closer, ok := input.(io.Closer)
 	if !ok {
 		return nil, false
@@ -562,22 +512,22 @@ func ownedReplayInput(input io.Reader) (io.Closer, bool) {
 	return closer, true
 }
 
-func (s *replayInputSession) Stop() error {
-	s.once.Do(func() {
-		s.cancel()
+func (r *lineCommandReader) Stop() error {
+	r.once.Do(func() {
+		r.cancel()
 		var closeErr error
-		if s.closeInput != nil {
-			closeErr = s.closeInput.Close()
+		if r.closeInput != nil {
+			closeErr = r.closeInput.Close()
 		}
-		s.err = <-s.consumerDone
-		if s.closeInput != nil {
-			<-s.producerDone
+		r.err = <-r.consumerDone
+		if r.closeInput != nil {
+			<-r.producerDone
 		}
-		if s.err == nil {
-			s.err = closeErr
+		if r.err == nil {
+			r.err = closeErr
 		}
 	})
-	return s.err
+	return r.err
 }
 
 func isTerminalReader(input io.Reader) bool {

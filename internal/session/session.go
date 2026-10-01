@@ -38,8 +38,8 @@ type Sink interface {
 	Emit(Event) error
 }
 
-// Event is a Connecting, Ready, ConnectionLost, Reconnected, RootNotFound or
-// Recorded.
+// Event is a Connecting, Ready, ConnectionLost, Reconnected, DisabledSource,
+// SkippedSource, RootNotFound or Recorded.
 type Event interface{ event() }
 
 // Connecting precedes the first join.
@@ -58,6 +58,16 @@ type ConnectionLost struct {
 // offline are never retried.
 type Reconnected struct {
 	Offline time.Duration
+}
+
+// DisabledSource warns that a listened source rejects its requests.
+type DisabledSource struct {
+	Name string
+}
+
+// SkippedSource warns that a named source has no route to listen to.
+type SkippedSource struct {
+	Name string
 }
 
 // RootNotFound is the once-per-run hint after a 404 or 405 at the bare
@@ -81,6 +91,8 @@ func (Connecting) event()     {}
 func (Ready) event()          {}
 func (ConnectionLost) event() {}
 func (Reconnected) event()    {}
+func (DisabledSource) event() {}
+func (SkippedSource) event()  {}
 func (RootNotFound) event()   {}
 func (Recorded) event()       {}
 

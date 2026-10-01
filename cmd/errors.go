@@ -133,8 +133,3 @@ func fatalErrorMessage(err error) (string, string) {
 func projectNotFoundHint() string {
 	return "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 }
-
-// safeDisplayText serves cmd/listen.go until its output moves to cards.
-func safeDisplayText(value string) string {
-	return cards.Line(value)
-}

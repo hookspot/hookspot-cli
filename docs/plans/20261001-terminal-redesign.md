@@ -357,13 +357,18 @@
 - Modify: `cmd/version_test.go`
 - Delete: `internal/printer/`
 
-- [ ] `cards.Writer` implements `session.Sink`: banner, one write per event, notices on stderr, the `Ready …` line byte-identical on stdout; color only when stdout is a terminal
-- [ ] use it for all `listen` output, terminal and piped, until Task 8; keep line commands when stdin is a terminal (`↵` and `r N` now; `c`, `e` and `t` come in Tasks 10–11)
-- [ ] delete `internal/printer` and the temporary adapter; fold `startReplayInput`/`replayInputSession` into the line-command reader; move `cmd/version.go`'s `SupportsColor` use to `cards`
-- [ ] write command-level tests (masked times, run ended by an invalid delivery payload): piped `listen` in inspect and forward modes matches the golden stream; interleaved deliveries stay ordered; write errors surface through the handler as today
-- [ ] update the `cmd/listen_test.go` assertions on the old text
-- [ ] run tests - must pass before next task
+- [x] `cards.Writer` implements `session.Sink`: banner, one write per event, notices on stderr, the `Ready …` line byte-identical on stdout; color only when stdout is a terminal
+- [x] use it for all `listen` output, terminal and piped, until Task 8; keep line commands when stdin is a terminal (`↵` and `r N` now; `c`, `e` and `t` come in Tasks 10–11)
+- [x] delete `internal/printer` and the temporary adapter; fold `startReplayInput`/`replayInputSession` into the line-command reader; move `cmd/version.go`'s `SupportsColor` use to `cards`
+- [x] write command-level tests (masked times, run ended by an invalid delivery payload): piped `listen` in inspect and forward modes matches the golden stream; interleaved deliveries stay ordered; write errors surface through the handler as today
+- [x] update the `cmd/listen_test.go` assertions on the old text
+- [x] run tests - must pass before next task
 - ➕ Task 15 already moved `cmd/version.go`'s `SupportsColor` use to `cards`, so that item is done. It also left `safeDisplayText` in `cmd/errors.go` as a `cards.Line` wrapper used only by `cmd/listen.go`: replace those calls and delete it
+- ➕ `session.DisabledSource` and `SkippedSource` events: `resolveSources` returns them, and `RunE` emits them to the writer before the session exists (nothing else writes yet), even when no source is left
+- ⚠️ the line-command hints (`↵ replay last · r N replay #N · ctrl-c quit`) moved into the banner footer, so `Ready …` is no longer followed by `↵ replay last request`. `r N` on an unknown or evicted number answers with the reason, and any other line, `?` included, with the command list. These replies (`Writer.Reply`, under the writer's own mutex because they don't come through the session) go to stderr, so piped stdout keeps only the stream
+- ⚠️ line commands still start only when forwarding; inspect mode gets them with `c`, `e` and `t` (Tasks 10–11), which work there
+- ⚠️ each stream gets its own color profile, detected once with `colorprofile.Detect` (now a direct dependency), so stderr notices are colored when stderr is a terminal. Each event is rendered into a buffer and written once, so short writes still surface as `io.ErrShortWrite`
+- ⚠️ the golden stream (`cmd/testdata/TestListenStream`) masks clock times, local ports and latencies; a line with a latency keeps only two-space gaps, since the latency's width moves its padding. Interleaving is pinned by the forward golden (one burst of rows and cards from two sources). Write errors are tested in `writer_test.go` plus the session's sink-error test, because a subprocess whose stdout breaks dies of SIGPIPE
 
 ### Task 8: Terminal stream: status line and prompt
 
