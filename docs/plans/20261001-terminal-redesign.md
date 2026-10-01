@@ -19,23 +19,44 @@
 - **Two repos:** one backend change in **hookspot** (`route_uid` in the delivery payload); everything else is this repo.
 
 ## Context (from discovery)
-*Written before the prerequisite landed. Task 1 updates it.*
+*Re-baselined in Task 1, after the prerequisite's CLI tasks landed.*
+- **Status:**
+  - The prerequisite's CLI Tasks 6–9 (readiness and reconnect, banner and source messages, forwarding fixes, login timeout hint) are merged on this branch. Its Tasks 10–11 (manual verification, README) are still open and out of scope here.
+  - Tasks 2, 4 and 15 of this plan were pulled forward and are done. **Task 15 landed before Tasks 5–14**, so login, logout, version, project list and errors already print Cards (`internal/cards/commands.go`); only `listen` and the project picker still use the old output.
 - **Output today:**
-  - `internal/printer/printer.go`: inspect and forward blocks, hand-written ANSI, escaping, display limits, sensitive-header list (`sensitiveHeader`), `transportHint`, `SupportsColor` (also used by `cmd/version.go`).
+  - `internal/cards` (Tasks 4 and 15): palette, badges, `Terminal`, `Width` (`DefaultWidth` 100), `Sanitize`/`Line`, the command cards and their goldens. `go.mod` pins `charm.land/lipgloss/v2` and `github.com/charmbracelet/x/exp/golden`.
+  - `internal/printer/printer.go`:
+    - inspect and forward blocks, hand-written ANSI, display limits, the sensitive-header list (`sensitiveHeader`), `transportHint`; escaping already goes through `cards`;
+    - `forwardNotice` writes the Docker `localhost` and 3xx `Location` hints, and `PrintNotice` the root-404 hint, to `Options.Notices` (stderr); the container check is the injectable `container` field;
+    - `SupportsColor`, now used only by `cmd/listen.go`.
   - `cmd/listen.go`:
-    - the banner (`printListenInfoWithReplay`) and the reconnect notice written straight to stderr in `superviseListen`;
-    - `forwardSession`, the single-entry `replayCache`, and the line-based `startReplayInput`.
-  - `cmd/errors.go`: `HandleError`, `safeErrorText`, `safeDisplayText` (which escapes `\t`).
-  - The rest: `cmd/login*.go`, `cmd/logout.go`, `cmd/version.go`, `cmd/project.go` (a `tabwriter` list), and `cmd/project_picker*.go` (~540 lines of raw-mode picker, including Windows console setup).
+    - `resolveSources` writes the source warnings to stderr before the banner;
+    - `printListenInfo` writes the banner to stdout, ending with `Connecting…`;
+    - `connectionNotices` (`joined`, hooked to `ws.Client.OnJoined`, and `lost`) writes the connection states; `superviseListen` takes it instead of `errOut`;
+    - `forwardSession` (with the one-time root-404 hint), the single-entry `replayCache`, and the line-based `startReplayInput`;
+    - `routeLabel` returns the route name or `""`.
+  - `cmd/errors.go`: `HandleError` renders `cards.Error` when stderr is a terminal, plain text otherwise. `safeDisplayText` is a `cards.Line` wrapper kept only for `cmd/listen.go`.
+  - `cmd/project_picker*.go`: ~540 lines of raw-mode picker, including Windows console setup.
+- **Messages the prerequisite added** (`<…>` values pass through `cards.Line`):
+  - stdout:
+    - the banner starts with `Listening in <Org | Project> on N source(s) • M route(s)` and ends with `Connecting…`;
+    - on the first join, `Ready. Waiting for requests (Ctrl-C to quit)`, then `↵ replay last request` when replay is on.
+  - stderr:
+    - on each later join, `Reconnected after <d> offline. Requests that arrived meanwhile were not delivered; retry them from <URL>`. `<URL>` is the dashboard requests page, or `the dashboard` when a slug isn't a safe path segment;
+    - before the banner, `⚠ <source> is disabled: requests to it are rejected. Enable it in the dashboard.` and `⚠ <source> has no route and is skipped. Add one in the dashboard.`;
+    - after a 3xx with a `Location` header, `Location: <url>` and `webhook senders don't follow redirects; point --forward-to at the final URL`;
+    - after a refused `localhost` target inside a container, `inside a container, localhost is the container itself; use the service name (http://app:3000) or host.docker.internal`, besides the stdout `└─ target … is not reachable` line;
+    - once per run, after a 404 or 405 at the bare `--forward-to` root, `<URL> returned <status>. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to <URL>webhooks`; never in inspect mode.
+  - errors through `HandleError`: `no sources with routes in <Org | Project>` and `none of the named sources has a route`, both hinting `Add a route in the dashboard: <URL>`; the unknown-source error's `; did you mean "<match>"?` suffix; the login-expiry hint `If you just created your account, run 'hookspot login' again.`
+  - unchanged: `connection lost: <err>; reconnecting in 2s...` (stderr).
+- **`ws` and `proxy`:** `ws.Client.OnJoined func() error` runs after each accepted join, before that session's deliveries; its error is a fatal `SessionHandler` failure. `internal/proxy` (bare port, typed trailing slash, `Proxy: nil` transport) prints nothing itself.
+- **The `Ready` contract:** plain mode keeps `Ready. Waiting for requests (Ctrl-C to quit)\n` byte-identical on stdout, printed once after the first join; harnesses wait for it. The `↵` hint line after it isn't part of the contract.
 - **Data:**
   - `api.Source{UID, Name, URL, Active, Routes}`.
   - `api.Route{UID, Name *string, Destination{Path}, DisplayName}`. The API's `display_name` is `name` or `"source -> path"`, so the CLI computes its own label.
   - The CLI sources endpoint returns delivering routes only.
   - `ws.Delivery` carries the source and path but no route, and `request_uid` isn't validated.
-- **Backend:**
-  - `lib/ingest/jobs/deliveries/deliver_job.ex` `deliver/2` builds the payload.
-  - The `Delivery` model already stores `route_uid`.
-  - The test (`deliver_job_test.exs`, "broadcasts prefixed uids to the project's topic") builds the struct in memory.
+- **Backend:** since Task 2, `deliver/2` (`lib/ingest/jobs/deliveries/deliver_job.ex`) sends `route_uid`; older servers omit it.
 - **Signals:**
   - `main.go` wraps the command in `signal.NotifyContext`. The first SIGINT cancels; the watcher then calls `stop()`, so a second SIGINT kills the process.
   - In raw mode, Ctrl-C produces no SIGINT.
@@ -50,7 +71,7 @@
   - `NO_COLOR` is respected;
   - sensitive headers stay redacted unless `--show-sensitive-headers`;
   - `--max-body-lines`, `--max-headers` and `--max-value-chars` still apply;
-  - write failures surface through the websocket handler error;
+  - write failures surface through the websocket handler error, and a failed `Ready` write through `OnJoined`;
   - the first Ctrl-C is graceful and the second forces exit.
 
 ## Development Approach
@@ -104,9 +125,9 @@
   Programs always get `tea.WithInput(cmd.InOrStdin())` or `nil`, plus `tea.WithOutput(cmd.OutOrStdout())`.
 - **`session.Sink` contract:**
   - `Emit(Event) error` is called in record order. An event is one of:
-    - `ConnState`: `Connecting`, `Ready`, `ConnectionLost{err, retryIn}`, or `Reconnected{offline}`;
-    - `Notice`: every warning and hint from the prerequisite plan (disabled or route-less source, 3xx `Location`, the Docker `localhost` hint, the one-time root-404 hint);
-    - `Entry`: a request, replay or test-event result.
+    - `ConnState`: `Connecting`, `Ready`, `ConnectionLost{err, retryIn}`, or `Reconnected{offline}`. Plain mode keeps today's wording and streams: `Connecting…` and `Ready …` on stdout; the other two on stderr, `Reconnected` with the dashboard requests URL;
+    - `Notice`: the disabled and route-less source warnings (from `RunE`, before the banner) and the one-time root-404 hint. Plain mode writes them to stderr with today's wording;
+    - `Entry`: a request, replay or test-event result. Its card holds the per-request hints: the 3xx `Location` and redirect hint in the HTTP failure card, the Docker `localhost` hint in the transport failure card.
   - Each event carries an immutable snapshot: the entry, its route's stats, the totals, and the numbers history just evicted.
   - Every `Emit` goes through the session under its emit mutex, including connection states and notices from `superviseListen` and `RunE`. **Nothing writes to `os.Stdout`/`os.Stderr` directly while a program runs.**
 - **Ordering and locking:**
@@ -230,11 +251,13 @@
 **Files:**
 - Modify: `docs/plans/20261001-terminal-redesign.md`
 
-- [ ] confirm `20260924-local-webhook-setup.md` CLI tasks are done and the working tree is committed
-- [ ] re-read `cmd/listen.go`, `internal/printer`, `internal/ws/client.go` and `internal/proxy`; list every message and hint the prerequisite added (wording, stdout or stderr)
-- [ ] update Context and the `Notice` list in Solution Overview to match; record the exact `Ready …` line that plain mode must keep byte-identical
-- [ ] decide which hints are a `Notice` and which belong in the transport-failure card (e.g. the Docker `localhost` hint); each lives in one place only
-- [ ] run `make test` as the baseline - must pass before next task
+- [x] confirm `20260924-local-webhook-setup.md` CLI tasks are done and the working tree is committed
+- [x] re-read `cmd/listen.go`, `internal/printer`, `internal/ws/client.go` and `internal/proxy`; list every message and hint the prerequisite added (wording, stdout or stderr)
+- [x] update Context and the `Notice` list in Solution Overview to match; record the exact `Ready …` line that plain mode must keep byte-identical
+- [x] decide which hints are a `Notice` and which belong in the transport-failure card (e.g. the Docker `localhost` hint); each lives in one place only
+- [x] run `make test` as the baseline - must pass before next task
+- ⚠️ the Docker `localhost` hint moves into the transport failure card (below the refused-target hint), and the 3xx `Location` and redirect hint into the HTTP failure card's response section: each describes one request, so the full-screen detail shows it too. In plain mode both move from stderr to stdout with their card, which departs from the prerequisite's stream rule
+- ⚠️ the source warnings stay `Notice`s on stderr, so Task 5's banner box doesn't repeat them; the root-404 hint stays a once-per-run `Notice`
 
 ### Task 2: Backend: add `route_uid` to the delivery payload
 
