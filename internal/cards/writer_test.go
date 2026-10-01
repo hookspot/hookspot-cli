@@ -27,7 +27,7 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	var out, errOut countingWriter
 	w := NewWriter(&out, &errOut, testListen(), "https://hookspot.test/acme/payments/requests")
-	entry := session.Entry{Number: 2, Delivery: testDelivery(), Received: received, Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, ReplayOf: 1}
+	entry := session.Entry{Number: 2, Delivery: testDelivery(), Received: received, Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, ReplayOf: 1, Replay: &session.Comparison{Original: 1, Status: http.StatusOK}}
 	events := []session.Event{
 		session.DisabledSource{Name: "github"},
 		session.SkippedSource{Name: "shopify"},
@@ -51,8 +51,8 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	if want := "Connecting…\nReady. Waiting for requests (Ctrl-C to quit)\n" + card; out.String() != want {
 		t.Errorf("out:\n%s\nwant:\n%s", out.String(), want)
 	}
-	if !strings.Contains(card, "#2") || !strings.Contains(card, "↻ replay") {
-		t.Errorf("recorded entry lost its number or replay mark:\n%s", card)
+	if !strings.Contains(card, "#2 ↻ #1  200 → 502") {
+		t.Errorf("recorded entry lost its replay summary:\n%s", card)
 	}
 	wantErr := "⚠ github is disabled: requests to it are rejected. Enable it in the dashboard.\n" +
 		"⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +

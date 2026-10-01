@@ -835,7 +835,7 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 		t.Fatalf("stdout = %q, want the request and three replays", stdout.String())
 	}
 	for i, row := range rows {
-		if !strings.HasPrefix(row, "#"+strconv.Itoa(i+1)+" ") || strings.Contains(row, "↻ replay") != (i > 0) {
+		if !strings.HasPrefix(row, "#"+strconv.Itoa(i+1)+" ") || strings.Contains(row, "↻ #") != (i > 0) {
 			t.Fatalf("row %d = %q", i+1, row)
 		}
 	}

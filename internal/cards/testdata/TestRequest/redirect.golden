@@ -1,4 +1,4 @@
-╭─ #3 stripe · POST /api/webhooks ──────────────────── ↻ replay  12:34:56.789 ─╮
+╭─ #3 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
 │  308 Permanent Redirect  2ms  → http://localhost:3000/api/webhooks           │
 │ req_01JFULLREQUESTUID                                                        │
 ├─ request · application/json · 96 B ──────────────────────────────────────────┤

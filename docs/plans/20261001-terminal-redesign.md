@@ -411,10 +411,13 @@
 - Modify: `internal/cards/listen.go`
 - Modify: `internal/cards/listen_test.go`
 
-- [ ] `session.Compare(original, replay)`: status, latency, and the first differing response lines (6 at most)
-- [ ] the replay card shows `#46 ↻ #45  422 → 200  9ms → 41ms` plus the diff in every mode
-- [ ] write tests: same status, changed status, a transport failure on either side, binary bodies (size change only)
-- [ ] run tests - must pass before next task
+- [x] `session.Compare(original, replay)`: status, latency, and the first differing response lines (6 at most)
+- [x] the replay card shows `#46 ↻ #45  422 → 200  9ms → 41ms` plus the diff in every mode
+- [x] write tests: same status, changed status, a transport failure on either side, binary bodies (size change only)
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 12–14: `Session.Replay` sets `Entry.Replay`, a `*session.Comparison`: the original's number, status, failure, latency and body size, then `Removed` and `Added` lines (6 together; `More` counts the rest) or `Binary`. `cards.Request.Replay` is that comparison, so `Listen.Request`/`Listen.Entry` render any replay the same way in plain and terminal streams; Task 12's detail pane should reuse it
+- ⚠️ a replay renders as the summary line (then source · method path and the time) with the diff lines under it, never as a row or failure card; a replay that failed in transport adds the transport hint. The `↻ replay` mark is gone, so `internal/cards/writer.go` (`request`) and the replay-mark assertions in `writer_test.go`, `internal/tui/stream_test.go` and `cmd/listen_test.go` changed too
+- ⚠️ the diff drops the lines both bodies share at either end and shows the rest, removed first, so two changes far apart also show the lines between them. JSON is indented first, as cards show it; each side keeps at least 3 of the 6 lines when both have more; kept lines are copied and capped at 512 bytes so a comparison never pins a body. Bodies compare only when both got a response; a non-UTF-8 body compares by size (`binary body 5 B → 7 B`); equal bodies show no lines
 
 ### Task 10: Copy as cURL and export fixture
 

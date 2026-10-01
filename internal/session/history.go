@@ -37,6 +37,8 @@ type Entry struct {
 	Received time.Time
 	// ReplayOf is the number of the entry this one replays; 0 for a delivery.
 	ReplayOf int
+	// Replay compares a replay with the entry it replays; nil for a delivery.
+	Replay *Comparison
 }
 
 // forwarded reports whether the entry went to a local target.
