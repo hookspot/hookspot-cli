@@ -1,4 +1,4 @@
-● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 14ms
+● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 7ms
 ● stripe   ● github   paused on #3 · f follows newest
 ╭─ Requests ─────────────────────────────────────────────────────────────────────────────────── 3 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                                       STATUS   LATENCY       │
@@ -19,6 +19,6 @@
 │                                                                                                  │
 │ source    stripe                                                                                 │
 │ route     payments → http://localhost:3000/hooks                                                 │
-│ … 5 more lines                                                                                   │
+│ … 5 more lines · pgdn scrolls                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test  s sources  ? help …
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …

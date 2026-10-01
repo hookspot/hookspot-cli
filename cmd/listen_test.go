@@ -905,7 +905,7 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	}
 	stdout.Reset()
 
-	for _, line := range []string{"", "r 1", "t", "t github", "x"} {
+	for _, line := range []string{"", "r 1", "t", "t git hub", "x"} {
 		if err := runLineCommand(sess, writer, false, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
@@ -913,7 +913,7 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	want := "nothing to replay without --forward-to\n" +
 		"nothing to replay without --forward-to\n" +
 		"test event sent to stripe\n" +
-		"github: not a source this run listens to\n" +
+		"git hub: not a source this run listens to\n" +
 		"commands: c N copy as cURL · e N export fixture · t test event\n"
 	if stdout.Len() != 0 || stderr.String() != want {
 		t.Fatalf("stdout %q, stderr %q; want replies %q", stdout.String(), stderr.String(), want)

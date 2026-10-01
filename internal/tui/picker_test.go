@@ -90,19 +90,17 @@ func TestPickerView(t *testing.T) {
 func TestPickProjectStopsWhenCancelled(t *testing.T) {
 	input, keys := io.Pipe()
 	t.Cleanup(func() { _ = keys.Close() })
+	out := &output{}
 	ctx, cancel := context.WithCancel(context.Background())
 	picked := make(chan error, 1)
 	go func() {
-		_, err := PickProject(ctx, input, io.Discard, pickerProjects(3), -1)
+		_, err := PickProject(ctx, input, out, pickerProjects(3), -1)
 		picked <- err
 	}()
+	// Output means the picker runs; without a terminal's size it draws no box.
+	waitFor(t, out, func(drawn []byte) bool { return len(drawn) > 0 })
 	cancel()
-	select {
-	case err := <-picked:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("error = %v, want context.Canceled", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the picker kept running after its context ended")
+	if err := receive(t, picked); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }

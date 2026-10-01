@@ -41,9 +41,7 @@ var (
 // keys. It keeps the history's entries, dropping each one an event says was
 // evicted.
 type Fullscreen struct {
-	Replayer Replayer
-	Exporter Exporter
-	Tester   Tester
+	Requests Requests
 	// Listen renders requests: source names, --max-* limits and redaction.
 	Listen  cards.Listen
 	Project string
@@ -62,9 +60,8 @@ type Fullscreen struct {
 	now      func() time.Time
 	toastFor time.Duration
 
+	connection
 	width, height int
-	state         cards.State
-	lost          error
 	totals        session.Stats
 	// routes are the route stats by route UID.
 	routes map[string]session.Stats
@@ -77,6 +74,7 @@ type Fullscreen struct {
 	// offset is the index of the list's first row.
 	offset int
 	tab    tab
+	scroll detailScroll
 	// filter narrows the list. wait is w's: it dials the target every
 	// dialEvery, 1s unless a test sets it, until it answers, then replays.
 	filter    filter
@@ -117,11 +115,12 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 	case clockMsg:
 		return m, tick()
 	case session.Ready:
-		m = m.connection(cards.StateLive, nil)
+		m.connection = m.follow(cards.StateLive, nil)
 	case session.Reconnected:
-		return m.connection(cards.StateLive, nil).show(cards.Reconnected(msg.Offline, m.RequestsURL))
+		m.connection = m.follow(cards.StateLive, nil)
+		return m.show(cards.Reconnected(msg.Offline, m.RequestsURL))
 	case session.ConnectionLost:
-		m = m.connection(cards.StateOffline, msg.Err)
+		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.DisabledSource:
 		m.notices = append(m.notices, cards.DisabledSource(msg.Name))
 	case session.SkippedSource:
@@ -134,8 +133,6 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		return m.record(msg)
 	case stoppingMsg:
 		m.state = cards.StateStopping
-	case stoppedMsg:
-		m.state = cards.StateStopped
 	case replyMsg:
 		return m.show(string(msg))
 	case copiedMsg:
@@ -149,6 +146,10 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		if int(msg) == m.toastID {
 			m.toast = ""
 		}
+	case tea.PasteMsg:
+		if m.filter.editing {
+			m.filter.input += pasted(msg.Content)
+		}
 	case tea.KeyPressMsg:
 		if m.filter.editing {
 			return m.editFilter(msg), nil
@@ -158,14 +159,6 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 	return m, nil
 }
 
-// connection follows the connection until listening stops.
-func (m Fullscreen) connection(state cards.State, lost error) Fullscreen {
-	if m.state < cards.StateStopping {
-		m.state, m.lost = state, lost
-	}
-	return m
-}
-
 // record lists a new entry after dropping the evicted ones, always the
 // oldest. A replay is announced, since the selection may not move to it.
 func (m Fullscreen) record(r session.Recorded) (Fullscreen, tea.Cmd) {
@@ -173,11 +166,14 @@ func (m Fullscreen) record(r session.Recorded) (Fullscreen, tea.Cmd) {
 		last := r.Evicted[len(r.Evicted)-1]
 		dropped := 0
 		for dropped < len(m.entries) && m.entries[dropped].Number <= last {
+			// offset counts the rows the filter shows.
+			if m.filter.shows(m.entries[dropped].Number) {
+				m.offset--
+			}
 			dropped++
 		}
 		clear(m.entries[:dropped]) // releases their bodies
 		m.entries = m.entries[dropped:]
-		m.offset -= dropped
 	}
 	m.entries = append(m.entries, r.Entry)
 	m.filter = m.filter.recorded(r, m.Listen)
@@ -205,21 +201,24 @@ func (m Fullscreen) show(text string) (Fullscreen, tea.Cmd) {
 	return m, tea.Tick(duration, func(time.Time) tea.Msg { return toastExpiredMsg(id) })
 }
 
-// keys are the requests view's keys; up and left name their pairs in help.
+// keys are the requests view's keys; up, left and pageUp name their pairs in
+// help.
 var keys = struct {
-	up, down, left, right, follow, replay, copy, export, test, help, quit key.Binding
+	up, down, left, right, pageUp, pageDown, follow, replay, copy, export, test, help, quit key.Binding
 }{
-	up:     key.NewBinding(key.WithKeys("up"), key.WithHelp("↑↓", "select")),
-	down:   key.NewBinding(key.WithKeys("down")),
-	left:   key.NewBinding(key.WithKeys("left"), key.WithHelp("←→", "tabs")),
-	right:  key.NewBinding(key.WithKeys("right")),
-	follow: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
-	replay: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
-	copy:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "curl")),
-	export: key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
-	test:   key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test")),
-	help:   key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	quit:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
+	up:       key.NewBinding(key.WithKeys("up"), key.WithHelp("↑↓", "select")),
+	down:     key.NewBinding(key.WithKeys("down")),
+	left:     key.NewBinding(key.WithKeys("left"), key.WithHelp("←→", "tabs")),
+	right:    key.NewBinding(key.WithKeys("right")),
+	pageUp:   key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup pgdn", "scroll the detail")),
+	pageDown: key.NewBinding(key.WithKeys("pgdown")),
+	follow:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
+	replay:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
+	copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "curl")),
+	export:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
+	test:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test")),
+	help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	quit:     key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 }
 
 func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
@@ -236,6 +235,10 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		m.tab = (m.tab + tabCount - 1) % tabCount
 	case key.Matches(msg, keys.right):
 		m.tab = (m.tab + 1) % tabCount
+	case key.Matches(msg, keys.pageUp):
+		m = m.scrollDetail(-1)
+	case key.Matches(msg, keys.pageDown):
+		m = m.scrollDetail(1)
 	case key.Matches(msg, keys.follow):
 		m.paused = false
 	case key.Matches(msg, keys.replay):
@@ -243,19 +246,19 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 			return m.show(session.ErrNoTarget.Error())
 		}
 		if i >= 0 {
-			replayer, n := m.Replayer, m.entries[i].Number
-			return m, runReplay(func() error { return replayer.Replay(n) })
+			requests, n := m.Requests, m.entries[i].Number
+			return m, runReplay(func() error { return requests.Replay(n) })
 		}
 	case key.Matches(msg, keys.copy):
 		if i >= 0 {
-			return m, copyCurl(m.Exporter, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, copyCurl(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.export):
 		if i >= 0 {
-			return m, exportFixture(m.Exporter, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, exportFixture(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.test):
-		return m, sendTest(m.Tester, m.testSource())
+		return m, sendTest(m.Requests, m.testSource())
 	case key.Matches(msg, keys.help):
 		m.help = !m.help
 	case key.Matches(msg, keys.quit):
@@ -390,11 +393,14 @@ func (m Fullscreen) header(width int) string {
 	if m.Target != "" {
 		target = "→ " + cards.Line(m.Target)
 	}
-	now := time.Now
+	return cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: []string{target, m.clock().Format(time.TimeOnly)}}.Line(width)
+}
+
+func (m Fullscreen) clock() time.Time {
 	if m.now != nil {
-		now = m.now
+		return m.now()
 	}
-	return cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: []string{target, now().Format(time.TimeOnly)}}.Line(width)
+	return time.Now()
 }
 
 // sourceLine keys the sources' colors and says whether the selection follows
@@ -418,13 +424,18 @@ func (m Fullscreen) sourceLine() string {
 }
 
 // empty shows the routes while no request has arrived, then the source
-// warnings and, once listening, the test hint. Its curls are cut rather than
-// wrapped, since a wrapped one breaks when pasted.
+// warnings and, once listening, the test hint.
 func (m Fullscreen) empty(width int) []string {
 	lines := strings.Split(cards.Banner(m.Project, m.Routes, nil, width), "\n")
 	lines = append(lines, wrap(width, m.notices)...)
 	if m.hint != nil {
-		lines = append(append(lines, ""), strings.Split(cards.TestHint(*m.hint, false), "\n")...)
+		// The heading, a blank line, then a curl per source. A cut or wrapped
+		// curl can't be pasted, so ones too wide give way to the Sources page.
+		hint := strings.Split(cards.TestHint(*m.hint, false), "\n")
+		if slices.ContainsFunc(hint[2:], func(curl string) bool { return lipgloss.Width(curl) > width }) {
+			hint = append(hint[:2], wrap(width, []string{faintStyle.Render("  The curls are wider than this screen; on Sources (s), c then 6 copies one.")})...)
+		}
+		lines = append(append(lines, ""), hint...)
 		if source := m.testSource(); source != "" {
 			lines = append(lines, "", cards.Badge("t")+" send a test event to "+boldStyle.Render(cards.Line(source)))
 		}
@@ -451,12 +462,18 @@ var helpStyles = help.Styles{
 
 // footer lists the keys on one line, or all of them in columns after ?.
 func (m Fullscreen) footer(width int) []string {
+	return helpView(keyMap{forwarding: m.Target != ""}, m.help, width)
+}
+
+// helpView lists the keys on one line, or with all set, all of them in
+// columns.
+func helpView(bindings help.KeyMap, all bool, width int) []string {
 	h := help.New()
-	h.ShowAll = m.help
+	h.ShowAll = all
 	h.ShortSeparator = "  "
 	h.Styles = helpStyles
 	h.SetWidth(width)
-	return strings.Split(h.View(keyMap{forwarding: m.Target != ""}), "\n")
+	return strings.Split(h.View(bindings), "\n")
 }
 
 // keyMap lists the keys; nothing replays without --forward-to.
@@ -467,7 +484,9 @@ func (k keyMap) ShortHelp() []key.Binding {
 	if k.forwarding {
 		actions = append([]key.Binding{keys.replay}, actions...)
 	}
-	return slices.Concat([]key.Binding{keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{sourcesKeys.open, keys.help, keys.quit})
+	// bubbles/help cuts the line where it runs out of room, so help and quit
+	// come first.
+	return slices.Concat([]key.Binding{keys.help, keys.quit, keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{sourcesKeys.open})
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -476,7 +495,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		actions = append([]key.Binding{described(keys.replay, "replay locally"), waitKey}, actions...)
 	}
 	return [][]key.Binding{
-		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), described(keys.follow, "follow the newest"), described(filterKey, "filter the list")},
+		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), keys.pageUp, described(keys.follow, "follow the newest"), described(filterKey, "filter the list")},
 		actions,
 		{described(sourcesKeys.open, "sources and routes"), described(keys.help, "close help"), described(keys.quit, "stop listening")},
 	}
@@ -565,13 +584,7 @@ func (m Fullscreen) columns(width int) []column {
 	columns = append(columns, column{width: 4, value: mark})
 
 	// The path's width is still zero, so room is what it would get.
-	room := func() int {
-		used := 2 * (len(columns) - 1)
-		for _, c := range columns {
-			used += c.width
-		}
-		return width - used
-	}
+	room := func() int { return width - rowWidth(columns) }
 	for _, title := range []string{"TIME", "METHOD"} {
 		if room() >= minPath {
 			break
@@ -622,10 +635,9 @@ func outcome(e session.Entry) (string, lipgloss.Style) {
 	}
 }
 
-// latency is how long the target took; a transport failure other than a
-// timeout ended before it answered.
+// latency is how long the target took, when that's known.
 func latency(e session.Entry) (string, lipgloss.Style) {
-	if e.Failure != nil && e.Failure.Kind != proxy.TransportTimeout {
+	if !e.Timed() {
 		return "—", faintStyle
 	}
 	return cards.FormatLatency(e.Latency), faintStyle

@@ -1,4 +1,4 @@
-● live · Acme | Payments · 5 requests · 2 ok · 3 failed · p50 14ms
+● live · Acme | Payments · 5 requests · 2 ok · 3 failed · p50 18ms
 ● stripe   ● github   following newest
 / status:error                                            2 matches · esc clears
 ╭─ Requests · status:error ─────────────────────────────────────────── 2 of 3 ─╮
@@ -19,6 +19,6 @@
 │ source    github                                                             │
 │ route     /github → http://localhost:3000/github                             │
 │ received  14:02:04.000                                                       │
-│ … 4 more lines                                                               │
+│ … 4 more lines · pgdn scrolls                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

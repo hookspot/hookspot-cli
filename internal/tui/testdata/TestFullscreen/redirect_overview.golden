@@ -2,7 +2,7 @@
 ● stripe   ● github   following newest
 ╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│ › 1  14:02:01  github  POST    /github                500          7ms       │
+│ › 1  14:02:01  stripe  POST    /hooks                 302          7ms       │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -10,21 +10,21 @@
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #1 github · POST /github ─────────────────────────────────────────── req_1 ─╮
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
 │ Overview   Request   Response   Timing                                       │
-│                      ━━━━━━━━                                                │
-│  500 Internal Server Error  7ms                                              │
+│ ━━━━━━━━                                                                     │
+│  302 Found  7ms  → http://localhost:3000/hooks                               │
+│ Location: https://localhost:3000/hooks                                       │
+│ webhook senders don't follow redirects; point --forward-to at the final URL  │
 │                                                                              │
-│ headers · 1                                                                  │
-│ content-type  application/json                                               │
+│  r  replay now                                                               │
 │                                                                              │
-│ body · application/json · 12 B                                               │
-│ {                                                                            │
-│   "ok": false                                                                │
-│ }                                                                            │
+│ source    stripe                                                             │
+│ route     payments → http://localhost:3000/hooks                             │
+│ received  14:02:01.000                                                       │
+│ target    localhost:3000  answered 302 · #1 at 14:02:01                      │
+│ last ok   none yet                                                           │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│ replays are local: they never change the delivery's status in Hookspot       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

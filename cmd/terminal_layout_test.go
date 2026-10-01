@@ -32,7 +32,7 @@ func TestTerminalResize(t *testing.T) {
 		// The list drops its TIME and METHOD columns and the detail goes below it.
 		row := regexp.MustCompile(`(?m)^│ › 1  stripe  /webhooks/stripe +200 +\S+ +│$`)
 		detail := regexp.MustCompile(`(?m)^╭─ #1 stripe · POST /webhooks/stripe .*╮$`)
-		keys := regexp.MustCompile(`(?m)^↑↓ select  ←→ tabs  .*…$`)
+		keys := regexp.MustCompile(`(?m)^\? help  q quit  ↑↓ select  .*…$`)
 		run.waitFor("the list above the detail in 60 columns", func(screen string) bool {
 			return row.MatchString(screen) && detail.MatchString(screen) && keys.MatchString(screen) && wholeBoxes(screen, 60)
 		})

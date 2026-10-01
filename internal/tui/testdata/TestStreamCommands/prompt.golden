@@ -1,3 +1,4 @@
-#9: no such request
+commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture
+· t test event · ? help
 ○ connecting… · Acme | Payments · 0 requests
-› r 4                            ↵ replay last · r N replay #N · t test event · ? help · ctrl-c quit
+› r 4        ↵ replay last · r N replay #N · t test event · ? help · ctrl-c quit

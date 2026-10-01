@@ -1,24 +1,30 @@
 ● live · Acme | Payments · 2 requests · 1 ok · 1 failed · p50 7ms
 ● stripe   ● github   following newest
-/ path:/hooks inv           status: source: path: or text · ↵ apply · esc clears
 ╭─ Requests ─────────────────────────────────────────────────────────────── 2 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
 │   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
-│ › 2  14:02:02  github  POST    /github                500         14ms       │
+│ › 2  14:02:02  stripe  POST    /hooks                 timeout     14ms       │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #2 github · POST /github ─────────────────────────────────────────── req_2 ─╮
+╭─ #2 stripe · POST /hooks ──────────────────────────────────────────── req_2 ─╮
 │ Overview   Request   Response   Timing                                       │
-│ ━━━━━━━━                                                                     │
-│  500 Internal Server Error  14ms  → http://localhost:3000/github             │
-│                                                                              │
-│  r  replay now                                                               │
-│                                                                              │
-│ source    github                                                             │
-│ route     /github → http://localhost:3000/github                             │
+│                                 ━━━━━━                                       │
 │ received  14:02:02.000                                                       │
-│ … 4 more lines · pgdn scrolls                                                │
+│ failed    timeout after 14ms                                                 │
+│ route     p50 7ms · p95 13ms · max 14ms                                      │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

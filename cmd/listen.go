@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,7 +144,7 @@ var listenCmd = &cobra.Command{
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
 			if input != nil && !streamOutput {
 				sess := session.New(listenContext, sources, local, program.FullscreenSink())
-				screen := tui.Fullscreen{Replayer: sess, Exporter: sess, Tester: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
+				screen := tui.Fullscreen{Requests: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
 				if forwarder != nil {
 					screen.Target = forwarder.String()
 				}
@@ -164,7 +163,7 @@ var listenCmd = &cobra.Command{
 				return err
 			}
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Replayer: sess, Exporter: sess, Tester: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
+			stream := tui.Stream{Requests: sess, Println: program.Println, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
 
@@ -173,7 +172,7 @@ var listenCmd = &cobra.Command{
 		writer.Commands = commandsEnabled
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
-			hints = append(lineCommandHints(forwarder != nil), hints...)
+			hints = append(cards.LineCommandHints(forwarder != nil), hints...)
 		}
 		if err := writer.Banner(projectName, routes, hints); err != nil {
 			return err
@@ -448,54 +447,37 @@ func runningInContainer() bool {
 	return docker == nil || podman == nil
 }
 
-// lineCommandHints name the stream's line commands; without --forward-to
-// nothing replays.
-func lineCommandHints(forwarding bool) []string {
-	hints := []string{"c N copy as cURL", "e N export fixture", "t test event"}
-	if forwarding {
-		hints = append([]string{"↵ replay last", "r N replay #N"}, hints...)
-	}
-	return hints
-}
-
 // runLineCommand runs one line typed into the stream: ↵ replays the last
 // request, r N replays #N, c N prints #N as a cURL command, e N exports it as
 // a fixture, t [source] sends a test event, and anything else gets the
 // command list.
 func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+	switch c := cards.ParseLineCommand(line); c.Op {
+	case "↵":
 		return replyToReplay(writer, sess.ReplayLast())
-	}
-	if len(fields) == 2 {
-		if number, err := strconv.Atoi(fields[1]); err == nil {
-			switch fields[0] {
-			case "r":
-				return replyToReplay(writer, sess.Replay(number))
-			case "c":
-				curl, err := sess.Curl(number, !showSensitiveHeaders)
-				if err != nil {
-					return writer.Reply(err.Error())
-				}
-				return writer.Print(cards.CurlNotes(number, curl, false) + "\n" + curl.Shown)
-			case "e":
-				fixture, err := sess.ExportFixture(number, !showSensitiveHeaders)
-				if err != nil {
-					return writer.Reply(err.Error())
-				}
-				return writer.Reply(cards.Exported(number, fixture))
-			}
+	case "r":
+		return replyToReplay(writer, sess.Replay(c.N))
+	case "c":
+		curl, err := sess.Curl(c.N, !showSensitiveHeaders)
+		if err != nil {
+			return writer.Reply(err.Error())
 		}
-	}
-	if len(fields) <= 2 && fields[0] == "t" {
+		return writer.Print(cards.CurlNotes(c.N, curl, false) + "\n" + curl.Shown)
+	case "e":
+		fixture, err := sess.ExportFixture(c.N, !showSensitiveHeaders)
+		if err != nil {
+			return writer.Reply(err.Error())
+		}
+		return writer.Reply(cards.Exported(c.N, fixture))
+	case "t":
 		// A test event that fails to send leaves listening as it was.
-		source, err := sess.SendTest(strings.Join(fields[1:], " "))
+		source, err := sess.SendTest(c.Source)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
 		return writer.Reply("test event sent to " + source)
 	}
-	return writer.Reply("commands: " + strings.Join(lineCommandHints(forwarding), " · "))
+	return writer.Reply("commands: " + strings.Join(cards.LineCommandHints(forwarding), " · "))
 }
 
 // replyToReplay answers a replay this run can't make: a number it never

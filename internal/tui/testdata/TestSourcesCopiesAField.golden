@@ -1,11 +1,11 @@
-● live · Acme | Payments · 5 requests · 2 ok · 3 failed · p50 35ms
+● live · Acme | Payments · 6 requests · 3 ok · 3 failed · p50 21ms
 Sources · 2 sources · 3 routes · stats since listen started
 ╭─ Sources & routes ───────────────────────────────────────────────────────────╮
-│   SOURCE  ROUTE     DESTINATION       REQS  OK  FAIL   P50  LAST             │
-│   stripe  payments  …host:3000/hooks     2   1     1   7ms  14:02:03 refused │
-│    └      refunds   …st:3000/refunds     1   1     0  28ms  14:02:04 200     │
-│ › github  /github   …ost:3000/github     1   0     1  14ms  14:02:02 500     │
-│   total · 1 unmatched                    5   2     3  35ms                   │
+│   SOURCE  ROUTE     DESTINATION           REQS  OK  FAIL   P50  LAST         │
+│   stripe  payments  …ocalhost:3000/hooks     3   2     1  21ms  14:02:06 200 │
+│    └      refunds   …alhost:3000/refunds     1   1     0  14ms  14:02:04 200 │
+│ › github  /github   …calhost:3000/github     1   0     1   7ms  14:02:02 500 │
+│   total · 1 unmatched                        6   3     3  21ms               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ github → /github ───────────────────────── press c, then a number, to copy ─╮
 │  1   public URL   https://in.hookspot.test/src_github                        │
@@ -17,7 +17,7 @@ Sources · 2 sources · 3 routes · stats since listen started
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Activity ───────────────────────────────────────────────────────────────────╮
 │ requests    1 · 0 ok · 1 failed                                              │
-│ latency     p50 14ms · p95 14ms · max 14ms                                   │
+│ latency     p50 7ms · p95 13ms · max 14ms                                    │
 │ per minute  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁█  last 15 min                                     │
 │ last        #2  14:02:02  500                                                │
 │ status      500  ███████████████████████████ 1                               │

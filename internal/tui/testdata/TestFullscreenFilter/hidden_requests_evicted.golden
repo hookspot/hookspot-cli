@@ -1,0 +1,24 @@
+● live · Acme | Payments · 15 requests · 8 ok · 7 failed · p50 53ms
+● stripe   ● github   paused on #12 · f follows newest
+/ status:error                                            7 matches · esc clears
+╭─ Requests · status:error ────────────────────────────────────────── 7 of 14 ─╮
+│    #  TIME      SOURCE  METHOD  PATH                  STATUS   LATENCY       │
+│    6  14:02:06  stripe  POST    /hooks                500         42ms       │
+│    8  14:02:08  stripe  POST    /hooks                500         56ms       │
+│   10  14:02:10  stripe  POST    /hooks                500         70ms       │
+│ › 12  14:02:12  stripe  POST    /hooks                500         84ms       │
+│   14  14:02:14  stripe  POST    /hooks                500         98ms       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #12 stripe · POST /hooks ────────────────────────────────────────── req_12 ─╮
+│ Overview   Request   Response   Timing                                       │
+│ ━━━━━━━━                                                                     │
+│  500 Internal Server Error  84ms  → http://localhost:3000/hooks              │
+│                                                                              │
+│  r  replay now                                                               │
+│                                                                              │
+│ source    stripe                                                             │
+│ route     payments → http://localhost:3000/hooks                             │
+│ received  14:02:12.000                                                       │
+│ … 4 more lines · pgdn scrolls                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

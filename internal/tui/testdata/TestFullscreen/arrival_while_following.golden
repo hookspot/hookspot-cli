@@ -1,4 +1,4 @@
-● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 14ms                                        → http://localhost:3000 · 14:02:00
+● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 7ms                                         → http://localhost:3000 · 14:02:00
 ● stripe   ● github   following newest
 ╭─ Requests ─────────────────────────────────────────────────────── 3 ─╮ ╭─ #3 stripe · POST /hooks ─────────────────────────────── req_3 ─╮
 │   #  TIME      SOURCE  METHOD  PATH           STATUS   LATENCY       │ │ Overview   Request   Response   Timing                          │
@@ -21,4 +21,4 @@
 │                                                                      │ │                                                                 │
 │                                                                      │ │                                                                 │
 ╰──────────────────────────────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test  s sources  ? help  q quit
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test  s sources

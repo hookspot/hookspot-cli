@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"hookspot/internal/cards"
 )
@@ -50,7 +51,7 @@ func NewProgram(input io.Reader, output io.Writer, stop context.CancelFunc) *Pro
 
 // Run runs model until it quits. However it ends, listening stops before
 // output fails with ErrClosed, so a delivery cut short ends with the cancelled
-// context rather than an error. Ctrl-C's interrupt and kill aren't errors; a
+// context rather than an error. A second Ctrl-C's kill isn't an error; a
 // panic is.
 func (p *Program) Run(model tea.Model) (tea.Model, error) {
 	p.program = tea.NewProgram(model,
@@ -69,7 +70,7 @@ func (p *Program) Run(model tea.Model) (tea.Model, error) {
 	close(p.finished)
 	// Kill returns ErrProgramKilled bare; wrapped, it carries a panic or an
 	// input failure.
-	if errors.Is(err, tea.ErrInterrupted) || err == tea.ErrProgramKilled {
+	if err == tea.ErrProgramKilled {
 		err = nil
 	}
 	return final, err
@@ -80,9 +81,19 @@ func (p *Program) Run(model tea.Model) (tea.Model, error) {
 // returned.
 func (p *Program) Println(text string) error {
 	<-p.started
+	// tea's Println erases right after each line, which in a terminal clears
+	// the last column of a line that fills whole rows, and it counts such a
+	// line a row longer. A space after the line makes both right.
+	width := cards.Width(p.output)
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if w := ansi.StringWidth(line); w > 0 && w%width == 0 {
+			lines[i] += " "
+		}
+	}
 	// Printed lines bypass the renderer, which downsamples only the view.
 	var styled strings.Builder
-	_, _ = (&colorprofile.Writer{Forward: &styled, Profile: p.profile}).WriteString(text)
+	_, _ = (&colorprofile.Writer{Forward: &styled, Profile: p.profile}).WriteString(strings.Join(lines, "\n"))
 	printed := make(chan struct{})
 	go func() {
 		p.program.Println(styled.String())

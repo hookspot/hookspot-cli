@@ -46,6 +46,17 @@ type Entry struct {
 // forwarded reports whether the entry went to a local target.
 func (e Entry) forwarded() bool { return e.Target != "" }
 
+// Failed reports whether the entry was forwarded and got no 2xx.
+func (e Entry) Failed() bool {
+	return e.forwarded() && (e.Failure != nil || e.Response.Status < 200 || e.Response.Status >= 300)
+}
+
+// Timed reports whether Latency is how long the target took: transport
+// failures other than a timeout end before it answers.
+func (e Entry) Timed() bool {
+	return e.Failure == nil || e.Failure.Kind == proxy.TransportTimeout
+}
+
 // history keeps the newest entries within a count and a body-size cap.
 type history struct {
 	maxEntries int

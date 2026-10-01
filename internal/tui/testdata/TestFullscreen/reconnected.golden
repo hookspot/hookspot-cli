@@ -1,24 +1,24 @@
-● live · Acme | Payments · 2 requests · 1 ok · 1 failed · p50 7ms
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
 ● stripe   ● github   following newest
-/ path:/hooks inv           status: source: path: or text · ↵ apply · esc clears
-╭─ Requests ─────────────────────────────────────────────────────────────── 2 ─╮
+╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
-│ › 2  14:02:02  github  POST    /github                500         14ms       │
+│ › 1  14:02:01  stripe  POST    /hooks                 200          7ms       │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #2 github · POST /github ─────────────────────────────────────────── req_2 ─╮
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
 │ Overview   Request   Response   Timing                                       │
 │ ━━━━━━━━                                                                     │
-│  500 Internal Server Error  14ms  → http://localhost:3000/github             │
+│  200 OK  7ms  → http://localhost:3000/hooks                                  │
 │                                                                              │
-│  r  replay now                                                               │
+│ source    stripe                                                             │
+│ route     payments → http://localhost:3000/hooks                             │
+│ received  14:02:01.000                                                       │
 │                                                                              │
-│ source    github                                                             │
-│ route     /github → http://localhost:3000/github                             │
-│ received  14:02:02.000                                                       │
-│ … 4 more lines · pgdn scrolls                                                │
+│ replays are local: they never change the delivery's status in Hookspot       │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+Reconnected after 3s offline. Requests that arrived meanwhile were not
+delivered; retry them from https://hookspot.test/acme/payments/requests
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …
