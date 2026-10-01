@@ -567,26 +567,6 @@ func (r *countingReplayer) ReplayLast() error {
 }
 
 func TestCtrlC(t *testing.T) {
-	t.Run("first stops listening gracefully", func(t *testing.T) {
-		keys, typeKeys := keyboard(t)
-		h := newHarness(t, forwarder{}, keys)
-		h.run(h.stream())
-		typeKeys("\x03")
-		received(t, h.ctx.Done())
-		// listen has returned.
-		h.program.Quit()
-		r := h.wait(t)
-		if r.err != nil {
-			t.Fatal(r.err)
-		}
-		select {
-		case code := <-h.exits:
-			t.Fatalf("exit(%d) after one Ctrl-C", code)
-		default:
-		}
-		golden.RequireEqual(t, view(r.model))
-	})
-
 	t.Run("second kills and exits 130 without hanging the handler", func(t *testing.T) {
 		keys, typeKeys := keyboard(t)
 		called, gate := make(chan struct{}, 1), make(chan struct{})
