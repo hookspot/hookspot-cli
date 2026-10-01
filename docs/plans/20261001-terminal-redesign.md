@@ -566,12 +566,15 @@
 **Files:**
 - Modify: `docs/releases/THIRD_PARTY_NOTICES.txt`
 
-- [ ] every Overview item is implemented, including both repos
-- [ ] refresh `THIRD_PARTY_NOTICES.txt` with the procedure in its header (all Charm modules are imported by now); cross-compile the six release targets in the pinned toolchain
-- [ ] piped `listen` output has no ANSI codes and follows the golden stream; `NO_COLOR` is respected everywhere
-- [ ] hostile delivery data (control characters, huge bodies, binary) can't break any layout or the terminal
-- [ ] run the full suite: `make test`, `make vet`, `make npm-test`, and backend `mix test`
+- [x] every Overview item is implemented, including both repos
+- [x] refresh `THIRD_PARTY_NOTICES.txt` with the procedure in its header (all Charm modules are imported by now); cross-compile the six release targets in the pinned toolchain
+- [x] piped `listen` output has no ANSI codes and follows the golden stream; `NO_COLOR` is respected everywhere
+- [x] hostile delivery data (control characters, huge bodies, binary) can't break any layout or the terminal
+- [x] run the full suite: `make test`, `make vet`, `make npm-test`, and backend `mix test`
 - [ ] after committing, `make release-snapshot` builds all six targets
+- ➕ stream rows cut a method longer than `OPTIONS` and narrow a long source name before the path's minimum, so they fit from 80 columns (a long method, which anyone can send, or one 100-character source name stretched every row); narrower terminals still wrap rows, by design. `TestHostileRequestsKeepTheLayout` (`internal/tui`) runs hostile, binary and multi-megabyte requests through every full-screen tab, the Sources page, the status line and every printed card, allowing only SGR styling and lines within the width and height
+- ➕ `TestWriterColorsOnlyTerminals` checks `NO_COLOR` too: bold and faint stay, colors go. Every styled write goes through `colorprofile.Detect` (the writer, `tui.Program`, bubbletea's default in the picker) or `lipgloss.Fprint*`; the error box was also checked in a pty
+- ⚠️ the notices gain 16 modules, all MIT, plus `golang.org/x/mod` (`version`'s semver, missing since it was added); byte-identical licenses share a section. Charm's color math links new Go source notices: math `cbrt` (Sun), `atan` and `sin` (Cephes), `exp` amd64 (Sleef). go-colorful's `hsluv.go` (hsluv-go, MIT) and x/ansi's `Convert256` (ported from tmux `colour.c`, ISC) are linked too, so their upstream notices are included and the header's procedure now names module code. Unicode-derived tables get no notice, as Go's own never did; `x/sync` is listed because `go list` includes it, though none of its code is linked
 
 ### Task 18: [Final] Update documentation
 - [ ] README: `listen` modes (full-screen default, `--stream`, piped), keys and commands, fixtures (redaction, file names), test event, Sources page

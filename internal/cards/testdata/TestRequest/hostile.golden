@@ -21,4 +21,6 @@
 │ line\x7f\x9b2J\x00                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-#3   PO\x1bST  evil\x1b]0;title\x07\n  /hook\x1b[2J\…   200    1ms  12:34:56.789
+#3   PO\x1b…  evil\x1b]0;title\x07\n  /hook\x1b[2J\r…   200    1ms  12:34:56.789
+
+#4   PROPFI…  evil\x1bevil\x1bevil\x1b…  /hook\x1b[2…   200    1ms  12:34:56.789

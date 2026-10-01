@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -68,9 +69,13 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	}
 }
 
+// colorSGR is a styling sequence that sets a color.
+var colorSGR = regexp.MustCompile(`\x1b\[([0-9]+;)*(3[0-9]|4[0-9]|9[0-7]|10[0-7])(;[0-9]+)*m`)
+
 func TestWriterColorsOnlyTerminals(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("CLICOLOR_FORCE", "")
+	t.Setenv("NO_COLOR", "")
 	var piped bytes.Buffer
 	if err := NewWriter(&piped, io.Discard, testListen(), "").Emit(session.Ready{}); err != nil {
 		t.Fatal(err)
@@ -84,8 +89,22 @@ func TestWriterColorsOnlyTerminals(t *testing.T) {
 	if err := NewWriter(&terminal, io.Discard, testListen(), "").Emit(session.Ready{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(terminal.String(), "\x1b[") {
+	if !colorSGR.MatchString(terminal.String()) {
 		t.Errorf("terminal Ready = %q, want color", terminal.String())
+	}
+
+	// NO_COLOR keeps bold and faint.
+	t.Setenv("NO_COLOR", "1")
+	var uncolored bytes.Buffer
+	writer := NewWriter(&uncolored, &uncolored, testListen(), "")
+	failed := session.Entry{Number: 2, Delivery: testDelivery(), Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, Received: received}
+	for _, event := range []session.Event{session.Ready{}, session.Recorded{Entry: failed}, session.DisabledSource{Name: "github"}} {
+		if err := writer.Emit(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if colorSGR.MatchString(uncolored.String()) || !strings.Contains(uncolored.String(), "\x1b[1m") {
+		t.Errorf("NO_COLOR stream = %q, want bold and faint only", uncolored.String())
 	}
 }
 

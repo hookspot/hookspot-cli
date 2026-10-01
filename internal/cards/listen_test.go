@@ -395,10 +395,15 @@ func TestRequest(t *testing.T) {
 		jsonDelivery.Headers = http.Header{"Content-Type": []string{"application/json"}}
 		jsonDelivery.Body = []byte("{\"type\":\"evil\u009b31m\x7f\",\"key\xff\":\"\\u001b[2J \\\"quoted\\\"\"}")
 		failed := Request{Number: 2, Delivery: jsonDelivery, Received: received, Target: "http://localhost:3000/\x1b[2J", Response: ws.Response{Status: http.StatusBadRequest, Headers: d.Headers, Body: d.Body}}
+		// A long method and source name can't push a row past the width.
+		long := Listen{Sources: map[string]string{"src_evil": strings.Repeat("evil\x1b", 20)}}
+		longMethod := jsonDelivery
+		longMethod.Method = strings.Repeat("PROPFIND", 20)
 		golden.RequireEqual(t, noColor(t, joinCards(
 			l.Request(Request{Number: 1, Delivery: d, Received: received}, 80),
 			l.Request(failed, 80),
 			l.Request(forwarded(3, jsonDelivery, http.StatusOK, time.Millisecond), 80),
+			long.Request(forwarded(4, longMethod, http.StatusOK, time.Millisecond), 80),
 		)))
 	})
 }

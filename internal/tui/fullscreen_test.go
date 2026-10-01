@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -382,4 +384,126 @@ func TestFullscreenQuitStopsListening(t *testing.T) {
 	default:
 	}
 	golden.RequireEqual(t, maskTimes(ansi.Strip(r.model.View().Content)))
+}
+
+// hostile is text a server or a delivery may carry to break a screen:
+// escape sequences, C0 and C1 controls, invalid UTF-8, and wide and combining
+// characters.
+const hostile = "\x1b]0;title\x07\x1b[2J\u009b31m\r\n\t\x00\x7f\xff界🙂e\u0301"
+
+// hostileEntries carry hostile text in every field, binary bodies and bodies
+// of a megabyte or more.
+func hostileEntries() []session.Entry {
+	failed := entry(1, "src_stripe", http.StatusInternalServerError)
+	failed.Delivery.Method, failed.Delivery.Path, failed.Delivery.Query, failed.Delivery.RequestUID = hostile, "/"+hostile, hostile+"="+hostile, hostile
+	failed.Delivery.Headers = http.Header{"Content-Type": {"application/json"}, hostile: {hostile}}
+	failed.Delivery.Body = []byte(`[` + strings.Repeat(`{"type":"\u001b[2J\u0007\u009b31m","界🙂":"`+strings.Repeat("x", 300)+`"},`, 1<<12) + `{}]`)
+	failed.Response = ws.Response{Status: http.StatusInternalServerError, Headers: http.Header{hostile: {hostile}}, Body: []byte(strings.Repeat(hostile+"\n", 1<<15))}
+
+	binary := entry(2, "src_github", http.StatusFound)
+	binary.Delivery.Headers = http.Header{"Content-Type": {"application/octet-stream"}}
+	binary.Delivery.Body = bytes.Repeat([]byte{0x00, 0x1b, 0x9b, 0xff, '\n', '\r', 0x07}, 1<<18)
+	binary.Response = ws.Response{Status: http.StatusFound, Headers: http.Header{"Location": {hostile}}, Body: binary.Delivery.Body}
+
+	unreachable := refused(3)
+	unreachable.Failure = &proxy.TransportFailure{Kind: proxy.TransportOther, Err: errors.New(hostile)}
+
+	replay := failed
+	replay.Number, replay.ReplayOf = 4, 1
+	replay.Replay = &session.Comparison{Original: 1, Status: http.StatusInternalServerError, Removed: []string{hostile}, Added: []string{strings.Repeat(hostile, 100)}, More: 3}
+
+	test := entry(5, "src_stripe", http.StatusOK)
+	test.Test = true
+	test.Delivery.Body = []byte(strings.Repeat(hostile, 1<<16))
+
+	unmatched := entry(6, "src_"+hostile, http.StatusOK)
+	unmatched.RouteUID = ""
+	unmatched.Delivery.Method = strings.Repeat("PROPFIND", 100)
+
+	inspected := entry(7, "src_github", 0)
+	inspected.Target, inspected.Response, inspected.Latency = "", ws.Response{}, 0
+	inspected.Delivery.Query = strings.Repeat(hostile, 100)
+	inspected.Delivery.Headers = http.Header{strings.Repeat("X-"+hostile, 100): {strings.Repeat(hostile, 100)}}
+	return []session.Entry{failed, binary, unreachable, replay, test, unmatched, inspected}
+}
+
+var styling = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
+
+// requireContained fails unless text has nothing but styling and printable
+// characters, and fits in width columns and, when height is set, height
+// lines.
+func requireContained(t *testing.T, name, text string, width, height int) {
+	t.Helper()
+	lines := strings.Split(styling.ReplaceAllString(text, ""), "\n")
+	if height > 0 && len(lines) > height {
+		t.Errorf("%s: %d lines, more than %d", name, len(lines), height)
+	}
+	for i, line := range lines {
+		if strings.IndexFunc(line, unicode.IsControl) >= 0 {
+			t.Errorf("%s: line %d has a control character: %q", name, i, line)
+		}
+		if w := ansi.StringWidth(line); w > width {
+			t.Errorf("%s: line %d is %d columns, more than %d: %q", name, i, w, width, line)
+		}
+	}
+}
+
+func TestHostileRequestsKeepTheLayout(t *testing.T) {
+	entries := hostileEntries()
+	for _, width := range []int{40, 80, cards.DefaultWidth, splitWidth} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			m := sourcesScreen()
+			m.Project = hostile
+			m.Listen.Sources["src_stripe"] = hostile
+			m.Routes[0] = cards.BannerRoute{SourceUID: "src_stripe", Source: hostile, PublicURL: "https://in.hookspot.test/" + hostile, RouteUID: "rte_stripe", Path: "/" + hostile, Destination: "http://localhost:3000/" + hostile, Label: hostile}
+			full := tea.Model(m)
+			requireFull := func(name string) {
+				t.Helper()
+				requireContained(t, name, full.View().Content, width, 24)
+			}
+			stream := tea.Model(Stream{Project: hostile, Forwarding: true, Prompt: true})
+			for _, msg := range []tea.Msg{
+				tea.WindowSizeMsg{Width: width, Height: 24},
+				session.DisabledSource{Name: hostile}, session.SkippedSource{Name: hostile}, session.Ready{},
+				session.TestHint{Sources: []api.Source{{Name: hostile, URL: "https://in.hookspot.test/" + hostile}, {Name: "github"}}},
+				session.ConnectionLost{Err: errors.New(hostile)},
+			} {
+				full, _ = full.Update(msg)
+				stream, _ = stream.Update(msg)
+			}
+			requireFull("empty")
+			full, _ = full.Update(session.RootNotFound{Root: hostile, Status: http.StatusNotFound})
+			requireFull("root hint")
+
+			r := &tally{}
+			for _, e := range entries {
+				recorded := r.recorded(e)
+				full, _ = full.Update(recorded)
+				stream, _ = stream.Update(recorded)
+				// Narrower streams keep the rows' minimum columns and wrap.
+				if width >= 80 {
+					requireContained(t, "card #"+strconv.Itoa(e.Number), m.Listen.Entry(e, width), width, 0)
+					requireContained(t, "unlimited card #"+strconv.Itoa(e.Number), cards.Listen{Sources: m.Listen.Sources}.Entry(e, width), width, 0)
+				}
+			}
+			requireContained(t, "status and prompt", stream.View().Content, width, 0)
+
+			for range entries {
+				for tab := range tabCount {
+					requireFull("#" + strconv.Itoa(full.(Fullscreen).entries[full.(Fullscreen).selectedIndex()].Number) + " " + tabTitles[tab])
+					full, _ = full.Update(right)
+				}
+				full, _ = full.Update(up)
+			}
+			full, _ = full.Update(letter('s'))
+			for range m.Routes {
+				requireFull("sources")
+				full, _ = full.Update(down)
+			}
+			full, _ = full.Update(letter('c'))
+			requireFull("copy mode")
+			full, _ = full.Update(letter('1'))
+			requireFull("copied")
+		})
+	}
 }

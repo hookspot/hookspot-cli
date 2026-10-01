@@ -304,9 +304,10 @@ func (l Listen) Request(r Request, width int) string {
 
 func (l Listen) row(r Request, width int) string {
 	d := r.Delivery
-	// Badges are padded, so one space sets them apart.
-	const methodWidth = 6
-	left := pad(Badge(Line(method(d))), methodWidth) + " " + pad(l.source(d.SourceUID), l.sourceWidth()) + "  "
+	// Badges are padded, so one space sets them apart. Whoever posts to a
+	// source picks the method, so one longer than OPTIONS is cut.
+	const methodWidth, maxMethod = 6, len("OPTIONS")
+	left := pad(Badge(truncate(Line(method(d)), maxMethod)), methodWidth) + " "
 	if r.Number > 0 {
 		left = faintStyle.Render(fmt.Sprintf("#%-3d", r.Number)) + left
 	}
@@ -316,8 +317,11 @@ func (l Listen) row(r Request, width int) string {
 		right = marks + " " + right
 	}
 
-	// The path keeps a few columns even when that overflows width.
+	// The path keeps a few columns even when that overflows width; a long
+	// source name gives way first.
 	const minPath, minSummary = 12, 8
+	sourceWidth := min(l.sourceWidth(), max(lipgloss.Width("unknown"), width-lipgloss.Width(left)-lipgloss.Width(right)-minPath-4))
+	left += pad(truncate(l.source(d.SourceUID), sourceWidth), sourceWidth) + "  "
 	room := max(minPath, width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	path, summary := Line(d.Path), l.Summary(d)
 	if summaryRoom := room - lipgloss.Width(path) - 2; lipgloss.Width(summary) <= summaryRoom || summaryRoom >= minSummary {
