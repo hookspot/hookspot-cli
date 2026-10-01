@@ -20,6 +20,7 @@ import (
 	"hookspot/internal/endpoint"
 	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
+	"hookspot/internal/session"
 	"hookspot/internal/ws"
 )
 
@@ -399,7 +400,7 @@ func printListenInfo(out io.Writer, project *api.Project, sources []api.Source, 
 				if i == len(source.Routes)-1 {
 					branch = "└─"
 				}
-				label := safeDisplayText(routeLabel(route))
+				label := safeDisplayText(session.RouteLabel(route))
 				if label != "" {
 					label = " (" + label + ")"
 				}
@@ -428,13 +429,6 @@ func writeCommandText(out io.Writer, value string) error {
 		return io.ErrShortWrite
 	}
 	return nil
-}
-
-func routeLabel(route api.Route) string {
-	if route.Name != nil && *route.Name != "" {
-		return *route.Name
-	}
-	return ""
 }
 
 type forwardSession struct {

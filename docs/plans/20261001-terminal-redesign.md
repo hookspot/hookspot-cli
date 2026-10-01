@@ -280,11 +280,13 @@
 - Modify: `cmd/listen.go`
 - Modify: `cmd/listen_test.go`
 
-- [ ] add the optional `RouteUID string \`json:"route_uid"\`` to `ws.Delivery`
-- [ ] `session.RouteFor(sources, delivery)` with the rule from Solution Overview, including the fallback when `route_uid` is set but unknown
-- [ ] `session.RouteLabel(route)`: the name when non-empty, else the destination path; replaces `routeLabel` in `cmd/listen.go`
-- [ ] write tests: decoding with and without `route_uid`; unknown `route_uid` falls back to the path; no match; label rule; update `TestRouteLabel` and the banner assertions
-- [ ] run `make test` - must pass before next task
+- [x] add the optional `RouteUID string \`json:"route_uid"\`` to `ws.Delivery`
+- [x] `session.RouteFor(sources, delivery)` with the rule from Solution Overview, including the fallback when `route_uid` is set but unknown
+- [x] `session.RouteLabel(route)`: the name when non-empty, else the destination path; replaces `routeLabel` in `cmd/listen.go`
+- [x] write tests: decoding with and without `route_uid`; unknown `route_uid` falls back to the path; no match; label rule; update `TestRouteLabel` and the banner assertions
+- [x] run `make test` - must pass before next task
+- ⚠️ `RouteFor` returns `(api.Route, bool)` and looks only at the delivery's source, for `route_uid` as for the path, so a `route_uid` of another source falls back to the path
+- ⚠️ the plain banner now labels every route, so an unnamed one reads `→ http://localhost:3000/webhooks/orders (/webhooks/orders)` until Task 7's Cards banner; `TestRouteLabel` moved to `internal/session/routes_test.go`
 
 ### Task 4: lipgloss and the `cards` foundation
 
