@@ -335,12 +335,16 @@
 - Modify: `cmd/listen.go`
 - Modify: `cmd/listen_test.go`
 
-- [ ] move `forwardSession`, `readLocalResponseBody` and `latencyMilliseconds` from `cmd/listen.go` into `session`; replace `replayCache` with the numbered history
-- [ ] `Session.Handle` (the websocket handler) and `Replay(n)`, with the emit-mutex ordering and the `Sink`/event types from Solution Overview; per-route `Stats` snapshots
-- [ ] `superviseListen` emits connection states and notices through the sink instead of writing to `errOut`
-- [ ] wire `cmd/listen.go` to `session` through a temporary sink adapter over the existing printer (deleted in Task 7) so the build and tests stay green
-- [ ] write tests: numbering; eviction by count and by bytes; replaying an evicted number; `ReplayOf`; a replay racing live deliveries keeps number order equal to emit order; percentiles with timeouts and other transport failures; replays excluded from stats; a sink error is returned from `Handle`; inspect mode still answers 200
-- [ ] run tests - must pass before next task
+- [x] move `forwardSession`, `readLocalResponseBody` and `latencyMilliseconds` from `cmd/listen.go` into `session`; replace `replayCache` with the numbered history
+- [x] `Session.Handle` (the websocket handler) and `Replay(n)`, with the emit-mutex ordering and the `Sink`/event types from Solution Overview; per-route `Stats` snapshots
+- [x] `superviseListen` emits connection states and notices through the sink instead of writing to `errOut`
+- [x] wire `cmd/listen.go` to `session` through a temporary sink adapter over the existing printer (deleted in Task 7) so the build and tests stay green
+- [x] write tests: numbering; eviction by count and by bytes; replaying an evicted number; `ReplayOf`; a replay racing live deliveries keeps number order equal to emit order; percentiles with timeouts and other transport failures; replays excluded from stats; a sink error is returned from `Handle`; inspect mode still answers 200
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 7–14: `session.New(ctx, sources, forwarder, sink)` (`forwarder` nil in inspect mode); `Handle`; `Replay(n)`, which fails with `ErrUnknown`, `ErrEvicted` or `ErrNoTarget` (inspect mode); `ReplayLast`, a no-op before the first request; `Emit` for connection states and notices. Events: `Connecting`, `Ready`, `ConnectionLost{Err, RetryIn}`, `Reconnected{Offline}` (the sink knows the requests URL), `RootNotFound{Root, Status}` and `Recorded{Entry, Route, Totals, Evicted}`; only `Recorded` carries a snapshot. `Entry` has `cards.Request`'s fields (`Target`, `Response`, `Latency`, `Failure`, `Received`) plus `RouteUID` and `ReplayOf`. `RunE` emits `Connecting` after the banner, and `connectionNotices` emits the other states
+- ⚠️ the source warnings still go straight to stderr from `resolveSources`, before the session exists (the printer adapter needs the resolved sources), so Task 7 adds their `Notice` events; `Entry.Test` is left to Task 11, which sets it
+- ⚠️ `OK`, `Failed` and latencies count forwarded requests only, so inspect-mode stats are counts; replays are left out of the totals as well as route stats; p50/p95/max cover the newest 1000 samples per route and in the totals, so memory stays bounded
+- ⚠️ `Entry.Target` is the full forwarded-to URL, as in `cards.Request`, so until Task 7 the plain transport hint names it rather than the `--forward-to` base; `ReplayLast` replays the newest entry, which may itself be a replay of the same delivery
 
 ### Task 7: Plain stream writer
 

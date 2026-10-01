@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -27,10 +25,6 @@ import (
 const reconnectDelay = 2 * time.Second
 
 const maxInitialConnectAttempts = 10
-
-const maxLocalResponseBodyBytes = 16 * 1024 * 1024
-
-var errLocalResponseBodyTooLarge = errors.New("local response body exceeds 16 MiB limit")
 
 var (
 	forwardTo            string
@@ -92,29 +86,31 @@ var listenCmd = &cobra.Command{
 			return err
 		}
 
-		p := printer.New(cmd.OutOrStdout(), printer.Options{
-			Sources:              sourceNamesByUID(sources),
-			ShowSensitiveHeaders: showSensitiveHeaders,
-			Color:                printer.SupportsColor(cmd.OutOrStdout()),
-			Notices:              cmd.ErrOrStderr(),
-			Limits: printer.Limits{
-				MaxBodyLines:  maxBodyLines,
-				MaxHeaders:    maxHeaders,
-				MaxValueChars: maxValueChars,
-			},
-		})
-		var handler ws.Handler = p.Handle
-		target := ""
-		var session *forwardSession
-		replayEnabled := false
+		replayEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
+		sink := printerSink{
+			printer: printer.New(cmd.OutOrStdout(), printer.Options{
+				Sources:              sourceNamesByUID(sources),
+				ShowSensitiveHeaders: showSensitiveHeaders,
+				Color:                printer.SupportsColor(cmd.OutOrStdout()),
+				Notices:              cmd.ErrOrStderr(),
+				Limits: printer.Limits{
+					MaxBodyLines:  maxBodyLines,
+					MaxHeaders:    maxHeaders,
+					MaxValueChars: maxValueChars,
+				},
+			}),
+			out:         cmd.OutOrStdout(),
+			errOut:      cmd.ErrOrStderr(),
+			replay:      replayEnabled,
+			requestsURL: dashboardRequestsURL(activeEndpoint, project),
+		}
 		listenContext, stopListening := context.WithCancel(cmd.Context())
 		defer stopListening()
+		var local session.Forwarder
 		if forwarder != nil {
-			target = forwarder.String()
-			session = newForwardSession(listenContext, forwarder, target, p)
-			handler = session.Handle
-			replayEnabled = isTerminalReader(cmd.InOrStdin())
+			local = forwarder
 		}
+		sess := session.New(listenContext, sources, local, sink)
 
 		wsURL := activeEndpoint.WebSocket()
 		if wsURL == nil {
@@ -123,17 +119,20 @@ var listenCmd = &cobra.Command{
 		if err := printListenInfo(cmd.OutOrStdout(), project, sources, forwarder); err != nil {
 			return err
 		}
+		if err := sess.Emit(session.Connecting{}); err != nil {
+			return err
+		}
 		var replay *replayInputSession
 		if replayEnabled {
-			replay = startReplayInput(listenContext, cmd.InOrStdin(), session.Replay, stopListening)
+			replay = startReplayInput(listenContext, cmd.InOrStdin(), sess.ReplayLast, stopListening)
 		}
 		topic := "project:" + project.UID
 
-		notices := newConnectionNotices(cmd.OutOrStdout(), cmd.ErrOrStderr(), replayEnabled, dashboardRequestsURL(activeEndpoint, project))
+		notices := newConnectionNotices(sess.Emit)
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, topic, sourceUIDs)
 		wsClient.OnJoined = notices.joined
 
-		listenErr := superviseListen(listenContext, notices, wsClient, handler, reconnectPolicy{
+		listenErr := superviseListen(listenContext, notices, wsClient, sess.Handle, reconnectPolicy{
 			Delay:              reconnectDelay,
 			MaxInitialAttempts: maxInitialConnectAttempts,
 		})
@@ -204,39 +203,27 @@ func superviseListen(ctx context.Context, notices *connectionNotices, listener w
 	}
 }
 
-// connectionNotices reports connection state while listen runs. Deliveries
-// start only after the channel join, so Ready waits for it; requests that
-// arrive during an outage are never retried, so a reconnect says where to
-// retry them.
+// connectionNotices turns joins and failed sessions into connection states.
+// Deliveries start only after the channel join, so Ready waits for it.
 type connectionNotices struct {
-	out          io.Writer
-	errOut       io.Writer
-	replay       bool
-	requestsURL  string
+	emit         func(session.Event) error
 	now          func() time.Time
 	ready        bool
 	offlineSince time.Time
 }
 
-func newConnectionNotices(out, errOut io.Writer, replay bool, requestsURL string) *connectionNotices {
-	return &connectionNotices{out: out, errOut: errOut, replay: replay, requestsURL: requestsURL, now: time.Now}
+func newConnectionNotices(emit func(session.Event) error) *connectionNotices {
+	return &connectionNotices{emit: emit, now: time.Now}
 }
 
 func (n *connectionNotices) joined() error {
 	if !n.ready {
 		n.ready = true
-		text := "Ready. Waiting for requests (Ctrl-C to quit)\n"
-		if n.replay {
-			text += "↵ replay last request\n"
-		}
-		return writeCommandText(n.out, text)
+		return n.emit(session.Ready{})
 	}
 	offline := n.now().Sub(n.offlineSince).Round(time.Second)
 	n.offlineSince = time.Time{}
-	return writeCommandText(n.errOut, fmt.Sprintf(
-		"Reconnected after %s offline. Requests that arrived meanwhile were not delivered; retry them from %s\n",
-		offline, n.requestsURL,
-	))
+	return n.emit(session.Reconnected{Offline: offline})
 }
 
 // lost reports a failed session. An outage is timed from its first failed
@@ -245,7 +232,56 @@ func (n *connectionNotices) lost(err error, retryIn time.Duration) error {
 	if n.ready && n.offlineSince.IsZero() {
 		n.offlineSince = n.now()
 	}
-	return writeCommandText(n.errOut, fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(err.Error()), retryIn))
+	return n.emit(session.ConnectionLost{Err: err, RetryIn: retryIn})
+}
+
+// printerSink renders session events with the plain printer until the cards
+// writer replaces it.
+type printerSink struct {
+	printer     *printer.Printer
+	out         io.Writer
+	errOut      io.Writer
+	replay      bool
+	requestsURL string
+}
+
+func (s printerSink) Emit(event session.Event) error {
+	switch e := event.(type) {
+	case session.Connecting:
+		return writeCommandText(s.out, "Connecting…\n")
+	case session.Ready:
+		text := "Ready. Waiting for requests (Ctrl-C to quit)\n"
+		if s.replay {
+			text += "↵ replay last request\n"
+		}
+		return writeCommandText(s.out, text)
+	case session.ConnectionLost:
+		return writeCommandText(s.errOut, fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(e.Err.Error()), e.RetryIn))
+	case session.Reconnected:
+		return writeCommandText(s.errOut, fmt.Sprintf(
+			"Reconnected after %s offline. Requests that arrived meanwhile were not delivered; retry them from %s\n",
+			e.Offline, s.requestsURL,
+		))
+	case session.RootNotFound:
+		return s.printer.PrintNotice(fmt.Sprintf(
+			"%s returned %d. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to %swebhooks\n",
+			e.Root, e.Status, e.Root,
+		))
+	case session.Recorded:
+		entry := e.Entry
+		if entry.Target == "" {
+			_, err := s.printer.Handle(entry.Delivery)
+			return err
+		}
+		return s.printer.PrintForward(entry.Delivery, printer.ForwardOutcome{
+			Response:  entry.Response,
+			Latency:   entry.Latency,
+			Failure:   entry.Failure,
+			TargetURL: entry.Target,
+			Replay:    entry.ReplayOf > 0,
+		})
+	}
+	return nil
 }
 
 func dashboardRequestsURL(base endpoint.Base, project *api.Project) string {
@@ -416,7 +452,6 @@ func printListenInfo(out io.Writer, project *api.Project, sources []api.Source, 
 	fmt.Fprintln(&output)
 	fmt.Fprintln(&output, "Requests ──────────────────────────────────────")
 	fmt.Fprintln(&output)
-	fmt.Fprintln(&output, "Connecting…")
 	return writeCommandText(out, output.String())
 }
 
@@ -429,172 +464,6 @@ func writeCommandText(out io.Writer, value string) error {
 		return io.ErrShortWrite
 	}
 	return nil
-}
-
-type forwardSession struct {
-	ctx       context.Context
-	forwarder deliveryForwarder
-	target    string
-	printer   *printer.Printer
-	cache     replayCache
-	now       func() time.Time
-	rootHint  sync.Once
-}
-
-type deliveryForwarder interface {
-	Forward(context.Context, string, string, string, []byte, http.Header) (*http.Response, error)
-	DestinationURL(string, string) (*url.URL, error)
-}
-
-func newForwardSession(ctx context.Context, forwarder deliveryForwarder, target string, output *printer.Printer) *forwardSession {
-	return &forwardSession{
-		ctx:       ctx,
-		forwarder: forwarder,
-		target:    target,
-		printer:   output,
-		now:       time.Now,
-	}
-}
-
-func (s *forwardSession) Handle(delivery ws.Delivery) (ws.Response, error) {
-	s.cache.Store(delivery)
-	outcome, outputErr := s.forward(delivery, false)
-	if outcome.Failure != nil {
-		return ws.Response{
-			Status:    http.StatusBadGateway,
-			LatencyMS: latencyMilliseconds(outcome.Latency),
-		}, outputErr
-	}
-	return outcome.Response, outputErr
-}
-
-func (s *forwardSession) Replay() error {
-	delivery, ok := s.cache.Load()
-	if !ok {
-		return nil
-	}
-	_, err := s.forward(delivery, true)
-	return err
-}
-
-func (s *forwardSession) forward(delivery ws.Delivery, replay bool) (printer.ForwardOutcome, error) {
-	started := s.now()
-	response, err := s.forwarder.Forward(
-		s.ctx,
-		delivery.Method,
-		delivery.Path,
-		delivery.Query,
-		delivery.Body,
-		delivery.Headers,
-	)
-	if err != nil {
-		outcome := printer.ForwardOutcome{
-			Latency:   s.now().Sub(started),
-			Failure:   proxy.Failure(err),
-			TargetURL: s.target,
-			Replay:    replay,
-		}
-		return outcome, s.printer.PrintForward(delivery, outcome)
-	}
-	body, err := readLocalResponseBody(response.Body)
-	_ = response.Body.Close()
-	latency := s.now().Sub(started)
-	if errors.Is(err, errLocalResponseBodyTooLarge) {
-		return printer.ForwardOutcome{}, err
-	}
-	if err != nil {
-		outcome := printer.ForwardOutcome{
-			Latency:   latency,
-			Failure:   proxy.Failure(err),
-			TargetURL: s.target,
-			Replay:    replay,
-		}
-		return outcome, s.printer.PrintForward(delivery, outcome)
-	}
-
-	outcome := printer.ForwardOutcome{
-		Response: ws.Response{
-			Status:    response.StatusCode,
-			Headers:   response.Header.Clone(),
-			Body:      body,
-			LatencyMS: latencyMilliseconds(latency),
-		},
-		Latency:   latency,
-		TargetURL: s.target,
-		Replay:    replay,
-	}
-	if err := s.printer.PrintForward(delivery, outcome); err != nil {
-		return outcome, err
-	}
-	return outcome, s.printRootHint(delivery, response.StatusCode)
-}
-
-// A 404 or 405 at the bare --forward-to root usually means it lacks the app's webhook route.
-func (s *forwardSession) printRootHint(delivery ws.Delivery, status int) error {
-	if status != http.StatusNotFound && status != http.StatusMethodNotAllowed {
-		return nil
-	}
-	destination, err := s.forwarder.DestinationURL(delivery.Path, "")
-	if err != nil || destination.Path != "/" {
-		return nil
-	}
-	var printErr error
-	s.rootHint.Do(func() {
-		printErr = s.printer.PrintNotice(fmt.Sprintf(
-			"%s returned %d. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to %swebhooks\n",
-			destination, status, destination,
-		))
-	})
-	return printErr
-}
-
-func readLocalResponseBody(body io.Reader) ([]byte, error) {
-	contents, err := io.ReadAll(io.LimitReader(body, maxLocalResponseBodyBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(contents) > maxLocalResponseBodyBytes {
-		return nil, errLocalResponseBodyTooLarge
-	}
-	return contents, nil
-}
-
-func latencyMilliseconds(latency time.Duration) int64 {
-	if latency <= 0 {
-		return 0
-	}
-	rounded := latency.Round(time.Millisecond)
-	if rounded < time.Millisecond {
-		return 1
-	}
-	return rounded.Milliseconds()
-}
-
-type replayCache struct {
-	mu       sync.RWMutex
-	delivery *ws.Delivery
-}
-
-func (c *replayCache) Store(delivery ws.Delivery) {
-	copy := cloneDelivery(delivery)
-	c.mu.Lock()
-	c.delivery = &copy
-	c.mu.Unlock()
-}
-
-func (c *replayCache) Load() (ws.Delivery, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.delivery == nil {
-		return ws.Delivery{}, false
-	}
-	return cloneDelivery(*c.delivery), true
-}
-
-func cloneDelivery(delivery ws.Delivery) ws.Delivery {
-	delivery.Body = append([]byte(nil), delivery.Body...)
-	delivery.Headers = delivery.Headers.Clone()
-	return delivery
 }
 
 type replayInputSession struct {

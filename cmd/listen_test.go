@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -22,7 +21,6 @@ import (
 
 	"hookspot/internal/api"
 	"hookspot/internal/endpoint"
-	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
 )
@@ -169,8 +167,7 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 		"└─ Forwards to → http://localhost:3000/webhooks/orders (/webhooks/orders)\n" +
 		"\n" +
 		"Requests ──────────────────────────────────────\n" +
-		"\n" +
-		"Connecting…\n"
+		"\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
 	}
@@ -197,8 +194,7 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		"└ Output      → terminal\n" +
 		"\n" +
 		"Requests ──────────────────────────────────────\n" +
-		"\n" +
-		"Connecting…\n"
+		"\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
 	}
@@ -271,65 +267,6 @@ func TestSourceNamesByUID(t *testing.T) {
 	}
 }
 
-func TestReplayCacheDeepCopiesAndReplacesLatestDelivery(t *testing.T) {
-	var cache replayCache
-	first := ws.Delivery{
-		RequestUID: "req_1",
-		SourceUID:  "src_1",
-		Method:     http.MethodPost,
-		Path:       "/first",
-		Query:      "a=1",
-		Headers:    http.Header{"X-Test": []string{"original"}},
-		Body:       []byte("original"),
-	}
-	cache.Store(first)
-	first.Headers["X-Test"][0] = "mutated"
-	first.Body[0] = 'X'
-
-	cached, ok := cache.Load()
-	if !ok {
-		t.Fatal("cache is empty")
-	}
-	if got := cached.Headers.Get("X-Test"); got != "original" {
-		t.Fatalf("cached header = %q, want original", got)
-	}
-	if got := string(cached.Body); got != "original" {
-		t.Fatalf("cached body = %q, want original", got)
-	}
-
-	cached.Headers.Set("X-Test", "changed after load")
-	cached.Body[0] = 'Y'
-	again, _ := cache.Load()
-	if got := again.Headers.Get("X-Test"); got != "original" {
-		t.Fatalf("cache load shared header data: %q", got)
-	}
-	if got := string(again.Body); got != "original" {
-		t.Fatalf("cache load shared body data: %q", got)
-	}
-
-	cache.Store(ws.Delivery{RequestUID: "req_2", Path: "/second"})
-	latest, _ := cache.Load()
-	if latest.RequestUID != "req_2" || latest.Path != "/second" {
-		t.Fatalf("latest delivery = %#v, want req_2 /second", latest)
-	}
-}
-
-type forwardCall struct {
-	method  string
-	path    string
-	query   string
-	body    []byte
-	headers http.Header
-}
-
-type fakeForwarder struct {
-	calls    []forwardCall
-	status   int
-	body     string
-	response http.Header
-	err      error
-}
-
 type shortWriter struct{}
 
 func (shortWriter) Write(value []byte) (int, error) {
@@ -337,6 +274,11 @@ func (shortWriter) Write(value []byte) (int, error) {
 		return 0, nil
 	}
 	return len(value) - 1, nil
+}
+
+// plainNotices reports connection states in the plain wording.
+func plainNotices(out, errOut io.Writer, replay bool, requestsURL string) *connectionNotices {
+	return newConnectionNotices(printerSink{out: out, errOut: errOut, replay: replay, requestsURL: requestsURL}.Emit)
 }
 
 type scriptedWebSocketListener struct {
@@ -363,7 +305,7 @@ func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
 	}}
 	var stdout, stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(&stdout, &stderr, false, ""), listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), plainNotices(&stdout, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 3,
 	})
@@ -408,7 +350,7 @@ func TestSuperviseListenStopsWhenReconnectNoticeFails(t *testing.T) {
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")},
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not retry")},
 			}}
-			err := superviseListen(context.Background(), newConnectionNotices(io.Discard, test.writer, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+			err := superviseListen(context.Background(), plainNotices(io.Discard, test.writer, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("superviseListen error = %v, want %v", err, test.want)
 			}
@@ -427,7 +369,7 @@ func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 1,
 	})
@@ -450,7 +392,7 @@ func TestSuperviseListenEscapesReconnectErrorControls(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
 	if err == nil {
 		t.Fatal("superviseListen returned nil")
 	}
@@ -469,7 +411,7 @@ func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 10,
 	})
@@ -493,7 +435,7 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionNotFound {
 		t.Fatalf("error = %#v, want not-found session error", err)
@@ -518,7 +460,7 @@ func (s *scriptedSessions) Listen(context.Context, ws.Handler) error {
 
 func TestSuperviseListenPrintsReadyOnceAndTimesEachOutage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	notices := newConnectionNotices(&stdout, &stderr, true, "https://app.example.invalid/acme/payments/requests")
+	notices := plainNotices(&stdout, &stderr, true, "https://app.example.invalid/acme/payments/requests")
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	notices.now = func() time.Time { return now }
 	offline := &ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")}
@@ -782,167 +724,13 @@ func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
 		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("fatal protocol error printed reconnect notice: %q", stderr.String())
-	}
-}
-
-func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
-	f.calls = append(f.calls, forwardCall{
-		method:  method,
-		path:    path,
-		query:   query,
-		body:    append([]byte(nil), body...),
-		headers: headers.Clone(),
-	})
-	if f.err != nil {
-		return nil, f.err
-	}
-	return &http.Response{
-		StatusCode: f.status,
-		Header:     f.response.Clone(),
-		Body:       io.NopCloser(strings.NewReader(f.body)),
-	}, nil
-}
-
-func (f *fakeForwarder) DestinationURL(path, _ string) (*url.URL, error) {
-	return url.Parse("http://localhost:3000" + path)
-}
-
-func TestForwardSessionReplayIsLocalOnlyAndReusesRequestUID(t *testing.T) {
-	var output bytes.Buffer
-	p := printer.New(&output, printer.Options{
-		Sources: map[string]string{"src_1": "stripe"},
-	})
-	forwarder := &fakeForwarder{
-		status:   http.StatusOK,
-		body:     "ok",
-		response: http.Header{"Content-Type": []string{"text/plain"}},
-	}
-	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
-	times := []time.Time{
-		time.Unix(0, 0), time.Unix(0, int64(3*time.Millisecond)),
-		time.Unix(0, int64(10*time.Millisecond)), time.Unix(0, int64(14*time.Millisecond)),
-	}
-	session.now = func() time.Time {
-		value := times[0]
-		times = times[1:]
-		return value
-	}
-
-	delivery := ws.Delivery{
-		AttemptUID: "att_1",
-		RequestUID: "req_1",
-		SourceUID:  "src_1",
-		Method:     http.MethodPut,
-		Path:       "/api/webhooks",
-		Query:      "a=1",
-		Headers:    http.Header{"X-Test": []string{"original"}},
-		Body:       []byte(`{"type":"created"}`),
-	}
-	upstream, err := session.Handle(delivery)
-	if err != nil || upstream.Status != http.StatusOK {
-		t.Fatalf("Handle response = %#v, %v", upstream, err)
-	}
-	if upstream.LatencyMS != 3 {
-		t.Fatalf("upstream latency_ms = %d, want 3", upstream.LatencyMS)
-	}
-	delivery.Body[0] = 'X'
-	delivery.Headers.Set("X-Test", "mutated")
-	session.Replay()
-
-	if len(forwarder.calls) != 2 {
-		t.Fatalf("local forward count = %d, want 2", len(forwarder.calls))
-	}
-	if got := string(forwarder.calls[1].body); got != `{"type":"created"}` {
-		t.Fatalf("replay body = %q, want original", got)
-	}
-	if got := forwarder.calls[1].headers.Get("X-Test"); got != "original" {
-		t.Fatalf("replay header = %q, want original", got)
-	}
-	if got := output.String(); !strings.Contains(got, "id req_1  replay  created") {
-		t.Fatalf("replay output did not reuse request id or show tag:\n%s", got)
-	}
-	if strings.Contains(output.String(), "att_1") {
-		t.Fatal("attempt ID exposed in replay output")
-	}
-}
-
-func TestForwardSessionReturnsUpstream502ForTransportFailure(t *testing.T) {
-	var output bytes.Buffer
-	p := printer.New(&output, printer.Options{
-		Sources: map[string]string{"src_1": "stripe"},
-	})
-	forwarder := &fakeForwarder{err: errors.New("network unavailable")}
-	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
-	times := []time.Time{time.Unix(0, 0), time.Unix(0, int64(7*time.Millisecond))}
-	session.now = func() time.Time {
-		value := times[0]
-		times = times[1:]
-		return value
-	}
-
-	response, err := session.Handle(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Path: "/hook"})
-	if err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if response.Status != http.StatusBadGateway {
-		t.Fatalf("status = %d, want 502 upstream", response.Status)
-	}
-	if response.LatencyMS != 7 {
-		t.Fatalf("latency_ms = %d, want 7", response.LatencyMS)
-	}
-	if strings.Contains(output.String(), "502") {
-		t.Fatalf("transport failure displayed as 502:\n%s", output.String())
-	}
-	if !strings.Contains(output.String(), "✗ transport error") {
-		t.Fatalf("transport category missing:\n%s", output.String())
-	}
-}
-
-func TestForwardSessionPreservesCompletedRedirectWhenDisplayFails(t *testing.T) {
-	wantErr := errors.New("output unavailable")
-	p := printer.New(failingWriter{err: wantErr}, printer.Options{})
-	forwarder := &fakeForwarder{
-		status:   http.StatusTemporaryRedirect,
-		body:     "redirect response",
-		response: http.Header{"Location": []string{"/next"}},
-	}
-	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
-	session.now = func() time.Time { return time.Unix(0, 0) }
-
-	response, err := session.Handle(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Path: "/hook"})
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Handle error = %v, want display failure", err)
-	}
-	if response.Status != http.StatusTemporaryRedirect || response.Headers.Get("Location") != "/next" || string(response.Body) != "redirect response" {
-		t.Fatalf("completed response changed after display failure: %#v", response)
-	}
-}
-
-func TestForwardSessionRejectsOversizedResponseWithoutAcknowledgement(t *testing.T) {
-	var output bytes.Buffer
-	p := printer.New(&output, printer.Options{})
-	forwarder := &fakeForwarder{
-		status: http.StatusOK,
-		body:   strings.Repeat("x", 16*1024*1024+1),
-	}
-	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
-
-	response, err := session.Handle(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Path: "/hook"})
-	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") {
-		t.Fatalf("Handle error = %v, want response limit error", err)
-	}
-	if response.Status != 0 {
-		t.Fatalf("response status = %d, want no acknowledgement", response.Status)
-	}
-	if strings.Contains(output.String(), strings.Repeat("x", 64)) {
-		t.Fatal("oversized local response was printed")
 	}
 }
 
@@ -1008,42 +796,6 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 			}
 			if strings.Contains(result.stdout, "returned 404") {
 				t.Fatalf("root hint printed on stdout:\n%s", result.stdout)
-			}
-		})
-	}
-}
-
-func TestForwardSessionRootHintOnlyForRootNotFoundOrNotAllowed(t *testing.T) {
-	tests := []struct {
-		name   string
-		base   string
-		path   string
-		status int
-		want   bool
-	}{
-		{name: "root 405", path: "/", status: http.StatusMethodNotAllowed, want: true},
-		{name: "root 500", path: "/", status: http.StatusInternalServerError},
-		{name: "non-root path", path: "/hooks", status: http.StatusNotFound},
-		{name: "root under base path", base: "/webhooks", path: "/", status: http.StatusNotFound},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(test.status)
-			}))
-			defer local.Close()
-			forwarder, err := proxy.New(local.URL + test.base)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var stdout, stderr bytes.Buffer
-			session := newForwardSession(context.Background(), forwarder, forwarder.String(), printer.New(&stdout, printer.Options{Notices: &stderr}))
-
-			if _, err := session.Handle(ws.Delivery{RequestUID: "req_1", Method: http.MethodPost, Path: test.path}); err != nil {
-				t.Fatal(err)
-			}
-			if got := strings.Contains(stderr.String(), "include it in --forward-to"); got != test.want {
-				t.Fatalf("root hint = %v, want %v; stderr %q", got, test.want, stderr.String())
 			}
 		})
 	}
@@ -1173,34 +925,4 @@ func (r *gatedReplayReader) readCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.reads
-}
-
-func TestForwardSessionReplayReturnsDisplayFailure(t *testing.T) {
-	wantErr := errors.New("output unavailable")
-	p := printer.New(failingWriter{err: wantErr}, printer.Options{})
-	forwarder := &fakeForwarder{status: http.StatusOK, body: "ok"}
-	session := newForwardSession(context.Background(), forwarder, "http://localhost:3000", p)
-	session.cache.Store(ws.Delivery{RequestUID: "req_1", SourceUID: "src_1", Method: http.MethodPost, Path: "/hook"})
-	if err := session.Replay(); !errors.Is(err, wantErr) {
-		t.Fatalf("Replay error = %v, want display failure", err)
-	}
-}
-
-func TestLatencyMilliseconds(t *testing.T) {
-	tests := []struct {
-		latency time.Duration
-		want    int64
-	}{
-		{latency: 0, want: 0},
-		{latency: -time.Millisecond, want: 0},
-		{latency: 100 * time.Microsecond, want: 1},
-		{latency: 38*time.Millisecond + 400*time.Microsecond, want: 38},
-		{latency: 38*time.Millisecond + 600*time.Microsecond, want: 39},
-	}
-
-	for _, test := range tests {
-		if got := latencyMilliseconds(test.latency); got != test.want {
-			t.Errorf("latencyMilliseconds(%s) = %d, want %d", test.latency, got, test.want)
-		}
-	}
 }
