@@ -292,32 +292,56 @@ func TestRunBrowserLoginRejectsUnsupportedServer(t *testing.T) {
 }
 
 func TestRunBrowserLoginRejectsExpiredAttempt(t *testing.T) {
-	loginAPI := &fakeLoginAPI{
-		start: func(context.Context, string) (*api.LoginAttempt, error) {
-			return instantLoginAttempt(), nil
+	for _, tc := range []struct {
+		name      string
+		expiresIn int
+		poll      func(context.Context, string) (*api.LoginResult, error)
+	}{
+		{
+			name:      "server expired",
+			expiresIn: 600,
+			poll: func(context.Context, string) (*api.LoginResult, error) {
+				return nil, &api.Error{StatusCode: http.StatusNotFound, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+			},
 		},
-		poll: func(context.Context, string) (*api.LoginResult, error) {
-			return nil, &api.Error{StatusCode: http.StatusNotFound, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+		{
+			name:      "local deadline",
+			expiresIn: 1,
+			poll: func(context.Context, string) (*api.LoginResult, error) {
+				return &api.LoginResult{Status: "pending"}, nil
+			},
 		},
-	}
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loginAPI := &fakeLoginAPI{
+				start: func(context.Context, string) (*api.LoginAttempt, error) {
+					attempt := instantLoginAttempt()
+					attempt.ExpiresIn = tc.expiresIn
+					return attempt, nil
+				},
+				poll: tc.poll,
+			}
 
-	err := runBrowserLogin(context.Background(), browserLoginDeps{
-		api:          loginAPI,
-		endpoint:     loginTestEndpoint(t),
-		openBrowser:  func(string) error { return nil },
-		store:        &fakeLoginStore{},
-		pollInterval: time.Millisecond,
-		out:          io.Discard,
-	})
-	if err == nil {
-		t.Fatal("runBrowserLogin accepted an expired attempt")
-	}
-	message, hint := fatalErrorMessage(err)
-	if message != "login attempt expired" {
-		t.Fatalf("message = %q", message)
-	}
-	if hint != "Run 'hookspot login' again." {
-		t.Fatalf("hint = %q", hint)
+			err := runBrowserLogin(context.Background(), browserLoginDeps{
+				api:          loginAPI,
+				endpoint:     loginTestEndpoint(t),
+				openBrowser:  func(string) error { return nil },
+				store:        &fakeLoginStore{},
+				pollInterval: 10 * time.Millisecond,
+				out:          io.Discard,
+			})
+			if err == nil {
+				t.Fatal("runBrowserLogin accepted an expired attempt")
+			}
+			var stderr bytes.Buffer
+			if code := HandleError(&stderr, err); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			want := "login attempt expired\n\nRun 'hookspot login' again. If you just created your account, run 'hookspot login' again.\n"
+			if stderr.String() != want {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), want)
+			}
+		})
 	}
 }
 
