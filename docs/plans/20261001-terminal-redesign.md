@@ -581,6 +581,37 @@
 - [x] move this plan to `docs/plans/completed/`
 - ⚠️ the README also documents replay and copy as cURL, which the keys and commands rely on; the prerequisite's `listen` messages (`Ready`, reconnect, forwarding hints) stay with its own Task 11
 
+### Task 19: End-to-end terminal tests
+➕ Added after Task 18 at the user's request. Pipe-based subprocess tests can't reach mode selection, raw-mode keys, signals, terminal restore or resize, so these tests drive the real command in a pseudo-terminal. They cover only what needs a real terminal: when one fully covers an older test's assertion, the older test is deleted.
+
+**Files:**
+- Modify: `go.mod`, `go.sum`
+- Create: `cmd/terminal_test.go` (plus helpers as needed)
+- Modify: `.gitattributes`
+- Modify: `.github/workflows/ci.yml`
+
+- [ ] PTY harness:
+  - run the command on a pseudo-terminal (`charmbracelet/x/xpty` or `creack/pty`, pinned), re-executing the test binary as `runCommandProcess` does;
+  - give each run a fixed size, `TERM=xterm-256color`, `TZ=UTC`, a temporary `HOME`, and the existing fake API and websocket servers;
+  - rebuild the screen with a virtual terminal (`charmbracelet/x/vt` or `hinshun/vt10x`);
+  - wait on screen conditions with a timeout, never sleep.
+- [ ] mode selection:
+  - stdin and stdout both terminals → alt screen and request list;
+  - `--stream` → status line and `›` prompt;
+  - non-terminal stdin with a terminal stdout → status line, no prompt;
+  - piped stdout → no escape sequences;
+  - `NO_COLOR` in a terminal → no color SGR.
+- [ ] full-screen journey: a delivery renders its row; `q` exits 0, leaves the alt screen and restores the terminal mode (termios before = after)
+- [ ] Ctrl-C in raw mode: the first stops gracefully (same exit status as a single SIGINT today) and the second exits 130; the terminal is restored after both
+- [ ] layout:
+  - a resize (`Setsize`, SIGWINCH) reflows the full-screen view and the stream status line;
+  - a 60-column terminal stays usable;
+  - wide characters, emoji and control characters in delivery data keep every screen line within the width and leak no escape sequences.
+- [ ] project picker: `↓` then `↵` selects; `esc` and Ctrl-C cancel with exit 0; the terminal is restored
+- [ ] `.gitattributes`: `*.golden -text`, so a Windows checkout can't rewrite goldens
+- [ ] CI: a job runs the terminal tests natively on `macos-latest` and `windows-latest` with the pinned Go version (Ubuntu runs them in `make test`). Windows cases ConPTY can't support are skipped with the reason and a ⚠️ note here.
+- [ ] run `make test` and `make vet` - must pass
+
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
 
