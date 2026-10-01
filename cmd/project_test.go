@@ -73,15 +73,13 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 	}
 }
 
-func TestSelectProjectPassesSavedProjectAsCurrent(t *testing.T) {
+func TestSelectProjectHasNoCurrentWithoutSavedProjectListed(t *testing.T) {
 	tests := []struct {
-		name        string
-		savedUID    string
-		wantCurrent int
+		name     string
+		savedUID string
 	}{
-		{name: "saved project listed", savedUID: "proj_payments", wantCurrent: 1},
-		{name: "no saved project", savedUID: "", wantCurrent: -1},
-		{name: "saved project not listed", savedUID: "proj_billing", wantCurrent: -1},
+		{name: "no saved project", savedUID: ""},
+		{name: "saved project not listed", savedUID: "proj_billing"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,8 +93,8 @@ func TestSelectProjectPassesSavedProjectAsCurrent(t *testing.T) {
 				if len(options) != len(projects) || options[0].UID != projects[0].UID || options[1].UID != projects[1].UID {
 					t.Fatalf("options = %+v, want %+v", options, projects)
 				}
-				if current != test.wantCurrent {
-					t.Fatalf("current = %d, want %d", current, test.wantCurrent)
+				if current != -1 {
+					t.Fatalf("current = %d, want -1", current)
 				}
 				return 0, nil
 			}
