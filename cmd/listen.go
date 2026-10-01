@@ -147,15 +147,15 @@ var listenCmd = &cobra.Command{
 			}
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Replayer: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil}
+			stream := tui.Stream{Replayer: sess, Exporter: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
 
 		sess := session.New(listenContext, sources, local, writer)
-		commandsEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
+		commandsEnabled := isTerminalReader(cmd.InOrStdin())
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
-			hints = append(lineCommandHints, hints...)
+			hints = append(lineCommandHints(forwarder != nil), hints...)
 		}
 		if err := writer.Banner(projectName, routes, hints); err != nil {
 			return err
@@ -163,7 +163,7 @@ var listenCmd = &cobra.Command{
 		var commands *lineCommandReader
 		if commandsEnabled {
 			commands = startLineCommands(listenContext, cmd.InOrStdin(), func(line string) error {
-				return runLineCommand(sess, writer, line)
+				return runLineCommand(sess, writer, forwarder != nil, line)
 			}, stopListening)
 		}
 		listenErr := listen(sess)
@@ -430,28 +430,55 @@ func runningInContainer() bool {
 	return docker == nil || podman == nil
 }
 
-// lineCommandHints name the stream's line commands.
-var lineCommandHints = []string{"↵ replay last", "r N replay #N"}
+// lineCommandHints name the stream's line commands; without --forward-to
+// nothing replays.
+func lineCommandHints(forwarding bool) []string {
+	hints := []string{"c N copy as cURL", "e N export fixture"}
+	if forwarding {
+		hints = append([]string{"↵ replay last", "r N replay #N"}, hints...)
+	}
+	return hints
+}
 
 // runLineCommand runs one line typed into the stream: ↵ replays the last
-// request, r N replays #N, and anything else gets the command list.
-func runLineCommand(sess *session.Session, writer *cards.Writer, line string) error {
+// request, r N replays #N, c N prints #N as a cURL command, e N exports it as
+// a fixture, and anything else gets the command list.
+func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
-		return sess.ReplayLast()
+		return replyToReplay(writer, sess.ReplayLast())
 	}
-	if len(fields) == 2 && fields[0] == "r" {
+	if len(fields) == 2 {
 		if number, err := strconv.Atoi(fields[1]); err == nil {
-			err = sess.Replay(number)
-			// A number this run never reached or already dropped is a typo, not
-			// a reason to stop listening.
-			if errors.Is(err, session.ErrUnknown) || errors.Is(err, session.ErrEvicted) {
-				return writer.Reply(err.Error())
+			switch fields[0] {
+			case "r":
+				return replyToReplay(writer, sess.Replay(number))
+			case "c":
+				curl, err := sess.Curl(number, !showSensitiveHeaders)
+				if err != nil {
+					return writer.Reply(err.Error())
+				}
+				return writer.Print(cards.CurlNotes(number, curl, false) + "\n" + curl.Shown)
+			case "e":
+				fixture, err := sess.ExportFixture(number, !showSensitiveHeaders)
+				if err != nil {
+					return writer.Reply(err.Error())
+				}
+				return writer.Reply(cards.Exported(number, fixture))
 			}
-			return err
 		}
 	}
-	return writer.Reply("commands: " + strings.Join(lineCommandHints, " · "))
+	return writer.Reply("commands: " + strings.Join(lineCommandHints(forwarding), " · "))
+}
+
+// replyToReplay answers a replay this run can't make: a number it never
+// reached or already dropped is a typo, and inspect mode has nothing to replay
+// to. Neither is a reason to stop listening.
+func replyToReplay(writer *cards.Writer, err error) error {
+	if errors.Is(err, session.ErrUnknown) || errors.Is(err, session.ErrEvicted) || errors.Is(err, session.ErrNoTarget) {
+		return writer.Reply(err.Error())
+	}
+	return err
 }
 
 // lineCommandReader feeds the lines typed into the stream to its commands.

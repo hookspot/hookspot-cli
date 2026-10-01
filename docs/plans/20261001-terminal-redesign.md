@@ -426,16 +426,20 @@
 - Modify: `internal/tui/stream.go`
 - Modify: `internal/cards/writer.go`
 
-- [ ] `session.Curl(entry, redact)` and `session.ExportFixture(entry, redact)` per Technical Details; file names validated
-- [ ] `c N` copies the full command with `tea.SetClipboard` and shows the redacted, sanitized command (plain mode prints it); `e N` shows the written paths and whether headers were redacted
-- [ ] write tests:
+- [x] `session.Curl(entry, redact)` and `session.ExportFixture(entry, redact)` per Technical Details; file names validated
+- [x] `c N` copies the full command with `tea.SetClipboard` and shows the redacted, sanitized command (plain mode prints it); `e N` shows the written paths and whether headers were redacted
+- [x] write tests:
   - running the full curl against `httptest` reproduces method, path, query, headers and body, including the binary `@file` path (skip when `curl` is missing);
   - quotes and newlines stay inline; bodies with NUL or ESC, and headers with control characters, go to `@` files with absolute paths, and the pasted command works from another directory;
   - redaction in the displayed command and the fixture, and none with `--show-sensitive-headers`;
   - a traversal `request_uid` falls back to `entry-<N>`;
   - an unwritable directory is reported;
   - inspect mode targets the public URL.
-- [ ] run tests - must pass before next task
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 12–14: `Session.Curl(n, redact)` returns `session.Curl{Command, Shown, Redacted, HeadersFile, Resend}` (`Command` for the clipboard, `Shown` to display); `Session.ExportFixture(n, redact)` returns `session.Fixture{JSON, Body, Redacted}`; `tui.Exporter` and `Stream.Exporter`/`ShowSensitiveHeaders`; `cards.CurlNotes` and `cards.Exported` word the results; `Writer.Print` is a reply that keeps its lines. `session.SensitiveHeader` replaces the list in `cards`, and `proxy.Headers` (what `Forward` sends) picks the curl headers
+- ⚠️ both take an entry number, since inspect mode needs the session's sources for the public URL. The command puts each argument on its own ` \` line; an empty header is passed as `Name;` (curl drops `Name:`), a body starting with `@` goes to the `.body` file (curl would read it as a file name), and a method or URL with control characters is refused. Every fixture file, not just `.headers`, is written `0600`, since requests carry credentials and personal data
+- ⚠️ in the stream, `c N` prints the shown command above the status line, so it stays in scrollback where OSC 52 is missing, and its notes are the reply; plain mode prints notes and command to stderr like other replies. The prompt's hints are unchanged (with `c` and `e` they wouldn't fit at 80 columns); `?` and the one-line help name every command
+- ⚠️ plain line commands now start in inspect mode too: `c` and `e` work there, and `↵` and `r N` answer `nothing to replay without --forward-to` and are left out of the hints
 
 ### Task 11: Test event and first-run hint
 

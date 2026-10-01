@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -346,11 +349,12 @@ func TestStreamCommands(t *testing.T) {
 		{name: "replay a number", replay: forwarding, line: " r  2 ", replays: true},
 		{name: "evicted", replay: forwarding, line: "r 1", want: "#1: request dropped from history"},
 		{name: "missing", replay: forwarding, line: "r 9", want: "#9: no such request"},
-		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · ? help"},
-		{name: "help", replay: forwarding, line: "?", want: "↵       replay the last request\nr N     replay request #N\nctrl-c  stop listening"},
+		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · ? help"},
+		{name: "help", replay: forwarding, line: "?", want: "↵       replay the last request\nr N     replay request #N\nc N     copy request #N as cURL\ne N     export request #N as a fixture\nctrl-c  stop listening"},
 		{name: "inspect replay last", replay: inspecting, line: "", want: "nothing to replay without --forward-to"},
 		{name: "inspect replay", replay: inspecting, line: "r 1", want: "nothing to replay without --forward-to"},
-		{name: "inspect help", replay: inspecting, line: "?", want: "replays need --forward-to\nctrl-c  stop listening"},
+		{name: "inspect typo", replay: inspecting, line: "c", want: "commands: c N copy as cURL · e N export fixture · ? help"},
+		{name: "inspect help", replay: inspecting, line: "?", want: "c N     copy request #N as cURL\ne N     export request #N as a fixture\nreplays need --forward-to\nctrl-c  stop listening"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -379,6 +383,78 @@ func TestStreamCommands(t *testing.T) {
 		}
 		golden.RequireEqual(t, view(model))
 	})
+}
+
+func TestStreamCopiesAndExports(t *testing.T) {
+	t.Chdir(t.TempDir())
+	fixtures, err := filepath.Abs("hookspot-fixtures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := session.New(context.Background(), sources, forwarder{}, discard{})
+	d := delivery(1, "/hooks")
+	d.RequestUID = "req_1"
+	d.Headers = http.Header{"Authorization": []string{"Bearer secret"}}
+	d.Body = []byte("a\r\nb")
+	if _, err := sess.Handle(d); err != nil {
+		t.Fatal(err)
+	}
+	full, err := sess.Curl(1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redacted, err := sess.Curl(1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied := "copied #1 as cURL\ncopying needs a terminal with OSC 52 (Terminal.app has none)"
+
+	for _, test := range []struct {
+		name  string
+		show  bool
+		reply string
+		shown string
+	}{
+		{name: "redacted", reply: copied + "\nsensitive headers are hidden; --show-sensitive-headers shows the full command", shown: redacted.Shown},
+		{name: "--show-sensitive-headers", show: true, reply: copied, shown: full.Command},
+	} {
+		t.Run("copy "+test.name, func(t *testing.T) {
+			model := tea.Model(Stream{Replayer: sess, Exporter: sess, Forwarding: true, Prompt: true, ShowSensitiveHeaders: test.show})
+			for _, r := range "c 1" {
+				model, _ = model.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+			}
+			model, cmd := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			model, cmd = model.Update(cmd())
+			if got := model.(Stream).reply; got != test.reply {
+				t.Errorf("reply = %q, want %q", got, test.reply)
+			}
+			var got []tea.Msg
+			for _, cmd := range cmd().(tea.BatchMsg) {
+				got = append(got, cmd())
+			}
+			// The full command goes to the clipboard; the shown one prints
+			// with its control characters escaped.
+			want := []tea.Msg{tea.SetClipboard(full.Command)(), tea.Println(cards.Sanitize(test.shown))()}
+			if !reflect.DeepEqual(got, want) || !strings.Contains(fmt.Sprint(got[1]), `a\r`) {
+				t.Errorf("commands = %q, want %q", got, want)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name, line, want string
+	}{
+		{name: "export", line: "e 1", want: "exported #1 to " + filepath.Join(fixtures, "req_1.json") + " and " + filepath.Join(fixtures, "req_1.body") + " · sensitive headers redacted"},
+		{name: "copy a missing number", line: "c 9", want: "#9: no such request"},
+		{name: "export a missing number", line: "e 9", want: "#9: no such request"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			model := typeLine(Stream{Replayer: sess, Exporter: sess, Forwarding: true, Prompt: true}, test.line)
+			if got := model.(Stream).reply; got != test.want {
+				t.Errorf("reply = %q, want %q", got, test.want)
+			}
+		})
+	}
 }
 
 // countingReplayer counts successful replays.
