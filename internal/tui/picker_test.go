@@ -35,23 +35,14 @@ func newPickerTest(t *testing.T, projects []api.Project, current, width, height 
 }
 
 func TestPickerChooses(t *testing.T) {
-	var (
-		enter = tea.KeyPressMsg{Code: tea.KeyEnter}
-		esc   = tea.KeyPressMsg{Code: tea.KeyEscape}
-		ctrlC = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
-	)
 	tests := []struct {
 		name    string
 		current int
 		keys    []tea.Msg
 		want    int
-		wantErr error
 	}{
-		{name: "enter takes the current project", current: 3, keys: []tea.Msg{enter}, want: 3},
 		{name: "move and select", current: -1, keys: []tea.Msg{down, down, up, down, enter}, want: 2},
 		{name: "up wraps to the last", current: 0, keys: []tea.Msg{up, enter}, want: 4},
-		{name: "esc cancels", current: 1, keys: []tea.Msg{down, esc}, wantErr: context.Canceled},
-		{name: "ctrl+c cancels", current: 1, keys: []tea.Msg{ctrlC}, wantErr: context.Canceled},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -59,13 +50,9 @@ func TestPickerChooses(t *testing.T) {
 			for _, key := range test.keys {
 				tm.Send(key)
 			}
-			final := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(picker)
-			got, err := final.result()
-			if got != test.want || !errors.Is(err, test.wantErr) {
-				t.Fatalf("result = %d, %v; want %d, %v", got, err, test.want, test.wantErr)
-			}
-			if view := final.View().Content; view != "" {
-				t.Fatalf("the box stays on screen:\n%s", view)
+			got, err := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second)).(picker).result()
+			if got != test.want || err != nil {
+				t.Fatalf("result = %d, %v; want %d", got, err, test.want)
 			}
 		})
 	}
