@@ -1,0 +1,24 @@
+● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 14ms
+● stripe   ● github   paused on #3 · f follows newest
+╭─ Requests ─────────────────────────────────────────────────────────────────────────────────── 3 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                                       STATUS   LATENCY       │
+│   1  14:02:01  stripe  POST    /hooks                                     200          7ms       │
+│   2  14:02:02  github  POST    /github                                    500         14ms       │
+│ › 3  14:02:03  stripe  POST    /hooks                                     refused        —       │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ #3 stripe · POST /hooks ──────────────────────────────────────────────────────────────── req_3 ─╮
+│ Overview   Request   Response   Timing                                                           │
+│ ━━━━━━━━                                                                                         │
+│  ✗ connection refused  21ms  → http://localhost:3000/hooks                                       │
+│ http://localhost:3000/hooks is not reachable — is your server running?                           │
+│                                                                                                  │
+│  r  replay now                                                                                   │
+│ ○ waiting for localhost:3000 · checking every 10ms · esc stops                                   │
+│                                                                                                  │
+│ source    stripe                                                                                 │
+│ route     payments → http://localhost:3000/hooks                                                 │
+│ … 5 more lines                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test  ? help  q quit

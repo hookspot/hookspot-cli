@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +77,11 @@ type Fullscreen struct {
 	// offset is the index of the list's first row.
 	offset int
 	tab    tab
+	// filter narrows the list. wait is w's: it dials the target every
+	// dialEvery, 1s unless a test sets it, until it answers, then replays.
+	filter    filter
+	wait      wait
+	dialEvery time.Duration
 	// notices are the source warnings, shown until a request arrives.
 	notices []string
 	hint    *session.TestHint
@@ -136,11 +140,18 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 	case copiedMsg:
 		m, expire := m.show(msg.notes)
 		return m, tea.Batch(tea.SetClipboard(msg.command), expire)
+	case dialedMsg:
+		return m.dialed(msg)
+	case waitReplayedMsg:
+		return m.waitReplayed(msg), nil
 	case toastExpiredMsg:
 		if int(msg) == m.toastID {
 			m.toast = ""
 		}
 	case tea.KeyPressMsg:
+		if m.filter.editing {
+			return m.editFilter(msg), nil
+		}
 		return m.key(msg)
 	}
 	return m, nil
@@ -168,6 +179,7 @@ func (m Fullscreen) record(r session.Recorded) (Fullscreen, tea.Cmd) {
 		m.offset -= dropped
 	}
 	m.entries = append(m.entries, r.Entry)
+	m.filter = m.filter.recorded(r, m.Listen)
 	m.totals = r.Totals
 	if r.Entry.RouteUID != "" {
 		if m.routes == nil {
@@ -244,30 +256,33 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		m.help = !m.help
 	case key.Matches(msg, keys.quit):
 		return m, Stop
+	case key.Matches(msg, filterKey):
+		m.filter.editing, m.filter.input = true, m.filter.text
+	case key.Matches(msg, waitKey):
+		return m.startWait(i)
+	case key.Matches(msg, escKey):
+		m = m.escape()
 	}
 	return m, nil
 }
 
 // move selects the request delta rows away and stops following the newest.
 func (m Fullscreen) move(delta int) Fullscreen {
-	if i := m.selectedIndex(); i >= 0 {
+	shown := m.shown()
+	if row := m.selectedRow(shown); row >= 0 {
 		m.paused = true
-		m.selected = m.entries[min(max(0, i+delta), len(m.entries)-1)].Number
+		m.selected = m.entries[shown[min(max(0, row+delta), len(shown)-1)]].Number
 	}
 	return m
 }
 
-// selectedIndex is the selected entry's index, -1 when there's none. An
-// evicted selection falls to the oldest entry.
+// selectedIndex is the selected entry's index, -1 when the list shows none.
 func (m Fullscreen) selectedIndex() int {
-	if len(m.entries) == 0 {
-		return -1
+	shown := m.shown()
+	if row := m.selectedRow(shown); row >= 0 {
+		return shown[row]
 	}
-	if !m.paused {
-		return len(m.entries) - 1
-	}
-	i := sort.Search(len(m.entries), func(i int) bool { return m.entries[i].Number >= m.selected })
-	return min(i, len(m.entries)-1)
+	return -1
 }
 
 // testSource is where t sends a test event: the selected request's source,
@@ -288,9 +303,10 @@ func (m Fullscreen) testSource() string {
 // the selection.
 func (m Fullscreen) firstRow() int {
 	rows := m.layout().rows
-	selected := max(0, m.selectedIndex())
+	shown := m.shown()
+	selected := max(0, m.selectedRow(shown))
 	first := min(max(m.offset, selected-rows+1), selected)
-	return max(0, min(first, len(m.entries)-rows))
+	return max(0, min(first, len(shown)-rows))
 }
 
 // layout is how the screen's lines and columns are shared.
@@ -307,8 +323,8 @@ type layout struct {
 func (m Fullscreen) layout() layout {
 	width, height := m.size()
 	l := layout{split: width >= splitWidth}
-	// The header and source line come first; toasts and keys last.
-	l.panes = max(0, height-2-len(m.toastLines(width))-len(m.footer(width)))
+	// The header, source line and filter come first; toasts and keys last.
+	l.panes = max(0, height-2-len(m.filterLines(width))-len(m.toastLines(width))-len(m.footer(width)))
 	if l.split {
 		l.listWidth, l.listHeight = listWidth, l.panes
 		l.detailWidth, l.detailHeight = width-listWidth-1, l.panes
@@ -333,6 +349,7 @@ func (m Fullscreen) View() tea.View {
 	width, height := m.size()
 	l := m.layout()
 	lines := []string{m.header(width), m.sourceLine()}
+	lines = append(lines, m.filterLines(width)...)
 	switch {
 	case len(m.entries) == 0:
 		empty := m.empty(width)
@@ -441,16 +458,16 @@ func (k keyMap) ShortHelp() []key.Binding {
 	if k.forwarding {
 		actions = append([]key.Binding{keys.replay}, actions...)
 	}
-	return slices.Concat([]key.Binding{keys.up, keys.left, keys.follow}, actions, []key.Binding{keys.help, keys.quit})
+	return slices.Concat([]key.Binding{keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{keys.help, keys.quit})
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	actions := []key.Binding{described(keys.copy, "copy as cURL"), described(keys.export, "export a fixture"), described(keys.test, "send a test event")}
 	if k.forwarding {
-		actions = append([]key.Binding{described(keys.replay, "replay locally")}, actions...)
+		actions = append([]key.Binding{described(keys.replay, "replay locally"), waitKey}, actions...)
 	}
 	return [][]key.Binding{
-		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), described(keys.follow, "follow the newest")},
+		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), described(keys.follow, "follow the newest"), described(filterKey, "filter the list")},
 		actions,
 		{described(keys.help, "close help"), described(keys.quit, "stop listening")},
 	}
@@ -474,8 +491,9 @@ func (m Fullscreen) list(width, height int) []string {
 	}
 	lines := []string{"  " + faintStyle.Render(render(columns, titles, nil))}
 	selected := m.selectedIndex()
-	start := min(m.offset, len(m.entries))
-	for i := start; i < min(len(m.entries), start+max(0, height-3)); i++ {
+	shown := m.shown()
+	start := min(m.offset, len(shown))
+	for _, i := range shown[start:min(len(shown), start+max(0, height-3))] {
 		texts, styles := make([]string, len(columns)), make([]lipgloss.Style, len(columns))
 		for j, c := range columns {
 			texts[j], styles[j] = c.value(m.entries[i])
@@ -486,7 +504,11 @@ func (m Fullscreen) list(width, height int) []string {
 			lines = append(lines, "  "+render(columns, texts, styles))
 		}
 	}
-	return panel("Requests", strconv.Itoa(len(m.entries)), width, height, lines)
+	if len(shown) == 0 {
+		lines = append(lines, "  "+faintStyle.Render("no request matches · esc clears the filter"))
+	}
+	title, count := m.listTitle(len(shown))
+	return panel(title, count, width, height, lines)
 }
 
 // column is one of the request list's columns.

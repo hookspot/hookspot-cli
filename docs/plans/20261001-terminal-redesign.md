@@ -494,11 +494,18 @@
 - Modify: `internal/tui/fullscreen.go`
 - Modify: `internal/tui/detail.go`
 
-- [ ] `/` filter: `status:error|2xx|4xx|5xx|<code>`, `source:<name>`, `path:<prefix>`, and free text across path and summary; `esc` clears; matches shown in the list title
-- [ ] failure detail: what happened, local target state, last success; `r` replays now
-- [ ] `w` dials the local target at an injectable interval until it answers or `esc`, then calls `Replay`; the result replaces the "waiting" line
-- [ ] write tests: filter parsing (unknown keys are plain text); combined terms; `w` with a fake listener that starts late; `esc` stops waiting
-- [ ] run tests - must pass before next task
+- [x] `/` filter: `status:error|2xx|4xx|5xx|<code>`, `source:<name>`, `path:<prefix>`, and free text across path and summary; `esc` clears; matches shown in the list title
+- [x] failure detail: what happened, local target state, last success; `r` replays now
+- [x] `w` dials the local target at an injectable interval until it answers or `esc`, then calls `Replay`; the result replaces the "waiting" line
+- [x] write tests: filter parsing (unknown keys are plain text); combined terms; `w` with a fake listener that starts late; `esc` stops waiting
+- [x] run tests - must pass before next task
+- ➕ `cards.Listen.Summary` is exported for the free-text match. The `w` workflow lives in `detail.go` beside the failure detail
+- ⚠️ the filter applies on `↵`, not as typed; `esc` clears it while typing or applied, and `/` reopens it with the applied text. Terms combine with AND. `status:error` follows the failed count (forwarded, no 2xx, so 3xx too), `status:Nxx` is a class and any other value a code; sources compare ignoring case, paths by prefix, free text ignoring case; a key with an empty value is text too. Matches are computed once per request (on apply and on arrival), since a summary decodes the body
+- ⚠️ a filter line under the source line shows the input with its keys, or the applied filter with its match count; the list title adds the filter and `N of M`. When nothing matches, the list says so and the detail is blank
+- ⚠️ the failure detail (the Overview of a forwarded request without a 2xx) puts what happened and the next steps right under the headline, so they show on short screens: the transport hint, or the redirect hint for a 3xx (the headline names any other status, and a replay's summary says what happened), then `r replay now` and, for transport failures, `w wait for <host:port>, then replay`. The `target` field gives the newest request's outcome and `last ok` the newest 2xx still listed
+- ⚠️ `w` pauses on the request so the wait stays in view. It dials the `--forward-to` host and port at once (1s timeout), then every `dialEvery` (1s); the waiting line becomes `↻ replayed as #N <outcome> <latency>` or the replay's error. On a request that got a response, `w` says `r` replays it. `esc` stops a wait before it clears the filter
+- ⚠️ the key line gained `/ filter`, which pushes `? help` and `q quit` past 80 columns (`bubbles/help` ends the line with `…`); `w` is in the full help only
+- ⚠️ the `w` tests drive the model and its Cmds directly, with a real TCP listener that starts after the first refused dial: the result follows `Replay`'s return, which teatest output can't time
 
 ### Task 14: Sources page
 
