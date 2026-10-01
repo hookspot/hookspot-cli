@@ -15,11 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/term"
 
+	"hookspot/internal/cards"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
 )
@@ -68,7 +68,7 @@ func New(out io.Writer, options Options) *Printer {
 
 	sourceLen := 0
 	for _, name := range options.Sources {
-		if n := utf8.RuneCountInString(singleLine(name)); n > sourceLen {
+		if n := utf8.RuneCountInString(cards.Line(name)); n > sourceLen {
 			sourceLen = n
 		}
 	}
@@ -120,9 +120,9 @@ func (p *Printer) renderInspect(d ws.Delivery) error {
 		"%s  %s  %s  %s  id %s\n",
 		p.timestamp(),
 		p.sourceToken(d.SourceUID),
-		singleLine(method(d)),
-		singleLine(d.Path),
-		singleLine(requestUID(d)),
+		cards.Line(method(d)),
+		cards.Line(d.Path),
+		cards.Line(requestUID(d)),
 	)
 
 	if d.Query != "" {
@@ -154,11 +154,11 @@ func (p *Printer) renderForward(d ws.Delivery, outcome ForwardOutcome) error {
 		"%s  %s  %s  %s  →  %s  %s  id %s",
 		p.timestamp(),
 		p.sourceToken(d.SourceUID),
-		singleLine(method(d)),
-		singleLine(d.Path),
+		cards.Line(method(d)),
+		cards.Line(d.Path),
 		status,
 		formatLatency(outcome.Latency),
-		singleLine(requestUID(d)),
+		cards.Line(requestUID(d)),
 	)
 	if outcome.Replay {
 		output.WriteString("  replay")
@@ -227,7 +227,7 @@ func (p *Printer) renderHeaders(output *strings.Builder, headers http.Header) {
 			prefix = "├─ headers     "
 		}
 		value := p.headerValue(key, headers[key])
-		fmt.Fprintf(output, "%s%s: %s\n", prefix, strings.ToLower(singleLine(key)), value)
+		fmt.Fprintf(output, "%s%s: %s\n", prefix, strings.ToLower(cards.Line(key)), value)
 	}
 	if omitted := len(keys) - visible; omitted > 0 {
 		fmt.Fprintf(output, "│              … (%d headers omitted)\n", omitted)
@@ -240,7 +240,7 @@ func (p *Printer) headerValue(key string, values []string) string {
 	}
 	parts := make([]string, len(values))
 	for i, value := range values {
-		parts[i] = p.value(singleLine(value))
+		parts[i] = p.value(cards.Line(value))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -252,7 +252,7 @@ func (p *Printer) renderInspectBody(output *strings.Builder, body []byte, header
 	}
 
 	mimeType := bodyMIME(headers, body)
-	fmt.Fprintf(output, "└─ body        %s · %s\n", singleLine(mimeType), formatBytes(len(body)))
+	fmt.Fprintf(output, "└─ body        %s · %s\n", cards.Line(mimeType), formatBytes(len(body)))
 	lines, textual := bodyLines(body, mimeType)
 	if !textual {
 		return
@@ -274,7 +274,7 @@ func (p *Printer) renderForwardBody(output *strings.Builder, label string, last 
 	}
 
 	mimeType := bodyMIME(headers, body)
-	fmt.Fprintf(output, "%s %-11s %s · %s\n", branch, label, singleLine(mimeType), formatBytes(len(body)))
+	fmt.Fprintf(output, "%s %-11s %s · %s\n", branch, label, cards.Line(mimeType), formatBytes(len(body)))
 	lines, textual := bodyLines(body, mimeType)
 	if !textual {
 		return
@@ -289,7 +289,7 @@ func (p *Printer) renderBodyLines(output *strings.Builder, lines []string, prefi
 	}
 
 	for _, line := range lines[:visible] {
-		fmt.Fprintf(output, "%s%s\n", prefix, p.value(escapeText(line)))
+		fmt.Fprintf(output, "%s%s\n", prefix, p.value(cards.Sanitize(line)))
 	}
 	if omitted := len(lines) - visible; omitted > 0 {
 		fmt.Fprintf(output, "%s… (%d lines omitted)\n", prefix, omitted)
@@ -300,12 +300,12 @@ func (p *Printer) query(raw string) string {
 	parts := strings.Split(raw, "&")
 	for i, part := range parts {
 		key, value, found := strings.Cut(part, "=")
-		key = singleLine(key)
+		key = cards.Line(key)
 		if !found {
 			parts[i] = key
 			continue
 		}
-		parts[i] = key + "=" + p.value(singleLine(value))
+		parts[i] = key + "=" + p.value(cards.Line(value))
 	}
 	return strings.Join(parts, "&")
 }
@@ -316,7 +316,7 @@ func (p *Printer) summary(body []byte, headers http.Header) string {
 		for _, key := range []string{"type", "event", "event_type", "action"} {
 			var value string
 			if raw, ok := object[key]; ok && json.Unmarshal(raw, &value) == nil && value != "" {
-				return p.value(singleLine(value)) + " · " + formatBytes(len(body))
+				return p.value(cards.Line(value)) + " · " + formatBytes(len(body))
 			}
 		}
 	}
@@ -324,11 +324,11 @@ func (p *Printer) summary(body []byte, headers http.Header) string {
 	if len(body) == 0 {
 		return "(empty) · 0 B"
 	}
-	return singleLine(bodyMIME(headers, body)) + " · " + formatBytes(len(body))
+	return cards.Line(bodyMIME(headers, body)) + " · " + formatBytes(len(body))
 }
 
 func (p *Printer) transportHint(target string, failure *proxy.TransportFailure) string {
-	target = singleLine(target)
+	target = cards.Line(target)
 	switch failure.Kind {
 	case proxy.TransportConnectionRefused:
 		return target + " is not reachable — is your server running?"
@@ -345,7 +345,7 @@ func (p *Printer) transportHint(target string, failure *proxy.TransportFailure) 
 	default:
 		detail := "transport error"
 		if failure.Err != nil {
-			detail = p.value(singleLine(failure.Err.Error()))
+			detail = p.value(cards.Line(failure.Err.Error()))
 		}
 		return target + " failed: " + detail + " — check the target URL and server logs"
 	}
@@ -372,7 +372,7 @@ func (p *Printer) sourceToken(uid string) string {
 	if name == "" {
 		name = "unknown"
 	}
-	displayName := singleLine(name)
+	displayName := cards.Line(name)
 	padding := p.sourceLen - utf8.RuneCountInString(displayName)
 	if padding < 0 {
 		padding = 0
@@ -473,33 +473,6 @@ func textualMIME(mimeType string) bool {
 		strings.Contains(mimeType, "yaml") ||
 		mimeType == "application/x-www-form-urlencoded" ||
 		mimeType == "application/graphql"
-}
-
-func escapeText(value string) string {
-	var escaped strings.Builder
-	for _, r := range value {
-		switch {
-		case r == '\n' || r == '\t':
-			escaped.WriteRune(r)
-		case r == '\r':
-			escaped.WriteString("\\r")
-		case unicode.IsControl(r):
-			if r <= 0xff {
-				fmt.Fprintf(&escaped, "\\x%02x", r)
-			} else {
-				fmt.Fprintf(&escaped, "\\u%04x", r)
-			}
-		default:
-			escaped.WriteRune(r)
-		}
-	}
-	return escaped.String()
-}
-
-func singleLine(value string) string {
-	value = escapeText(value)
-	value = strings.ReplaceAll(value, "\n", "\\n")
-	return value
 }
 
 func method(d ws.Delivery) string {

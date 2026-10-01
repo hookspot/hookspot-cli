@@ -271,11 +271,14 @@
 - Create: `internal/cards/sanitize.go`
 - Create: `internal/cards/sanitize_test.go`
 
-- [ ] add `charm.land/lipgloss/v2` and `github.com/charmbracelet/x/exp/golden`, pinned (check the module paths). Each later Charm module is added in the task that first imports it (bubbletea and teatest in Task 8, bubbles in Task 12), so `make tidy` never drops one
-- [ ] `cards` palette: source colors by UID hash as today, status colors, badges; the width rule
-- [ ] move `escapeText`/`singleLine` from `internal/printer` into `cards.Sanitize`/`cards.Line`; `cards.Line` escapes `\t`
-- [ ] write tests: control characters (C0, C1, `\r`, `\t`), invalid UTF-8; port the escaping cases from `printer_test.go` and `errors_test.go`
-- [ ] run `make test` and `make vet` - must pass before next task
+- [x] add `charm.land/lipgloss/v2` and `github.com/charmbracelet/x/exp/golden`, pinned (check the module paths). Each later Charm module is added in the task that first imports it (bubbletea and teatest in Task 8, bubbles in Task 12), so `make tidy` never drops one
+- [x] `cards` palette: source colors by UID hash as today, status colors, badges; the width rule
+- [x] move `escapeText`/`singleLine` from `internal/printer` into `cards.Sanitize`/`cards.Line`; `cards.Line` escapes `\t`
+- [x] write tests: control characters (C0, C1, `\r`, `\t`), invalid UTF-8; port the escaping cases from `printer_test.go` and `errors_test.go`
+- [x] run `make test` and `make vet` - must pass before next task
+- ➕ `internal/cards/style_test.go` with `testdata/TestPalette.golden`: the color golden that pins the palette (it also keeps `golden` imported, so `make tidy` keeps it) and the width fallback
+- ⚠️ the palette uses the 16 ANSI colors (source colors keep today's codes and hash), not the canvas's hex values, so cards follow light and dark terminal themes
+- ⚠️ `printer` single-line fields now escape `\t` through `cards.Line`; any `singleLine`/`escapeText` call added to `printer` on another branch becomes `cards.Line`/`cards.Sanitize` at merge
 
 ### Task 5: Cards components for `listen`
 
