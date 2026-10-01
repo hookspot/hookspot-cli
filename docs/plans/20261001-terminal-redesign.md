@@ -446,11 +446,15 @@
 - Modify: `internal/tui/stream.go`
 - Modify: `internal/cards/writer.go`
 
-- [ ] `session.SendTest(ctx, source)` per Technical Details; badge every matching delivery
-- [ ] after `Ready` with no requests yet: a hint with `t` and the test curl
-- [ ] `t` with several sources and none named asks which one; `t <source>` works directly; a source this run isn't listening to is refused
-- [ ] write tests: request shape against a fake source URL; case-insensitive matching and a source with two routes; an unknown or unlistened source; a non-2xx from Hookspot is reported
-- [ ] run tests - must pass before next task
+- [x] `session.SendTest(ctx, source)` per Technical Details; badge every matching delivery
+- [x] after `Ready` with no requests yet: a hint with `t` and the test curl
+- [x] `t` with several sources and none named asks which one; `t <source>` works directly; a source this run isn't listening to is refused
+- [x] write tests: request shape against a fake source URL; case-insensitive matching and a source with two routes; an unknown or unlistened source; a non-2xx from Hookspot is reported
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 12–14: `Session.SendTest(name) (string, error)` returns the source's name; an empty name means the only source, else the error asks `test which source? t stripe · t github`; `ErrNotListening`; `session.TestCurl(publicURL)`; `Entry.Test`. `Session.Emit` follows `Ready` with a `session.TestHint{Sources}` event while history is empty, which `cards.TestHint(hint, commands)` renders. `Listen.Entry` follows a test delivery with `✓ path works: hookspot → this terminal`, plus `→ <target>` when the target answered. `tui.Tester` is `Stream.Tester`
+- ⚠️ `SendTest` takes no `ctx`: like `Replay`, it uses the session's listen context, so the stream needs none
+- ⚠️ the line commands live in `cmd/listen.go` (`runLineCommand`), not `cards/writer.go`, so `t` went there. They now start in inspect mode too. There `↵` and `r N` reply `nothing to replay without --forward-to` instead of ending listen, and `ReplayLast` returns `ErrNoTarget`
+- ⚠️ the hint's curl follows the canvas and carries no test id, so an event sent with it gets no `test` mark. Plain mode writes the hint to stderr and names `t` only when stdin takes commands (`Writer.Commands`). The terminal stream prints it above the status line and names `t` only with a prompt. A replay of a test delivery isn't marked
 
 ### Task 12: Full-screen listen: request list and detail
 

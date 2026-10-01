@@ -39,7 +39,7 @@ type Sink interface {
 }
 
 // Event is a Connecting, Ready, ConnectionLost, Reconnected, DisabledSource,
-// SkippedSource, RootNotFound or Recorded.
+// SkippedSource, RootNotFound, Recorded or TestHint.
 type Event interface{ event() }
 
 // Connecting precedes the first join.
@@ -110,6 +110,8 @@ type Session struct {
 	totals     stats
 	routes     map[string]*stats
 	rootHinted bool
+	// tests are the ids of the test events this run sent.
+	tests []string
 }
 
 // New starts a session; forwarder is nil in inspect mode.
@@ -126,17 +128,24 @@ func New(ctx context.Context, sources []api.Source, forwarder Forwarder, sink Si
 }
 
 // Emit sends a connection state or notice to the sink, in order with entries.
+// Ready is followed by a TestHint while no request has arrived.
 func (s *Session) Emit(event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.sink.Emit(event)
+	if err := s.sink.Emit(event); err != nil {
+		return err
+	}
+	if _, ready := event.(Ready); ready && s.history.last == 0 {
+		return s.sink.Emit(TestHint{Sources: s.sources})
+	}
+	return nil
 }
 
 // Handle is the websocket handler: it forwards the delivery, or only records
 // it in inspect mode, and returns Hookspot's response. A sink error comes with
 // the response, so a completed forward is still acknowledged.
 func (s *Session) Handle(delivery ws.Delivery) (ws.Response, error) {
-	entry := Entry{Delivery: cloneDelivery(delivery), Received: s.now()}
+	entry := Entry{Delivery: cloneDelivery(delivery), Received: s.now(), Test: s.sentTest(delivery)}
 	if route, ok := RouteFor(s.sources, delivery); ok {
 		entry.RouteUID = route.UID
 	}
@@ -180,6 +189,9 @@ func (s *Session) Replay(n int) error {
 
 // ReplayLast replays the newest entry; it does nothing before the first.
 func (s *Session) ReplayLast() error {
+	if s.forwarder == nil {
+		return ErrNoTarget
+	}
 	s.mu.Lock()
 	last := s.history.last
 	s.mu.Unlock()

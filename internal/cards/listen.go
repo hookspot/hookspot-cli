@@ -205,6 +205,48 @@ func RootNotFound(root string, status int) string {
 		". If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to " + root + "webhooks"
 }
 
+// TestHint offers a test event while no request has arrived: t when commands
+// is set, and each source's curl, which works from anywhere. The curls are
+// never cut, so they can be copied whole.
+func TestHint(hint session.TestHint, commands bool) string {
+	several := len(hint.Sources) > 1
+	lines := []string{"No requests yet. Check the whole path with a test event:", ""}
+	if commands {
+		keys := make([]string, len(hint.Sources))
+		keyWidth := 0
+		for i, source := range hint.Sources {
+			keys[i] = "t"
+			if several {
+				keys[i] += " " + Line(source.Name)
+			}
+			keys[i] = Badge(keys[i])
+			keyWidth = max(keyWidth, lipgloss.Width(keys[i]))
+		}
+		for i, source := range hint.Sources {
+			lines = append(lines, "  "+pad(keys[i], keyWidth)+"  send a test event to "+boldStyle.Render(Line(source.Name)))
+		}
+		lines = append(lines, "", faintStyle.Render("  or from anywhere:"))
+	}
+	for _, source := range hint.Sources {
+		curl := "  " + Line(session.TestCurl(source.URL))
+		if several {
+			curl += faintStyle.Render("  # " + Line(source.Name))
+		}
+		lines = append(lines, curl)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pathWorks follows a test event's delivery with the path it proved: through
+// to the local target when that answered.
+func pathWorks(r Request, width int) string {
+	path := "hookspot → this terminal"
+	if r.Target != "" && r.Failure == nil {
+		path += " → " + Line(r.Target)
+	}
+	return truncate(okStyle.Render("✓")+" path works: "+path, width)
+}
+
 // Limits caps what request cards print; zero means unlimited.
 type Limits struct {
 	MaxBodyLines  int

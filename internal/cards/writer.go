@@ -15,6 +15,9 @@ import (
 // states and requests on out; notices, connection trouble and command replies
 // on errOut. Each stream is colored only when it is a terminal.
 type Writer struct {
+	// Commands is set when stdin takes line commands, so the test hint names t.
+	Commands bool
+
 	listen      Listen
 	requestsURL string
 	out, errOut stream
@@ -62,6 +65,8 @@ func (w *Writer) Emit(event session.Event) error {
 		return w.write(w.errOut, SkippedSource(e.Name))
 	case session.RootNotFound:
 		return w.write(w.errOut, RootNotFound(e.Root, e.Status))
+	case session.TestHint:
+		return w.write(w.errOut, TestHint(e, w.Commands))
 	case session.Recorded:
 		return w.write(w.out, w.listen.Entry(e.Entry, Width(w.out.w)))
 	}
@@ -85,14 +90,21 @@ func (w *Writer) write(s stream, text string) error {
 	return err
 }
 
-// Entry renders a recorded entry as Request does.
+// Entry renders a recorded entry as Request does; a test event's delivery is
+// followed by the path it proved.
 func (l Listen) Entry(e session.Entry, width int) string {
-	return l.Request(request(e), width)
+	r := request(e)
+	text := l.Request(r, width)
+	if r.Test {
+		text += "\n" + pathWorks(r, width)
+	}
+	return text
 }
 
 func request(e session.Entry) Request {
 	return Request{
 		Number:   e.Number,
+		Test:     e.Test,
 		Delivery: e.Delivery,
 		Received: e.Received,
 		Target:   e.Target,

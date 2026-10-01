@@ -37,6 +37,8 @@ type Entry struct {
 	Received time.Time
 	// ReplayOf is the number of the entry this one replays; 0 for a delivery.
 	ReplayOf int
+	// Test is set on a delivery of a test event this run sent.
+	Test bool
 }
 
 // forwarded reports whether the entry went to a local target.

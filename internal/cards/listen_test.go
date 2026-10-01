@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/x/exp/golden"
 
+	"hookspot/internal/api"
 	"hookspot/internal/proxy"
 	"hookspot/internal/session"
 	"hookspot/internal/ws"
@@ -127,6 +128,37 @@ func TestConnectionStatesAndNoticesKeepPlainWording(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTestEvent(t *testing.T) {
+	t.Run("hint", func(t *testing.T) {
+		stripe := api.Source{Name: "stripe", URL: "https://in.hookspot.test/src_stripe"}
+		evil := api.Source{Name: "evil\x1b[31m", URL: "https://in.hookspot.test/it's\n\x1b[2J"}
+		both := session.TestHint{Sources: []api.Source{stripe, evil}}
+		golden.RequireEqual(t, noColor(t, joinCards(
+			TestHint(session.TestHint{Sources: []api.Source{stripe}}, true),
+			TestHint(both, true),
+			TestHint(both, false),
+		)))
+	})
+	t.Run("entries", func(t *testing.T) {
+		entry := func(r Request) session.Entry {
+			return session.Entry{Number: r.Number, Delivery: r.Delivery, Received: r.Received, Target: r.Target, Response: r.Response, Latency: r.Latency, Failure: r.Failure, Test: true}
+		}
+		d := testDelivery()
+		d.Body = []byte(`{"type":"hookspot.test","sent_at":"2026-07-12T12:34:56Z"}`)
+		failed := forwarded(2, d, http.StatusInternalServerError, 3*time.Millisecond)
+		failed.Response.Body = []byte("boom")
+		refused := forwarded(3, d, 0, time.Millisecond)
+		refused.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
+		l := testListen()
+		golden.RequireEqual(t, noColor(t, joinCards(
+			l.Entry(entry(forwarded(1, d, http.StatusOK, 12*time.Millisecond)), 80),
+			l.Entry(entry(failed), 80),
+			l.Entry(entry(refused), 80),
+			l.Entry(entry(Request{Number: 4, Delivery: d, Received: received}), 80),
+		)))
+	})
 }
 
 func TestStatus(t *testing.T) {

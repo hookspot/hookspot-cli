@@ -147,15 +147,16 @@ var listenCmd = &cobra.Command{
 			}
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Replayer: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil}
+			stream := tui.Stream{Replayer: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, Tester: sess}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
 
 		sess := session.New(listenContext, sources, local, writer)
-		commandsEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
+		commandsEnabled := isTerminalReader(cmd.InOrStdin())
+		writer.Commands = commandsEnabled
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
-			hints = append(lineCommandHints, hints...)
+			hints = append(lineCommandHints(forwarder != nil), hints...)
 		}
 		if err := writer.Banner(projectName, routes, hints); err != nil {
 			return err
@@ -163,7 +164,7 @@ var listenCmd = &cobra.Command{
 		var commands *lineCommandReader
 		if commandsEnabled {
 			commands = startLineCommands(listenContext, cmd.InOrStdin(), func(line string) error {
-				return runLineCommand(sess, writer, line)
+				return runLineCommand(sess, writer, forwarder != nil, line)
 			}, stopListening)
 		}
 		listenErr := listen(sess)
@@ -430,28 +431,47 @@ func runningInContainer() bool {
 	return docker == nil || podman == nil
 }
 
-// lineCommandHints name the stream's line commands.
-var lineCommandHints = []string{"↵ replay last", "r N replay #N"}
+// lineCommandHints name the stream's line commands; without --forward-to
+// nothing replays.
+func lineCommandHints(forwarding bool) []string {
+	if !forwarding {
+		return []string{"t test event"}
+	}
+	return []string{"↵ replay last", "r N replay #N", "t test event"}
+}
 
 // runLineCommand runs one line typed into the stream: ↵ replays the last
-// request, r N replays #N, and anything else gets the command list.
-func runLineCommand(sess *session.Session, writer *cards.Writer, line string) error {
+// request, r N replays #N, t [source] sends a test event, and anything else
+// gets the command list.
+func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
-		return sess.ReplayLast()
+		err := sess.ReplayLast()
+		if errors.Is(err, session.ErrNoTarget) {
+			return writer.Reply(err.Error())
+		}
+		return err
 	}
 	if len(fields) == 2 && fields[0] == "r" {
 		if number, err := strconv.Atoi(fields[1]); err == nil {
 			err = sess.Replay(number)
-			// A number this run never reached or already dropped is a typo, not
-			// a reason to stop listening.
-			if errors.Is(err, session.ErrUnknown) || errors.Is(err, session.ErrEvicted) {
+			// A number this run never reached or already dropped is a typo, and
+			// inspect mode has nothing to replay; neither stops listening.
+			if errors.Is(err, session.ErrUnknown) || errors.Is(err, session.ErrEvicted) || errors.Is(err, session.ErrNoTarget) {
 				return writer.Reply(err.Error())
 			}
 			return err
 		}
 	}
-	return writer.Reply("commands: " + strings.Join(lineCommandHints, " · "))
+	if len(fields) <= 2 && fields[0] == "t" {
+		// A test event that fails to send leaves listening as it was.
+		source, err := sess.SendTest(strings.Join(fields[1:], " "))
+		if err != nil {
+			return writer.Reply(err.Error())
+		}
+		return writer.Reply("test event sent to " + source)
+	}
+	return writer.Reply("commands: " + strings.Join(lineCommandHints(forwarding), " · "))
 }
 
 // lineCommandReader feeds the lines typed into the stream to its commands.
