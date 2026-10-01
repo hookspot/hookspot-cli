@@ -1,0 +1,24 @@
+● live · Acme | Payments · 1 request                  → terminal only · 14:02:00
+● stripe   ● github   following newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                                          │
+│ › 1  14:02:01  stripe  POST    /hooks                                        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
+│ Overview   Request   Response   Timing                                       │
+│ ━━━━━━━━                                                                     │
+│ printed only: without --forward-to nothing is forwarded                      │
+│                                                                              │
+│ source    stripe                                                             │
+│ route     payments                                                           │
+│ received  14:02:01.000                                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+nothing to replay without --forward-to
+↑↓ select  ←→ tabs  f follow  c curl  e export  t test  ? help  q quit

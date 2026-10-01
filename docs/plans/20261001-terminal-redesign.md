@@ -473,13 +473,18 @@
 - Modify: `cmd/listen.go`
 - Modify: `Makefile`, `docker-compose.yml`, `.air.toml`
 
-- [ ] add `charm.land/bubbles/v2`, pinned
-- [ ] the default when stdin and stdout are both terminals; add `--stream` to keep the inline stream; `make dev`, the compose `dev` service and the `.air.toml` comment default to `listen --stream` (air's rebuilds would break the alt screen)
-- [ ] the model drops rows for the numbers each event says were evicted, so its memory stays within the history caps
-- [ ] header (connection, project, counts, clock); source line; request list (number, time, source, method, path, status, latency, `↻`/test marks); detail tabs Overview / Request / Response / Timing showing the source, route label and destination, and noting that replays are local
-- [ ] follow newest vs. paused selection, `↑↓`, `←→`, `f`, `r`, `c`, `e`, `t`, `?`, `q`; toasts for results; the empty state shows a routes summary and the `t` hint
-- [ ] write teatest golden-view tests: arrival while following and while paused; tab switching; replay adds a marked row; copy toast; a narrow terminal; evicted entries disappear from the list; `q` stops the listener like the first Ctrl-C
-- [ ] run tests - must pass before next task
+- [x] add `charm.land/bubbles/v2`, pinned
+- [x] the default when stdin and stdout are both terminals; add `--stream` to keep the inline stream; `make dev`, the compose `dev` service and the `.air.toml` comment default to `listen --stream` (air's rebuilds would break the alt screen)
+- [x] the model drops rows for the numbers each event says were evicted, so its memory stays within the history caps
+- [x] header (connection, project, counts, clock); source line; request list (number, time, source, method, path, status, latency, `↻`/test marks); detail tabs Overview / Request / Response / Timing showing the source, route label and destination, and noting that replays are local
+- [x] follow newest vs. paused selection, `↑↓`, `←→`, `f`, `r`, `c`, `e`, `t`, `?`, `q`; toasts for results; the empty state shows a routes summary and the `t` hint
+- [x] write teatest golden-view tests: arrival while following and while paused; tab switching; replay adds a marked row; copy toast; a narrow terminal; evicted entries disappear from the list; `q` stops the listener like the first Ctrl-C
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 13–14: `tui.Fullscreen{Replayer, Exporter, Tester, Listen, Project, Routes, Target, RequestsURL, ShowSensitiveHeaders}` (`Target` is the `--forward-to` URL, `""` in inspect mode) and `Program.FullscreenSink()`. `cards.BannerRoute` gained `RouteUID`. The detail reuses newly exported `cards` helpers: `Listen.Headers`, `Listen.Body`, `Listen.TransportHints` (the transport hint plus the container `localhost` hint), `RedirectHint`, `BodyTitle`, `TransportLabel`, `FormatLatency`, `PathWorks`. Keys are `bubbles/key` bindings and the footer is `bubbles/help`, with `?` toggling the full help. Both models share the `copyCurl`, `exportFixture`, `sendTest` and `runReplay` Cmds
+- ⚠️ the list sits beside the detail from 140 columns (72 wide), and above it below that. When the path would get under 12 columns, the list drops its TIME column, then METHOD. A `›` marks the selected row as well as reverse video, so the selection shows without color. ↑↓ always pause, even on the newest row; only `f` resumes following
+- ⚠️ `t` tests the selected request's source, or the first listened source before any request, because full-screen has no argument to name one; the empty state names that source. The hint's curls are cut at the screen width rather than wrapped, since a wrapped curl breaks when pasted
+- ⚠️ toasts (command results and errors, `Reconnected`, the root-404 hint) wrap above the key line for 4s. The copy toast is `cards.CurlNotes`; the command itself only goes to the clipboard. A replay toasts `replayed #N as #M`, since a paused selection doesn't move to it. The source warnings, printed to stderr where the alt screen hides them, are also emitted through the session, so the empty state shows them. The header is `cards.Status.Line` with the target and the clock as its right-hand hints
+- ⚠️ mode selection has no command test, since subprocess tests have no terminal on stdin and stdout; it was checked in a pty (full-screen enters and leaves the alt screen and exits 0 on `q` and on Ctrl-C; `--stream` keeps the inline stream)
 
 ### Task 13: Full-screen filter and failure workflow
 

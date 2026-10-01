@@ -165,14 +165,14 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 		}
 	case len(fields) == 2 && fields[0] == "c":
 		if n, err := strconv.Atoi(fields[1]); err == nil {
-			return m, m.copyCurl(n)
+			return m, copyCurl(m.Exporter, n, !m.ShowSensitiveHeaders)
 		}
 	case len(fields) == 2 && fields[0] == "e":
 		if n, err := strconv.Atoi(fields[1]); err == nil {
-			return m, m.exportFixture(n)
+			return m, exportFixture(m.Exporter, n, !m.ShowSensitiveHeaders)
 		}
 	case len(fields) <= 2 && fields[0] == "t":
-		return m.test(strings.Join(fields[1:], " "))
+		return m, sendTest(m.Tester, strings.Join(fields[1:], " "))
 	case len(fields) == 1 && fields[0] == "?":
 		m.reply = m.help()
 		return m, nil
@@ -190,11 +190,9 @@ func (m Stream) usage() string {
 	return "commands: " + strings.Join(commands, " · ")
 }
 
-// copyCurl builds request n's cURL command off the event loop. The full
-// command goes to the clipboard; the shown one, redacted unless
-// --show-sensitive-headers, prints above the stream.
-func (m Stream) copyCurl(n int) tea.Cmd {
-	exporter, redact := m.Exporter, !m.ShowSensitiveHeaders
+// copyCurl builds request n's cURL command off the event loop: the full one
+// for the clipboard, and the one to show, redacted when redact is set.
+func copyCurl(exporter Exporter, n int, redact bool) tea.Cmd {
 	return func() tea.Msg {
 		curl, err := exporter.Curl(n, redact)
 		if err != nil {
@@ -205,8 +203,7 @@ func (m Stream) copyCurl(n int) tea.Cmd {
 }
 
 // exportFixture writes request n's fixture off the event loop.
-func (m Stream) exportFixture(n int) tea.Cmd {
-	exporter, redact := m.Exporter, !m.ShowSensitiveHeaders
+func exportFixture(exporter Exporter, n int, redact bool) tea.Cmd {
 	return func() tea.Msg {
 		fixture, err := exporter.ExportFixture(n, redact)
 		if err != nil {
@@ -216,14 +213,19 @@ func (m Stream) exportFixture(n int) tea.Cmd {
 	}
 }
 
-// replay runs off the event loop, which must never wait on the session; only
-// a failure comes back, as the reply.
+// replay refuses without --forward-to, where nothing replays.
 func (m Stream) replay(replay func() error) (tea.Model, tea.Cmd) {
 	if !m.Forwarding {
 		m.reply = session.ErrNoTarget.Error()
 		return m, nil
 	}
-	return m, func() tea.Msg {
+	return m, runReplay(replay)
+}
+
+// runReplay replays off the event loop, which must never wait on the
+// session; only a failure comes back, as the reply.
+func runReplay(replay func() error) tea.Cmd {
+	return func() tea.Msg {
 		if err := replay(); err != nil {
 			return replyMsg(cards.Line(err.Error()))
 		}
@@ -231,11 +233,10 @@ func (m Stream) replay(replay func() error) (tea.Model, tea.Cmd) {
 	}
 }
 
-// test sends a test event off the event loop; the reply says where it went
-// or why it didn't.
-func (m Stream) test(source string) (tea.Model, tea.Cmd) {
-	tester := m.Tester
-	return m, func() tea.Msg {
+// sendTest sends a test event off the event loop; the reply says where it
+// went or why it didn't.
+func sendTest(tester Tester, source string) tea.Cmd {
+	return func() tea.Msg {
 		name, err := tester.SendTest(source)
 		if err != nil {
 			return replyMsg(cards.Line(err.Error()))

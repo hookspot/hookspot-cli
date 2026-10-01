@@ -136,7 +136,7 @@ func (l Listen) Entry(e session.Entry, width int) string {
 	r := request(e)
 	text := l.Request(r, width)
 	if r.Test {
-		text += "\n" + pathWorks(r, width)
+		text += "\n" + PathWorks(r, width)
 	}
 	return text
 }

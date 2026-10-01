@@ -1,0 +1,24 @@
+● live · Acme | Payments · 3 requests · 1 ok · 2 failed · p50 14ms                                        → http://localhost:3000 · 14:02:00
+● stripe   ● github   following newest
+╭─ Requests ─────────────────────────────────────────────────────── 3 ─╮ ╭─ #3 stripe · POST /hooks ─────────────────────────────── req_3 ─╮
+│   #  TIME      SOURCE  METHOD  PATH           STATUS   LATENCY       │ │ Overview   Request   Response   Timing                          │
+│   1  14:02:01  stripe  POST    /hooks         200          7ms       │ │ ━━━━━━━━                                                        │
+│   2  14:02:02  github  POST    /github        500         14ms       │ │  ✗ connection refused  21ms  → http://localhost:3000/hooks      │
+│ › 3  14:02:03  stripe  POST    /hooks         refused        —       │ │                                                                 │
+│                                                                      │ │ source    stripe                                                │
+│                                                                      │ │ route     payments → http://localhost:3000/hooks                │
+│                                                                      │ │ received  14:02:03.000                                          │
+│                                                                      │ │                                                                 │
+│                                                                      │ │ http://localhost:3000/hooks is not reachable — is your server   │
+│                                                                      │ │ running?                                                        │
+│                                                                      │ │                                                                 │
+│                                                                      │ │ replays are local: they never change the delivery's status in   │
+│                                                                      │ │ Hookspot                                                        │
+│                                                                      │ │                                                                 │
+│                                                                      │ │                                                                 │
+│                                                                      │ │                                                                 │
+│                                                                      │ │                                                                 │
+│                                                                      │ │                                                                 │
+│                                                                      │ │                                                                 │
+╰──────────────────────────────────────────────────────────────────────╯ ╰─────────────────────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit

@@ -1,0 +1,30 @@
+● live · Acme | Payments · 1 request · 0 ok · 1 failed · p50 14ms
+● stripe   ● github   following newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
+│ › 1  14:02:01  github  POST    /github                500          7ms       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #1 github · POST /github ─────────────────────────────────────────── req_1 ─╮
+│ Overview   Request   Response   Timing                                       │
+│                                 ━━━━━━                                       │
+│ received  14:02:01.000                                                       │
+│ answered  in 7ms                                                             │
+│ route     p50 14ms · p95 21ms · max 21ms                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit

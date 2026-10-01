@@ -8,7 +8,8 @@ tmp_dir = "tmp"
   # on every change, baking in the server URL the same way the Dockerfile does.
   cmd = "go build -trimpath -ldflags \"-X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$SERVER_URL -X hookspot/cmd.commit=$COMMIT -X hookspot/cmd.sourceDate=$SOURCE_DATE -X hookspot/cmd.buildKind=dev\" -o ./tmp/hookspot ."
   entrypoint = "./tmp/hookspot"
-  # The command to (re)run is passed by `make dev` (default: `listen`).
+  # The command to (re)run is passed by `make dev` (default: `listen --stream`,
+  # since restarts would break the full-screen view).
   # Override it with ARGS, for example: make dev ARGS="listen --help".
   include_ext = ["go", "mod"]
   exclude_dir = ["tmp", ".git", ".superpowers", "docs"]

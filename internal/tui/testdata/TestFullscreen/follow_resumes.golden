@@ -1,0 +1,24 @@
+● live · Acme | Payments · 3 requests · 3 ok · 0 failed · p50 14ms
+● stripe   ● github   following newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 3 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
+│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
+│   2  14:02:02  stripe  POST    /hooks                 200         14ms       │
+│ › 3  14:02:03  stripe  POST    /hooks                 200         21ms       │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #3 stripe · POST /hooks ──────────────────────────────────────────── req_3 ─╮
+│ Overview   Request   Response   Timing                                       │
+│ ━━━━━━━━                                                                     │
+│  200 OK  21ms  → http://localhost:3000/hooks                                 │
+│                                                                              │
+│ source    stripe                                                             │
+│ route     payments → http://localhost:3000/hooks                             │
+│ received  14:02:03.000                                                       │
+│                                                                              │
+│ replays are local: they never change the delivery's status in Hookspot       │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit

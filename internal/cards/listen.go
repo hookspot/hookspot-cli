@@ -26,6 +26,7 @@ type BannerRoute struct {
 	SourceUID string
 	Source    string
 	PublicURL string
+	RouteUID  string
 	// Destination is the URL the route forwards to; "" in inspect mode.
 	Destination string
 	Label       string
@@ -144,7 +145,7 @@ func (s Status) Line(width int) string {
 	}
 	// Max is zero until a request got a response or timed out.
 	if s.Totals.Max > 0 {
-		parts = append(parts, "p50 "+formatLatency(s.Totals.P50))
+		parts = append(parts, "p50 "+FormatLatency(s.Totals.P50))
 	}
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
@@ -237,9 +238,9 @@ func TestHint(hint session.TestHint, commands bool) string {
 	return strings.Join(lines, "\n")
 }
 
-// pathWorks follows a test event's delivery with the path it proved: through
+// PathWorks follows a test event's delivery with the path it proved: through
 // to the local target when that answered.
-func pathWorks(r Request, width int) string {
+func PathWorks(r Request, width int) string {
 	path := "hookspot → this terminal"
 	if r.Target != "" && r.Failure == nil {
 		path += " → " + Line(r.Target)
@@ -308,7 +309,7 @@ func (l Listen) row(r Request, width int) string {
 		left = faintStyle.Render(fmt.Sprintf("#%-3d", r.Number)) + left
 	}
 	right := ColorBadge(StatusColor(r.Response.Status), strconv.Itoa(r.Response.Status)) + " " +
-		faintStyle.Render(fmt.Sprintf("%5s", formatLatency(r.Latency))+"  "+timestamp(r))
+		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(r.Latency))+"  "+timestamp(r))
 	if marks := marks(r); marks != "" {
 		right = marks + " " + right
 	}
@@ -327,29 +328,43 @@ func (l Listen) row(r Request, width int) string {
 
 func (l Listen) httpFailure(r Request, inner int) string {
 	d, response := r.Delivery, r.Response
-	var responseLines []string
-	if location := headerGet(response.Headers, "Location"); response.Status >= 300 && response.Status < 400 && location != "" {
-		responseLines = append(responseLines,
-			faintStyle.Render("Location:")+" "+Line(location),
-			warnStyle.Render("webhook senders don't follow redirects; point --forward-to at the final URL"),
-		)
-	}
-	responseLines = append(responseLines, l.body(response.Body, response.Headers)...)
+	responseLines := append(RedirectHint(response), l.Body(response.Body, response.Headers)...)
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
 	return frame(border, inner, l.title(r), cardLabel(r), "",
 		section{lines: outcome(ColorBadge(StatusColor(response.Status), responseStatus(response.Status)), r, inner)},
-		section{title: faintStyle.Render("request · " + bodyTitle(d.Body, d.Headers)), lines: l.body(d.Body, d.Headers)},
-		section{title: faintStyle.Render("response · " + bodyTitle(response.Body, response.Headers)), lines: responseLines},
+		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
+		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
 }
 
 func (l Listen) transportFailure(r Request, inner int) string {
-	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+transportLabel(r.Failure.Kind)), r, inner), "", l.transportHint(r.Target, r.Failure))
-	if r.Failure.Kind == proxy.TransportConnectionRefused && l.Container && localhostTarget(r.Target) {
-		lines = append(lines, warnStyle.Render("inside a container, localhost is the container itself; use the service name (http://app:3000) or host.docker.internal"))
-	}
+	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+TransportLabel(r.Failure.Kind)), r, inner), "")
+	lines = append(lines, l.TransportHints(r.Target, r.Failure)...)
 	return frame(errorStyle, inner, l.title(r), cardLabel(r), "", section{lines: lines})
+}
+
+// RedirectHint follows a 3xx response that names a Location: webhook senders
+// stop there.
+func RedirectHint(response ws.Response) []string {
+	location := headerGet(response.Headers, "Location")
+	if response.Status < 300 || response.Status >= 400 || location == "" {
+		return nil
+	}
+	return []string{
+		faintStyle.Render("Location:") + " " + Line(location),
+		warnStyle.Render("webhook senders don't follow redirects; point --forward-to at the final URL"),
+	}
+}
+
+// TransportHints say what a transport failure to target means and what to
+// check; inside a container, a refused localhost is the container itself.
+func (l Listen) TransportHints(target string, failure *proxy.TransportFailure) []string {
+	hints := []string{l.transportHint(target, failure)}
+	if failure.Kind == proxy.TransportConnectionRefused && l.Container && localhostTarget(target) {
+		hints = append(hints, warnStyle.Render("inside a container, localhost is the container itself; use the service name (http://app:3000) or host.docker.internal"))
+	}
+	return hints
 }
 
 func (l Listen) inspect(r Request, inner int) string {
@@ -368,8 +383,8 @@ func (l Listen) inspect(r Request, inner int) string {
 	}
 	return frame(faintStyle, inner, l.title(r), cardLabel(r), "",
 		section{lines: first},
-		section{title: faintStyle.Render("headers · " + headers), lines: l.headers(d.Headers)},
-		section{title: faintStyle.Render("body · " + bodyTitle(d.Body, d.Headers)), lines: l.body(d.Body, d.Headers)},
+		section{title: faintStyle.Render("headers · " + headers), lines: l.Headers(d.Headers)},
+		section{title: faintStyle.Render("body · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 	)
 }
 
@@ -379,7 +394,7 @@ func (l Listen) replay(r Request, width int) string {
 	c := r.Replay
 	summary := faintStyle.Render("#"+strconv.Itoa(r.Number)) + " " + warnStyle.Render("↻") + " " + faintStyle.Render("#"+strconv.Itoa(c.Original)) + "  " +
 		result(c.Status, c.Failure) + faintStyle.Render(" → ") + result(r.Response.Status, r.Failure) + "  " +
-		faintStyle.Render(formatLatency(c.Latency)+" → "+formatLatency(r.Latency))
+		faintStyle.Render(FormatLatency(c.Latency)+" → "+FormatLatency(r.Latency))
 	right := faintStyle.Render(timestamp(r))
 	const minTitle = 12
 	room := max(minTitle, width-lipgloss.Width(summary)-lipgloss.Width(right)-4)
@@ -410,7 +425,7 @@ func (l Listen) replay(r Request, width int) string {
 // result is what forwarding got: a status, or the transport failure.
 func result(status int, failure *proxy.TransportFailure) string {
 	if failure != nil {
-		return errorStyle.Render(transportLabel(failure.Kind))
+		return errorStyle.Render(TransportLabel(failure.Kind))
 	}
 	return lipgloss.NewStyle().Foreground(StatusColor(status)).Render(strconv.Itoa(status))
 }
@@ -427,7 +442,7 @@ func (l Listen) title(r Request) string {
 // outcome opens a forwarding card: what forwarding did, how long it took and
 // where it went, then the request ID.
 func outcome(status string, r Request, inner int) []string {
-	return spread(status+" "+faintStyle.Render(formatLatency(r.Latency)+"  → "+Line(r.Target)), faintStyle.Render(Line(r.Delivery.RequestUID)), inner)
+	return spread(status+" "+faintStyle.Render(FormatLatency(r.Latency)+"  → "+Line(r.Target)), faintStyle.Render(Line(r.Delivery.RequestUID)), inner)
 }
 
 // cardLabel ends a card's top border: its marks and the time it arrived.
@@ -482,10 +497,12 @@ func (l Listen) summary(d ws.Delivery) string {
 			}
 		}
 	}
-	return bodyTitle(d.Body, d.Headers)
+	return BodyTitle(d.Body, d.Headers)
 }
 
-func (l Listen) headers(headers http.Header) []string {
+// Headers lists headers sorted by name, redacting sensitive values unless
+// ShowSensitiveHeaders and applying --max-headers.
+func (l Listen) Headers(headers http.Header) []string {
 	keys := make([]string, 0, len(headers))
 	for key := range headers {
 		keys = append(keys, key)
@@ -521,9 +538,9 @@ func (l Listen) headers(headers http.Header) []string {
 	return lines
 }
 
-// body lists a body's lines, pretty-printing and highlighting JSON; a binary
+// Body lists a body's lines, pretty-printing and highlighting JSON; a binary
 // body has none.
-func (l Listen) body(body []byte, headers http.Header) []string {
+func (l Listen) Body(body []byte, headers http.Header) []string {
 	lines, isJSON := bodyLines(body, bodyMIME(headers, body))
 	visible := limit(len(lines), l.Limits.MaxBodyLines)
 	out := make([]string, 0, visible+1)
@@ -670,8 +687,8 @@ func localhostTarget(target string) bool {
 	return err == nil && slices.Contains([]string{"localhost", "127.0.0.1", "::1"}, parsed.Hostname())
 }
 
-// bodyTitle describes a body by media type and size.
-func bodyTitle(body []byte, headers http.Header) string {
+// BodyTitle describes a body by media type and size.
+func BodyTitle(body []byte, headers http.Header) string {
 	if len(body) == 0 {
 		return "empty"
 	}
@@ -744,7 +761,8 @@ func responseStatus(status int) string {
 	return strconv.Itoa(status)
 }
 
-func transportLabel(kind proxy.TransportErrorKind) string {
+// TransportLabel names a transport failure.
+func TransportLabel(kind proxy.TransportErrorKind) string {
 	switch kind {
 	case proxy.TransportConnectionRefused:
 		return "connection refused"
@@ -759,7 +777,8 @@ func transportLabel(kind proxy.TransportErrorKind) string {
 	}
 }
 
-func formatLatency(duration time.Duration) string {
+// FormatLatency shows a latency in ms below a second, else in seconds.
+func FormatLatency(duration time.Duration) string {
 	switch {
 	case duration < time.Second:
 		return strconv.FormatInt(max(time.Millisecond, duration.Round(time.Millisecond)).Milliseconds(), 10) + "ms"

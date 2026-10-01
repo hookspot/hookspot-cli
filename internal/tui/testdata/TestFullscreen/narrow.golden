@@ -1,0 +1,16 @@
+● live · Acme | Payments · 3 requests · 1 ok · 2 …
+● stripe   ● github   following newest
+╭─ Requests ───────────────────────────────── 3 ─╮
+│   #  SOURCE  PATH       STATUS   LATENCY       │
+│   1  stripe  /hooks     200          7ms       │
+│   2  github  /github    500         14ms       │
+│ › 3  stripe  /hooks     refused        —       │
+╰────────────────────────────────────────────────╯
+╭─ #3 stripe · POST /hooks ────────────── req_3 ─╮
+│ Overview   Request   Response   Timing         │
+│ ━━━━━━━━                                       │
+│  ✗ connection refused  21ms  → http://localho… │
+│                                                │
+│ … 9 more lines                                 │
+╰────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  r replay  c curl …

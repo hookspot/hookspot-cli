@@ -31,6 +31,7 @@ const maxInitialConnectAttempts = 10
 
 var (
 	forwardTo            string
+	streamOutput         bool
 	showSensitiveHeaders bool
 	maxBodyLines         int
 	maxHeaders           int
@@ -137,15 +138,31 @@ var listenCmd = &cobra.Command{
 		projectName := projectDisplayName(*project)
 
 		if cards.Terminal(cmd.OutOrStdout()) {
-			// The status line carries the hints.
-			if err := writer.Banner(projectName, routes, nil); err != nil {
-				return err
-			}
 			var input io.Reader
 			if isTerminalReader(cmd.InOrStdin()) {
 				input = cmd.InOrStdin()
 			}
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
+			if input != nil && !streamOutput {
+				sess := session.New(listenContext, sources, local, program.FullscreenSink())
+				screen := tui.Fullscreen{Replayer: sess, Exporter: sess, Tester: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
+				if forwarder != nil {
+					screen.Target = forwarder.String()
+				}
+				return runInTerminal(program, screen, func() error {
+					// The alt screen hides the warnings printed before it.
+					for _, warning := range warnings {
+						if err := sess.Emit(warning); err != nil {
+							return err
+						}
+					}
+					return listen(sess)
+				})
+			}
+			// The status line carries the hints.
+			if err := writer.Banner(projectName, routes, nil); err != nil {
+				return err
+			}
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
 			stream := tui.Stream{Replayer: sess, Exporter: sess, Tester: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
@@ -411,7 +428,7 @@ func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.Ban
 	var routes []cards.BannerRoute
 	for _, source := range sources {
 		for _, route := range source.Routes {
-			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, Label: session.RouteLabel(route)}
+			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, RouteUID: route.UID, Label: session.RouteLabel(route)}
 			if forwarder != nil {
 				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
 				if err != nil {
@@ -612,6 +629,7 @@ func isTerminalReader(input io.Reader) bool {
 
 func init() {
 	listenCmd.Flags().StringVar(&forwardTo, "forward-to", "", "base URL to forward events to, e.g. localhost:3000 (deliveries keep their own path; omit to only print)")
+	listenCmd.Flags().BoolVar(&streamOutput, "stream", false, "print requests as a scrolling stream instead of the full-screen view")
 	listenCmd.Flags().BoolVar(&showSensitiveHeaders, "show-sensitive-headers", false, "show authorization and cookie header values")
 	listenCmd.Flags().IntVar(&maxBodyLines, "max-body-lines", 12, "maximum body lines to print (0 for unlimited)")
 	listenCmd.Flags().IntVar(&maxHeaders, "max-headers", 20, "maximum headers to print (0 for unlimited)")

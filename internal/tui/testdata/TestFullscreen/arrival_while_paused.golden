@@ -1,0 +1,24 @@
+● live · Acme | Payments · 5 requests · 4 ok · 1 failed · p50 14ms
+● stripe   ● github   paused on #2 · f follows newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 5 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
+│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
+│ › 2  14:02:02  github  POST    /github                500         14ms       │
+│   3  14:02:03  stripe  POST    /hooks                 200         21ms       │
+│   4  14:02:04  stripe  POST    /hooks                 200         28ms       │
+│   5  14:02:05  github  POST    /github                200         35ms       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #2 github · POST /github ─────────────────────────────────────────── req_2 ─╮
+│ Overview   Request   Response   Timing                                       │
+│ ━━━━━━━━                                                                     │
+│  500 Internal Server Error  14ms  → http://localhost:3000/github             │
+│                                                                              │
+│ source    github                                                             │
+│ route     /github → http://localhost:3000/github                             │
+│ received  14:02:02.000                                                       │
+│                                                                              │
+│ replays are local: they never change the delivery's status in Hookspot       │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit

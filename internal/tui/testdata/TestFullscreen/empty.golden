@@ -1,0 +1,24 @@
+● live · Acme | Payments · 0 requests         → http://localhost:3000 · 14:02:00
+● stripe   ● github
+╭─ Listening in Acme | Payments ──────────────────────── 2 sources • 2 routes ─╮
+│ stripe  https://in.hookspot.test/src_stripe                                  │
+│   → http://localhost:3000/hooks  payments                                    │
+│ github  https://in.hookspot.test/src_github                                  │
+│   → http://localhost:3000/github                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+⚠ github is disabled: requests to it are rejected. Enable it in the dashboard.
+
+No requests yet. Check the whole path with a test event:
+
+  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: applicat…
+  curl -X POST 'https://in.hookspot.test/src_github' -H 'Content-Type: applicat…
+
+ t  send a test event to stripe
+
+
+
+
+
+
+
+↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit
