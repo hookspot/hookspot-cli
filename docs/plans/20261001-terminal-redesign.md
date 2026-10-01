@@ -242,10 +242,10 @@
 - Modify: `~/projects/my/hookspot/lib/ingest/jobs/deliveries/deliver_job.ex`
 - Modify: `~/projects/my/hookspot/test/ingest/jobs/deliveries/deliver_job_test.exs`
 
-- [ ] add `route_uid: delivery.route_uid` to the `deliver/2` payload
-- [ ] in "broadcasts prefixed uids to the project's topic", set `route_uid` on the in-memory `%Delivery{}` and assert it is broadcast
-- [ ] run `docker-compose exec app mix test` and `docker-compose exec app mix precommit` - must pass before next task
-- [ ] stage exact paths only (the backend tree may be dirty)
+- [x] add `route_uid: delivery.route_uid` to the `deliver/2` payload
+- [x] in "broadcasts prefixed uids to the project's topic", set `route_uid` on the in-memory `%Delivery{}` and assert it is broadcast
+- [x] run `docker-compose exec app mix test` and `docker-compose exec app mix precommit` - must pass before next task
+- [x] stage exact paths only (the backend tree may be dirty)
 
 ### Task 3: CLI: route attribution and labels
 
