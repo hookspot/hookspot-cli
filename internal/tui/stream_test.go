@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -366,6 +365,7 @@ func TestStreamTestEvent(t *testing.T) {
 		base := ingest(t, nil)
 		stripe := api.Source{Name: "stripe", URL: base + "/in/src_stripe"}
 		github := api.Source{Name: "github", URL: base + "/missing"}
+		stripeProd := api.Source{Name: "Stripe  Prod", URL: base + "/in/src_stripe_prod"}
 		for _, test := range []struct {
 			name    string
 			sources []api.Source
@@ -374,6 +374,7 @@ func TestStreamTestEvent(t *testing.T) {
 		}{
 			{name: "the only source", sources: []api.Source{stripe}, line: "t", want: "test event sent to stripe"},
 			{name: "a named source", sources: []api.Source{stripe, github}, line: " t  stripe ", want: "test event sent to stripe"},
+			{name: "a name with spaces", sources: []api.Source{stripeProd, github}, line: "t Stripe  Prod ", want: "test event sent to Stripe  Prod"},
 			{name: "several sources", sources: []api.Source{stripe, github}, line: "t", want: "test which source? t stripe · t github"},
 			{name: "not listened to", sources: []api.Source{stripe}, line: "t shopify\x1b", want: `shopify\x1b: not a source this run listens to`},
 			{name: "Hookspot refuses", sources: []api.Source{github}, line: "t", want: "test event to github: Hookspot answered 404 Not Found"},
@@ -519,10 +520,9 @@ func TestStreamCopiesAndExports(t *testing.T) {
 			for _, cmd := range cmd().(tea.BatchMsg) {
 				got = append(got, cmd())
 			}
-			// The full command goes to the clipboard; the shown one prints
-			// with its control characters escaped.
+			// The full command goes to the clipboard; the shown one prints.
 			want := []tea.Msg{tea.SetClipboard(full.Command)(), tea.Println(cards.Sanitize(test.shown))()}
-			if !reflect.DeepEqual(got, want) || !strings.Contains(fmt.Sprint(got[1]), `a\r`) {
+			if !reflect.DeepEqual(got, want) {
 				t.Errorf("commands = %q, want %q", got, want)
 			}
 		})
@@ -531,7 +531,7 @@ func TestStreamCopiesAndExports(t *testing.T) {
 	for _, test := range []struct {
 		name, line, want string
 	}{
-		{name: "export", line: "e 1", want: "exported #1 to " + filepath.Join(fixtures, "req_1.json") + " and " + filepath.Join(fixtures, "req_1.body") + " · sensitive headers redacted"},
+		{name: "export", line: "e 1", want: "exported #1 to " + filepath.Join(fixtures, "req_1_rte_stripe.json") + " and " + filepath.Join(fixtures, "req_1_rte_stripe.body") + " · sensitive headers redacted"},
 		{name: "copy a missing number", line: "c 9", want: "#9: no such request"},
 		{name: "export a missing number", line: "e 9", want: "#9: no such request"},
 	} {

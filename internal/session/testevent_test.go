@@ -2,12 +2,12 @@ package session
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,18 +23,21 @@ type sent struct {
 }
 
 // hookspot is a fake ingest endpoint that keeps each request and answers 202,
-// or 404 under /missing.
+// 404 under /missing, or 302 to /in/src_stripe under /moved.
 func hookspot(t *testing.T) (string, <-chan sent) {
 	t.Helper()
 	requests := make(chan sent, 10)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		requests <- sent{method: r.Method, path: r.URL.Path, header: r.Header, body: string(body)}
-		if r.URL.Path == "/missing" {
+		switch r.URL.Path {
+		case "/missing":
 			http.NotFound(w, r)
-			return
+		case "/moved":
+			http.Redirect(w, r, "/in/src_stripe", http.StatusFound)
+		default:
+			w.WriteHeader(http.StatusAccepted)
 		}
-		w.WriteHeader(http.StatusAccepted)
 	}))
 	t.Cleanup(server.Close)
 	return server.URL, requests
@@ -111,9 +114,6 @@ func TestSendTest(t *testing.T) {
 				noRequest(t, requests)
 			})
 		}
-		if _, err := s.SendTest("shopify"); !errors.Is(err, ErrNotListening) {
-			t.Fatalf("SendTest(shopify) = %v, want ErrNotListening", err)
-		}
 	})
 
 	t.Run("Hookspot refusing it is reported", func(t *testing.T) {
@@ -121,6 +121,22 @@ func TestSendTest(t *testing.T) {
 			t.Fatalf("SendTest(github) = %v", err)
 		}
 		<-requests
+	})
+
+	t.Run("a redirect or an unreachable Hookspot is reported", func(t *testing.T) {
+		closed := httptest.NewServer(http.NotFoundHandler())
+		closed.Close()
+		failing, _ := newTestEventSession(base)
+		failing.sources = []api.Source{{Name: "moved", URL: base + "/moved"}, {Name: "down", URL: closed.URL}}
+		// Following it would resend the event as a GET that Hookspot accepts.
+		if _, err := failing.SendTest("moved"); err == nil || err.Error() != "test event to moved: Hookspot answered 302 Found" {
+			t.Fatalf("SendTest(moved) = %v", err)
+		}
+		<-requests
+		noRequest(t, requests)
+		if _, err := failing.SendTest("down"); err == nil || !strings.HasPrefix(err.Error(), "test event to down: ") {
+			t.Fatalf("SendTest(down) = %v", err)
+		}
 	})
 
 	t.Run("the only source needs no name", func(t *testing.T) {

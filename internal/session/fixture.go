@@ -50,7 +50,7 @@ func (s *Session) ExportFixture(n int, redact bool) (Fixture, error) {
 		Path    string      `json:"path"`
 		Query   string      `json:"query"`
 		Headers http.Header `json:"headers"`
-	}{deliveryMethod(d), d.Path, d.Query, headers}); err != nil {
+	}{Method(d), d.Path, d.Query, headers}); err != nil {
 		return Fixture{}, err
 	}
 
@@ -91,12 +91,17 @@ func redactHeaders(headers http.Header, redact bool) (http.Header, bool) {
 	return out, redacted
 }
 
-// fixtureName names entry's files after its request UID, so exporting a
-// request again replaces its files, or entry-<N> when the UID isn't a safe
-// file name.
+// fixtureName names entry's files after its request UID and route, so
+// exporting a request or its replay again replaces its files, while the
+// deliveries of one request to a source's other routes keep theirs. It is
+// entry-<N> when that isn't a safe file name.
 func fixtureName(entry Entry) string {
-	if plainName.MatchString(entry.Delivery.RequestUID) {
-		return entry.Delivery.RequestUID
+	name := entry.Delivery.RequestUID
+	if entry.RouteUID != "" {
+		name += "_" + entry.RouteUID
+	}
+	if plainName.MatchString(name) {
+		return name
 	}
 	return "entry-" + strconv.Itoa(entry.Number)
 }
@@ -116,7 +121,8 @@ func writeFixture(file string, data []byte) (string, error) {
 	return path, os.WriteFile(path, data, 0o600)
 }
 
-func deliveryMethod(d ws.Delivery) string {
+// Method is the delivery's method; an empty one is POST, as forwarding sends it.
+func Method(d ws.Delivery) string {
 	if d.Method == "" {
 		return http.MethodPost
 	}

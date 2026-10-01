@@ -3,5 +3,5 @@
 │   → http://localhost:3000/webhooks/stripe                                    │
 │ github  https://in.hookspot.test/src_github                                  │
 │   → http://localhost:3000/webhooks/github                                    │
-│   → http://localhost:3000/ci/github  ci-hook                                 │
+│   → http://localhost:3000/ci/github  github                                  │
 ╰──────────────────────────────────────────────── ↵ replay last · ctrl-c quit ─╯

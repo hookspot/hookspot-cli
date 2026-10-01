@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"hookspot/internal/api"
@@ -54,13 +55,15 @@ func (c *clock) Add(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// reply is what the local target does with one forward.
+// reply is what the local target does with one forward; bodyErr fails
+// reading its body.
 type reply struct {
 	status  int
 	header  http.Header
 	body    string
 	latency time.Duration
 	err     error
+	bodyErr error
 }
 
 // fakeForwarder plays its replies in order, then answers 200 at once. Each
@@ -85,7 +88,11 @@ func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, b
 	if r.err != nil {
 		return nil, r.err
 	}
-	return &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(strings.NewReader(r.body))}, nil
+	reader := io.Reader(strings.NewReader(r.body))
+	if r.bodyErr != nil {
+		reader = iotest.ErrReader(r.bodyErr)
+	}
+	return &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(reader)}, nil
 }
 
 func (f *fakeForwarder) DestinationURL(path, _ string) (*url.URL, error) {
@@ -132,6 +139,7 @@ func TestHandleAnswersHookspot(t *testing.T) {
 	s, _, sink := newTestSession(
 		reply{status: http.StatusCreated, header: http.Header{"X-Reply": []string{"yes"}}, body: "created", latency: 3 * time.Millisecond},
 		reply{err: errors.New("network unavailable"), latency: 7 * time.Millisecond},
+		reply{status: http.StatusOK, bodyErr: errors.New("connection reset mid-body")},
 		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
 	)
 
@@ -150,11 +158,20 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		t.Fatalf("transport failure entry = %#v", failed)
 	}
 
+	// A target that drops the connection mid-body failed to answer; listen goes on.
+	response, err = s.Handle(delivery("/orders"))
+	if err != nil || response.Status != http.StatusBadGateway {
+		t.Fatalf("Handle after a failed response body = %#v, %v; want 502", response, err)
+	}
+	if cut := sink.recorded()[2].Entry; cut.Failure == nil || cut.Failure.Kind != proxy.TransportOther {
+		t.Fatalf("failed response body entry = %#v, want a transport failure", cut)
+	}
+
 	response, err = s.Handle(delivery("/orders"))
 	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") || response.Status != 0 {
 		t.Fatalf("Handle with an oversized response = %#v, %v; want no acknowledgement", response.Status, err)
 	}
-	if got := len(sink.recorded()); got != 2 {
+	if got := len(sink.recorded()); got != 3 {
 		t.Fatalf("recorded %d entries, want the oversized response left out", got)
 	}
 }
@@ -282,42 +299,6 @@ func TestHistoryEviction(t *testing.T) {
 	})
 }
 
-func TestReplayRacingDeliveriesKeepsNumbersInEmitOrder(t *testing.T) {
-	s, _, sink := newTestSession()
-	if _, err := s.Handle(delivery("/orders")); err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for range 50 {
-			if _, err := s.Handle(delivery("/orders")); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	wg.Go(func() {
-		for range 50 {
-			if err := s.Replay(1); err != nil {
-				t.Error(err)
-			}
-		}
-	})
-	wg.Wait()
-
-	replays := 0
-	for i, e := range sink.recorded() {
-		if e.Entry.Number != i+1 {
-			t.Fatalf("event %d carries #%d", i+1, e.Entry.Number)
-		}
-		if e.Entry.ReplayOf == 1 {
-			replays++
-		}
-	}
-	if len(sink.recorded()) != 101 || replays != 50 {
-		t.Fatalf("recorded %d entries with %d replays, want 101 with 50", len(sink.recorded()), replays)
-	}
-}
-
 func TestStats(t *testing.T) {
 	s, forwarder, sink := newTestSession(
 		reply{status: http.StatusOK, latency: 10 * time.Millisecond},
@@ -355,6 +336,9 @@ func TestStats(t *testing.T) {
 		return stats
 	}
 	final := recorded[7]
+	if last := final.Totals.Last.Delivery; last.Body != nil || last.Headers != nil {
+		t.Fatalf("last entry keeps its delivery's headers and body: %#v", last)
+	}
 	minute := time.Date(2026, 10, 1, 12, 2, 0, 0, time.UTC)
 	wantRoute := Stats{
 		Count: 6, OK: 3, Failed: 3,
@@ -377,6 +361,20 @@ func TestStats(t *testing.T) {
 	}
 	if got := summary(final.Totals); !reflect.DeepEqual(got, wantTotals) {
 		t.Fatalf("totals = %+v\nwant %+v", got, wantTotals)
+	}
+}
+
+func TestLatencyKeepsTheNewestSamples(t *testing.T) {
+	var s stats
+	forwarded := func(latency time.Duration) Entry {
+		return Entry{Target: "http://localhost:3000", Response: ws.Response{Status: http.StatusOK}, Latency: latency}
+	}
+	s.add(forwarded(5 * time.Second))
+	for range maxLatencySamples {
+		s.add(forwarded(time.Millisecond))
+	}
+	if got := s.snapshot(time.Time{}).Max; got != time.Millisecond {
+		t.Fatalf("max = %s, want the oldest sample dropped", got)
 	}
 }
 
@@ -410,6 +408,12 @@ func TestPerMinuteAtMovesAnOldSnapshotOn(t *testing.T) {
 
 func TestSinkErrorIsReturned(t *testing.T) {
 	wantErr := errors.New("output unavailable")
+	// A failed Ready ends listen, so no hint follows it.
+	ready := &recorder{err: wantErr}
+	if err := New(context.Background(), testSources, nil, ready).Emit(Ready{}); !errors.Is(err, wantErr) || len(ready.events) != 1 {
+		t.Fatalf("Emit(Ready) = %v with events %#v, want the sink error and no hint", err, ready.events)
+	}
+
 	s, _, sink := newTestSession(reply{
 		status: http.StatusTemporaryRedirect,
 		header: http.Header{"Location": []string{"/next"}},

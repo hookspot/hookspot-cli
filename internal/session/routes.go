@@ -5,10 +5,10 @@ import (
 	"hookspot/internal/ws"
 )
 
-// RouteFor returns the route of the delivery's source that produced it: the
+// routeFor returns the route of the delivery's source that produced it: the
 // one named by RouteUID, else the first whose destination path equals the
 // delivery path, because older servers send no RouteUID. False means unmatched.
-func RouteFor(sources []api.Source, delivery ws.Delivery) (api.Route, bool) {
+func routeFor(sources []api.Source, delivery ws.Delivery) (api.Route, bool) {
 	for _, source := range sources {
 		if source.UID != delivery.SourceUID {
 			continue

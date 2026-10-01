@@ -845,9 +845,13 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 			t.Fatalf("row %d = %q", i+1, row)
 		}
 	}
-	help := "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · t test event\n"
+	help := "commands: ↵ replay last · r N replay #N · c N cURL · e N export · t test event\n"
 	if want := "#9: no such request\n" + help + help; stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
+	}
+	// The plain banner names the commands with ctrl-c quit at the default width.
+	if banner := cards.Banner("Acme | Payments", nil, append(lineCommandHints(true), "ctrl-c quit"), cards.DefaultWidth); !strings.Contains(banner, "t test event · ctrl-c quit") {
+		t.Fatalf("banner cuts its hints:\n%s", banner)
 	}
 }
 
@@ -877,12 +881,13 @@ func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
 	refused := "nothing to replay without --forward-to\n"
 	want := "#1 as cURL, which resends it through Hookspot\n" +
 		"sensitive headers are hidden; --show-sensitive-headers shows the full command\n" +
-		"curl -X POST 'https://in.hookspot.test/src_stripe' \\\n" +
+		"curl -g -X POST 'https://in.hookspot.test/src_stripe' \\\n" +
 		"  -H 'Authorization: [redacted]' \\\n" +
+		"  -H 'Content-Type:' \\\n" +
 		"  --data-binary '{\"type\":\"paid\"}'\n" +
-		"exported #1 to " + filepath.Join(dir, "req_1.json") + " and " + filepath.Join(dir, "req_1.body") + " · sensitive headers redacted\n" +
+		"exported #1 to " + filepath.Join(dir, "req_1_rte_stripe.json") + " and " + filepath.Join(dir, "req_1_rte_stripe.body") + " · sensitive headers redacted\n" +
 		"#9: no such request\n" + refused + refused +
-		"commands: c N copy as cURL · e N export fixture · t test event\n"
+		"commands: c N cURL · e N export · t test event\n"
 	if stderr.String() != want || stdout.Len() != 0 {
 		t.Fatalf("stderr:\n%s\nwant:\n%s\nstdout: %q", stderr.String(), want, stdout.String())
 	}
@@ -896,7 +901,8 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer ingest.Close()
-	sources := []api.Source{{UID: "src_stripe", Name: "stripe", URL: ingest.URL + "/in/src_stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
+	// Hookspot allows spaces in a source name.
+	sources := []api.Source{{UID: "src_stripe", Name: "Stripe Prod", URL: ingest.URL + "/in/src_stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
 	var stdout, stderr bytes.Buffer
 	writer := cards.NewWriter(&stdout, &stderr, cards.Listen{Sources: sourceNamesByUID(sources)}, "")
 	sess := session.New(context.Background(), sources, nil, writer)
@@ -905,16 +911,17 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	}
 	stdout.Reset()
 
-	for _, line := range []string{"", "r 1", "t", "t github", "x"} {
+	for _, line := range []string{"", "r 1", "t", " t Stripe Prod ", "t github", "x"} {
 		if err := runLineCommand(sess, writer, false, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
 	want := "nothing to replay without --forward-to\n" +
 		"nothing to replay without --forward-to\n" +
-		"test event sent to stripe\n" +
+		"test event sent to Stripe Prod\n" +
+		"test event sent to Stripe Prod\n" +
 		"github: not a source this run listens to\n" +
-		"commands: c N copy as cURL · e N export fixture · t test event\n"
+		"commands: c N cURL · e N export · t test event\n"
 	if stdout.Len() != 0 || stderr.String() != want {
 		t.Fatalf("stdout %q, stderr %q; want replies %q", stdout.String(), stderr.String(), want)
 	}

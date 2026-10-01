@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"hookspot/internal/ws"
 )
 
 func TestExportFixture(t *testing.T) {
@@ -19,15 +21,19 @@ func TestExportFixture(t *testing.T) {
 	d.Body = []byte{0, 0x1b, 0xff}
 	traversal := delivery("/orders")
 	traversal.RequestUID = "../../etc/passwd"
-	if _, err := s.Handle(d); err != nil {
-		t.Fatal(err)
+	// Hookspot delivers one request to each route of its source.
+	for _, sent := range []ws.Delivery{d, delivery("/refunds"), delivery("/unmatched"), traversal} {
+		if _, err := s.Handle(sent); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := s.Handle(traversal); err != nil {
+	if err := s.Replay(1); err != nil {
 		t.Fatal(err)
 	}
 
-	fixtureJSON := func(authorization string) string {
-		return `{
+	t.Run("shown over redacted", func(t *testing.T) {
+		fixtureJSON := func(authorization string) string {
+			return `{
   "method": "PUT",
   "path": "/orders",
   "query": "a=1",
@@ -41,40 +47,43 @@ func TestExportFixture(t *testing.T) {
   }
 }
 `
-	}
-	for _, test := range []struct {
-		name   string
-		n      int
-		redact bool
-		want   Fixture
-		json   string
-	}{
-		{name: "redacted", n: 1, redact: true, want: Fixture{JSON: filepath.Join(fixtures, "req_1.json"), Body: filepath.Join(fixtures, "req_1.body"), Redacted: true}, json: fixtureJSON("[redacted]")},
-		// The same request UID replaces the files.
-		{name: "shown", n: 1, want: Fixture{JSON: filepath.Join(fixtures, "req_1.json"), Body: filepath.Join(fixtures, "req_1.body")}, json: fixtureJSON("Bearer secret")},
-		{name: "unsafe request UID", n: 2, redact: true, want: Fixture{JSON: filepath.Join(fixtures, "entry-2.json"), Body: filepath.Join(fixtures, "entry-2.body")}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			fixture, err := s.ExportFixture(test.n, test.redact)
-			if err != nil || fixture != test.want {
-				t.Fatalf("ExportFixture = %+v, %v; want %+v", fixture, err, test.want)
-			}
-			body, err := os.ReadFile(fixture.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			entry, _ := s.entry(test.n)
-			if string(body) != string(entry.Delivery.Body) {
-				t.Errorf("body = %q, want %q", body, entry.Delivery.Body)
-			}
-			if test.json == "" {
-				return
+		}
+		want := Fixture{JSON: filepath.Join(fixtures, "req_1_rte_orders.json"), Body: filepath.Join(fixtures, "req_1_rte_orders.body")}
+		for _, test := range []struct {
+			redact bool
+			json   string
+		}{
+			{redact: true, json: fixtureJSON("[redacted]")},
+			// Exporting the same request again replaces its files.
+			{json: fixtureJSON("Bearer secret")},
+		} {
+			fixture, err := s.ExportFixture(1, test.redact)
+			if want.Redacted = test.redact; err != nil || fixture != want {
+				t.Fatalf("ExportFixture(redact %v) = %+v, %v; want %+v", test.redact, fixture, err, want)
 			}
 			if json, err := os.ReadFile(fixture.JSON); err != nil || string(json) != test.json {
 				t.Errorf("fixture = %s, %v; want:\n%s", json, err, test.json)
 			}
-		})
-	}
+			if body, err := os.ReadFile(fixture.Body); err != nil || string(body) != string(d.Body) {
+				t.Errorf("body = %q, %v; want %q", body, err, d.Body)
+			}
+		}
+	})
+
+	t.Run("names", func(t *testing.T) {
+		for n, want := range map[int]string{
+			2: "req_1_rte_refunds",
+			3: "req_1",
+			4: "entry-4",
+			// A replay replaces its original's files.
+			5: "req_1_rte_orders",
+		} {
+			fixture, err := s.ExportFixture(n, true)
+			if err != nil || fixture.JSON != filepath.Join(fixtures, want+".json") || fixture.Body != filepath.Join(fixtures, want+".body") {
+				t.Errorf("ExportFixture(%d) = %+v, %v; want %s", n, fixture, err, want)
+			}
+		}
+	})
 
 	t.Run("unwritable directory", func(t *testing.T) {
 		t.Chdir(t.TempDir())

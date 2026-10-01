@@ -448,10 +448,11 @@ func runningInContainer() bool {
 	return docker == nil || podman == nil
 }
 
-// lineCommandHints name the stream's line commands; without --forward-to
+// lineCommandHints name the stream's line commands, short enough that the
+// banner footer at the default width keeps ctrl-c quit; without --forward-to
 // nothing replays.
 func lineCommandHints(forwarding bool) []string {
-	hints := []string{"c N copy as cURL", "e N export fixture", "t test event"}
+	hints := []string{"c N cURL", "e N export", "t test event"}
 	if forwarding {
 		hints = append([]string{"↵ replay last", "r N replay #N"}, hints...)
 	}
@@ -487,9 +488,10 @@ func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool
 			}
 		}
 	}
-	if len(fields) <= 2 && fields[0] == "t" {
-		// A test event that fails to send leaves listening as it was.
-		source, err := sess.SendTest(strings.Join(fields[1:], " "))
+	if fields[0] == "t" {
+		// A test event that fails to send leaves listening as it was. A source
+		// name may contain spaces.
+		source, err := sess.SendTest(strings.TrimSpace(strings.TrimSpace(line)[1:]))
 		if err != nil {
 			return writer.Reply(err.Error())
 		}

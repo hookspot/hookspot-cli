@@ -171,8 +171,9 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 		if n, err := strconv.Atoi(fields[1]); err == nil {
 			return m, exportFixture(m.Exporter, n, !m.ShowSensitiveHeaders)
 		}
-	case len(fields) <= 2 && fields[0] == "t":
-		return m, sendTest(m.Tester, strings.Join(fields[1:], " "))
+	case fields[0] == "t":
+		// A source name may contain spaces.
+		return m, sendTest(m.Tester, strings.TrimSpace(strings.TrimSpace(line)[1:]))
 	case len(fields) == 1 && fields[0] == "?":
 		m.reply = m.help()
 		return m, nil

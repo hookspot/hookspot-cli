@@ -1,8 +1,11 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 
 	"hookspot/internal/api"
@@ -47,7 +51,9 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	text := ws.Delivery{
-		AttemptUID: "att_1", RequestUID: "req_text", SourceUID: "src_stripe", Method: http.MethodPatch, Path: "/orders", Query: "a=1&b=it%27s",
+		AttemptUID: "att_1", RequestUID: "req_text", SourceUID: "src_stripe", Method: http.MethodPatch, Path: "/orders",
+		// Rails and PHP style parameters look like curl URL globs.
+		Query: "a=1&b=it%27s&items[0]=1&f={id,name}",
 		Headers: http.Header{
 			"Content-Type":   []string{"application/json"},
 			"Authorization":  []string{"Bearer secret"},
@@ -58,7 +64,7 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 			"Host":           []string{"hookspot.test"},
 			"Content-Length": []string{"999"},
 		},
-		Body: []byte("{\"note\":\"it's\n\t\\\"quoted\\\"\"}"),
+		Body: []byte("{\"note\":\"it's\n  \\\"quoted\\\"\"}"),
 	}
 	binary := ws.Delivery{
 		AttemptUID: "att_2", RequestUID: "req_binary", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/refunds",
@@ -67,6 +73,11 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	}
 	// curl reads a body starting with @ as a file name.
 	at := ws.Delivery{AttemptUID: "att_3", RequestUID: "req_at", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("@/etc/hostname")}
+	// Pasting turns a carriage return into a newline, and terminals copy tabs as spaces.
+	crlf := ws.Delivery{AttemptUID: "att_4", RequestUID: "req_crlf", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("a=1\r\n\tb=2")}
+	large := ws.Delivery{AttemptUID: "att_5", RequestUID: "req_large", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: bytes.Repeat([]byte("x"), maxInlineBody+1)}
+	// Whoever posts to a source picks the method; these are all HTTP token characters.
+	method := ws.Delivery{AttemptUID: "att_6", RequestUID: "req_method", SourceUID: "src_stripe", Method: "X`touch$IFS'pwned'`|$HOME", Path: "/orders"}
 
 	for _, mode := range []struct {
 		name    string
@@ -87,20 +98,24 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 				forwarder = local
 			}
 			s := New(context.Background(), sources, forwarder, &recorder{})
-			for _, d := range []ws.Delivery{text, binary, at} {
+			for _, d := range []ws.Delivery{text, binary, at, crlf, large, method} {
 				if _, err := s.Handle(d); err != nil {
 					t.Fatal(err)
 				}
 			}
 
 			for n, test := range []struct {
-				delivery    ws.Delivery
-				inlineBody  bool
+				delivery ws.Delivery
+				// fixture names the files of a body or headers that can't go inline.
+				fixture     string
 				headersFile bool
 			}{
-				{delivery: text, inlineBody: true},
-				{delivery: binary, headersFile: true},
-				{delivery: at},
+				{delivery: text},
+				{delivery: binary, fixture: "req_binary_rte_refunds", headersFile: true},
+				{delivery: at, fixture: "req_at_rte_orders"},
+				{delivery: crlf, fixture: "req_crlf_rte_orders"},
+				{delivery: large, fixture: "req_large_rte_orders"},
+				{delivery: method},
 			} {
 				d := test.delivery
 				curl, err := s.Curl(n+1, true)
@@ -110,26 +125,37 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 				if curl.Resend == mode.forward {
 					t.Errorf("#%d Resend = %v in %s mode", n+1, curl.Resend, mode.name)
 				}
-				if inline := strings.Contains(curl.Command, "--data-binary '"+strings.ReplaceAll(string(d.Body), "'", `'\''`)+"'"); inline != test.inlineBody {
-					t.Errorf("#%d body inline = %v:\n%s", n+1, inline, curl.Command)
+				if test.fixture == "" && len(d.Body) > 0 && !strings.Contains(curl.Command, "--data-binary "+quote(string(d.Body))) {
+					t.Errorf("#%d body is not inline:\n%s", n+1, curl.Command)
 				}
-				if !test.inlineBody && !strings.Contains(curl.Command, "--data-binary '@"+filepath.Join(fixtures, d.RequestUID+".body")+"'") {
+				if test.fixture != "" && !strings.Contains(curl.Command, "--data-binary "+quote("@"+filepath.Join(fixtures, test.fixture+".body"))) {
 					t.Errorf("#%d body is not read from its absolute fixture path:\n%s", n+1, curl.Command)
 				}
-				if test.headersFile != (curl.HeadersFile != "") || test.headersFile && curl.HeadersFile != filepath.Join(fixtures, d.RequestUID+".headers") {
+				if test.headersFile != (curl.HeadersFile != "") || test.headersFile && curl.HeadersFile != filepath.Join(fixtures, test.fixture+".headers") {
 					t.Errorf("#%d HeadersFile = %q", n+1, curl.HeadersFile)
 				}
-				if !test.inlineBody && strings.ContainsFunc(curl.Command, func(r rune) bool { return unicode.IsControl(r) && r != '\n' }) {
+				if strings.ContainsFunc(curl.Command, func(r rune) bool { return unicode.IsControl(r) && r != '\n' }) {
 					t.Errorf("#%d command has a raw control character: %q", n+1, curl.Command)
 				}
 
-				run := exec.Command("sh", "-c", curl.Command)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				run := exec.CommandContext(ctx, "sh", "-c", curl.Command)
 				// The pasted command works from any directory.
 				run.Dir = t.TempDir()
-				if out, err := run.CombinedOutput(); err != nil {
+				out, err := run.CombinedOutput()
+				cancel()
+				if err != nil {
 					t.Fatalf("#%d curl: %v\n%s", n+1, err, out)
 				}
-				got := <-requests
+				if _, err := os.Stat(filepath.Join(run.Dir, "pwned")); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("#%d the command ran the method as a shell command: %v", n+1, err)
+				}
+				var got received
+				select {
+				case got = <-requests:
+				case <-time.After(5 * time.Second):
+					t.Fatalf("#%d curl's request never arrived:\n%s", n+1, curl.Command)
+				}
 				if got.method != d.Method || got.path != mode.path(d) || got.query != d.Query || string(got.body) != string(d.Body) {
 					t.Errorf("#%d curl sent %s %s?%s %q, want %s %s?%s %q", n+1, got.method, got.path, got.query, got.body, d.Method, mode.path(d), d.Query, d.Body)
 				}
@@ -137,6 +163,10 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 					if !slices.Contains([]string{"Connection", "Host", "Content-Length"}, name) && !slices.Equal(got.header.Values(name), values) {
 						t.Errorf("#%d header %s = %q, want %q", n+1, name, got.header.Values(name), values)
 					}
+				}
+				// Forwarding sends no Content-Type the delivery lacks.
+				if !slices.Equal(got.header.Values("Content-Type"), d.Headers.Values("Content-Type")) {
+					t.Errorf("#%d Content-Type = %q, want %q", n+1, got.header.Values("Content-Type"), d.Headers.Values("Content-Type"))
 				}
 				if got.header.Get("Connection") == "keep-alive" || got.header.Get("Content-Length") == "999" {
 					t.Errorf("#%d curl sent a hop-by-hop header or the delivery's Content-Length: %v", n+1, got.header)
@@ -146,7 +176,7 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	}
 
 	if runtime.GOOS != "windows" {
-		info, err := os.Stat(filepath.Join(fixtures, "req_binary.headers"))
+		info, err := os.Stat(filepath.Join(fixtures, "req_binary_rte_refunds.headers"))
 		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Fatalf("headers file = %v, %v; want mode 0600", info, err)
 		}

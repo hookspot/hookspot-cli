@@ -35,8 +35,8 @@ func screen() Fullscreen {
 		},
 		Project: "Acme | Payments",
 		Routes: []cards.BannerRoute{
-			{SourceUID: "src_stripe", Source: "stripe", PublicURL: "https://in.hookspot.test/src_stripe", RouteUID: "rte_stripe", Destination: "http://localhost:3000/hooks", Label: "payments"},
-			{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", RouteUID: "rte_github", Destination: "http://localhost:3000/github", Label: "/github"},
+			{SourceUID: "src_stripe", Source: "stripe", PublicURL: "https://in.hookspot.test/src_stripe", RouteUID: "rte_stripe", Path: "/hooks", Destination: "http://localhost:3000/hooks", Label: "payments"},
+			{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", RouteUID: "rte_github", Path: "/github", Destination: "http://localhost:3000/github", Label: "/github"},
 		},
 		Target:   "http://localhost:3000",
 		now:      func() time.Time { return clock },

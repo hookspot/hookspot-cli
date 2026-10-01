@@ -1,7 +1,6 @@
 package cards
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -60,8 +59,8 @@ func Banner(project string, routes []BannerRoute, hints []string, width int) str
 			destination = Line(route.Destination)
 		}
 		targets[i] = faintStyle.Render("→") + " " + destination
-		// An unnamed route's label is its path, which the destination already ends with.
-		if label := Line(route.Label); label != "" && !strings.HasSuffix(destination, label) {
+		// An unnamed route's label is its path, which a forwarding destination already ends with.
+		if label := Line(route.Label); label != "" && (route.Label != route.Path || route.Destination == "") {
 			targets[i] += "  " + faintStyle.Render(label)
 		}
 		fits = fits && nameWidth+2+urlWidth+2+lipgloss.Width(targets[i]) <= inner
@@ -242,10 +241,10 @@ func TestHint(hint session.TestHint, commands bool) string {
 
 // PathWorks follows a test event's delivery with the path it proved: through
 // to the local target when that answered.
-func PathWorks(r Request, width int) string {
+func PathWorks(target string, failure *proxy.TransportFailure, width int) string {
 	path := "hookspot → this terminal"
-	if r.Target != "" && r.Failure == nil {
-		path += " → " + Line(r.Target)
+	if target != "" && failure == nil {
+		path += " → " + Line(target)
 	}
 	return truncate(okStyle.Render("✓")+" path works: "+path, width)
 }
@@ -268,52 +267,45 @@ type Listen struct {
 	Container bool
 }
 
-// Request is one delivery and what forwarding it did.
-type Request struct {
-	Number   int
-	Delivery ws.Delivery
-	Received time.Time
-	// Target is the URL the delivery was forwarded to; "" in inspect mode.
-	Target   string
-	Response ws.Response
-	Latency  time.Duration
-	Failure  *proxy.TransportFailure
-	// Replay compares a replay with the request it replays; nil otherwise.
-	Replay *session.Comparison
-	Test   bool
+// Entry renders a replay as its summary and response diff, e as a one-line
+// row when forwarding answered 2xx, and as a card otherwise and in inspect
+// mode. A test event's delivery is followed by the path it proved.
+func (l Listen) Entry(e session.Entry, width int) string {
+	text := l.render(e, width)
+	if e.Test {
+		text += "\n" + PathWorks(e.Target, e.Failure, width)
+	}
+	return text
 }
 
-// Request renders a replay as its summary and response diff, r as a one-line
-// row when forwarding answered 2xx, and as a card otherwise and in inspect
-// mode.
-func (l Listen) Request(r Request, width int) string {
+func (l Listen) render(e session.Entry, width int) string {
 	inner := max(1, width-4)
 	switch {
-	case r.Replay != nil:
-		return l.replay(r, width)
-	case r.Target == "":
-		return l.inspect(r, inner)
-	case r.Failure != nil:
-		return l.transportFailure(r, inner)
-	case r.Response.Status >= 200 && r.Response.Status < 300:
-		return l.row(r, width)
+	case e.Replay != nil:
+		return l.replay(e, width)
+	case e.Target == "":
+		return l.inspect(e, inner)
+	case e.Failure != nil:
+		return l.transportFailure(e, inner)
+	case e.Response.Status >= 200 && e.Response.Status < 300:
+		return l.row(e, width)
 	default:
-		return l.httpFailure(r, inner)
+		return l.httpFailure(e, inner)
 	}
 }
 
-func (l Listen) row(r Request, width int) string {
-	d := r.Delivery
+func (l Listen) row(e session.Entry, width int) string {
+	d := e.Delivery
 	// Badges are padded, so one space sets them apart. Whoever posts to a
 	// source picks the method, so one longer than OPTIONS is cut.
 	const methodWidth, maxMethod = 6, len("OPTIONS")
-	left := pad(Badge(truncate(Line(method(d)), maxMethod)), methodWidth) + " "
-	if r.Number > 0 {
-		left = faintStyle.Render(fmt.Sprintf("#%-3d", r.Number)) + left
+	left := pad(Badge(truncate(Line(session.Method(d)), maxMethod)), methodWidth) + " "
+	if e.Number > 0 {
+		left = faintStyle.Render(fmt.Sprintf("#%-3d", e.Number)) + left
 	}
-	right := ColorBadge(StatusColor(r.Response.Status), strconv.Itoa(r.Response.Status)) + " " +
-		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(r.Latency))+"  "+timestamp(r))
-	if marks := marks(r); marks != "" {
+	right := ColorBadge(StatusColor(e.Response.Status), strconv.Itoa(e.Response.Status)) + " " +
+		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(e.Latency))+"  "+timestamp(e))
+	if marks := marks(e); marks != "" {
 		right = marks + " " + right
 	}
 
@@ -332,22 +324,22 @@ func (l Listen) row(r Request, width int) string {
 	return left + strings.Repeat(" ", max(2, width-lipgloss.Width(left)-lipgloss.Width(right))) + right
 }
 
-func (l Listen) httpFailure(r Request, inner int) string {
-	d, response := r.Delivery, r.Response
+func (l Listen) httpFailure(e session.Entry, inner int) string {
+	d, response := e.Delivery, e.Response
 	responseLines := append(RedirectHint(response), l.Body(response.Body, response.Headers)...)
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
-	return frame(border, inner, l.title(r), cardLabel(r), "",
-		section{lines: outcome(ColorBadge(StatusColor(response.Status), responseStatus(response.Status)), r, inner)},
+	return frame(border, inner, l.title(e), cardLabel(e), "",
+		section{lines: outcome(ColorBadge(StatusColor(response.Status), responseStatus(response.Status)), e, inner)},
 		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
 }
 
-func (l Listen) transportFailure(r Request, inner int) string {
-	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+TransportLabel(r.Failure.Kind)), r, inner), "")
-	lines = append(lines, l.TransportHints(r.Target, r.Failure)...)
-	return frame(errorStyle, inner, l.title(r), cardLabel(r), "", section{lines: lines})
+func (l Listen) transportFailure(e session.Entry, inner int) string {
+	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+TransportLabel(e.Failure.Kind)), e, inner), "")
+	lines = append(lines, l.TransportHints(e.Target, e.Failure)...)
+	return frame(errorStyle, inner, l.title(e), cardLabel(e), "", section{lines: lines})
 }
 
 // RedirectHint follows a 3xx response that names a Location: webhook senders
@@ -373,8 +365,8 @@ func (l Listen) TransportHints(target string, failure *proxy.TransportFailure) [
 	return hints
 }
 
-func (l Listen) inspect(r Request, inner int) string {
-	d := r.Delivery
+func (l Listen) inspect(e session.Entry, inner int) string {
+	d := e.Delivery
 	var first []string
 	query := ""
 	if d.Query != "" {
@@ -387,7 +379,7 @@ func (l Listen) inspect(r Request, inner int) string {
 	if len(d.Headers) > 0 {
 		headers = strconv.Itoa(len(d.Headers))
 	}
-	return frame(faintStyle, inner, l.title(r), cardLabel(r), "",
+	return frame(faintStyle, inner, l.title(e), cardLabel(e), "",
 		section{lines: first},
 		section{title: faintStyle.Render("headers · " + headers), lines: l.Headers(d.Headers)},
 		section{title: faintStyle.Render("body · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
@@ -396,16 +388,16 @@ func (l Listen) inspect(r Request, inner int) string {
 
 // replay sums up a replay as "#46 ↻ #45  422 → 200  9ms → 41ms", then shows
 // how its response differs from the original's.
-func (l Listen) replay(r Request, width int) string {
-	c := r.Replay
-	summary := faintStyle.Render("#"+strconv.Itoa(r.Number)) + " " + warnStyle.Render("↻") + " " + faintStyle.Render("#"+strconv.Itoa(c.Original)) + "  " +
-		result(c.Status, c.Failure) + faintStyle.Render(" → ") + result(r.Response.Status, r.Failure) + "  " +
-		faintStyle.Render(FormatLatency(c.Latency)+" → "+FormatLatency(r.Latency))
-	right := faintStyle.Render(timestamp(r))
+func (l Listen) replay(e session.Entry, width int) string {
+	c := e.Replay
+	summary := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + warnStyle.Render("↻") + " " + faintStyle.Render("#"+strconv.Itoa(c.Original)) + "  " +
+		result(c.Status, c.Failure) + faintStyle.Render(" → ") + result(e.Response.Status, e.Failure) + "  " +
+		faintStyle.Render(FormatLatency(c.Latency)+" → "+FormatLatency(e.Latency))
+	right := faintStyle.Render(timestamp(e))
 	const minTitle = 12
 	room := max(minTitle, width-lipgloss.Width(summary)-lipgloss.Width(right)-4)
 	// The title leaves out the number the summary opens with.
-	left := summary + "  " + truncate(l.title(Request{Delivery: r.Delivery}), room)
+	left := summary + "  " + truncate(l.title(session.Entry{Delivery: e.Delivery}), room)
 	lines := []string{left + strings.Repeat(" ", max(2, width-lipgloss.Width(left)-lipgloss.Width(right))) + right}
 
 	for _, line := range c.Removed {
@@ -418,11 +410,13 @@ func (l Listen) replay(r Request, width int) string {
 		lines = append(lines, "  "+faintStyle.Render("… "+count(c.More, "more changed line")))
 	}
 	if c.Binary {
-		lines = append(lines, "  "+faintStyle.Render("binary body "+formatBytes(c.Size)+" → "+formatBytes(len(r.Response.Body))))
+		lines = append(lines, "  "+faintStyle.Render("binary body "+formatBytes(c.Size)+" → "+formatBytes(len(e.Response.Body))))
 	}
-	if r.Failure != nil {
-		for _, line := range strings.Split(lipgloss.Wrap(l.transportHint(r.Target, r.Failure), max(1, width-2), ""), "\n") {
-			lines = append(lines, "  "+line)
+	if e.Failure != nil {
+		for _, hint := range l.TransportHints(e.Target, e.Failure) {
+			for _, line := range strings.Split(lipgloss.Wrap(hint, max(1, width-2), ""), "\n") {
+				lines = append(lines, "  "+line)
+			}
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -437,31 +431,31 @@ func result(status int, failure *proxy.TransportFailure) string {
 }
 
 // title names a card's request: number, source, method and path.
-func (l Listen) title(r Request) string {
-	title := l.source(r.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(method(r.Delivery)) + " " + Line(r.Delivery.Path)
-	if r.Number > 0 {
-		title = faintStyle.Render("#"+strconv.Itoa(r.Number)) + " " + title
+func (l Listen) title(e session.Entry) string {
+	title := l.source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(session.Method(e.Delivery)) + " " + Line(e.Delivery.Path)
+	if e.Number > 0 {
+		title = faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + title
 	}
 	return title
 }
 
 // outcome opens a forwarding card: what forwarding did, how long it took and
 // where it went, then the request ID.
-func outcome(status string, r Request, inner int) []string {
-	return spread(status+" "+faintStyle.Render(FormatLatency(r.Latency)+"  → "+Line(r.Target)), faintStyle.Render(Line(r.Delivery.RequestUID)), inner)
+func outcome(status string, e session.Entry, inner int) []string {
+	return spread(status+" "+faintStyle.Render(FormatLatency(e.Latency)+"  → "+Line(e.Target)), faintStyle.Render(Line(e.Delivery.RequestUID)), inner)
 }
 
 // cardLabel ends a card's top border: its marks and the time it arrived.
-func cardLabel(r Request) string {
-	label := faintStyle.Render(timestamp(r))
-	if marks := marks(r); marks != "" {
+func cardLabel(e session.Entry) string {
+	label := faintStyle.Render(timestamp(e))
+	if marks := marks(e); marks != "" {
 		label = marks + "  " + label
 	}
 	return label
 }
 
-func marks(r Request) string {
-	if r.Test {
+func marks(e session.Entry) string {
+	if e.Test {
 		return Badge("test")
 	}
 	return ""
@@ -547,24 +541,28 @@ func (l Listen) Headers(headers http.Header) []string {
 // Body lists a body's lines, pretty-printing and highlighting JSON; a binary
 // body has none.
 func (l Listen) Body(body []byte, headers http.Header) []string {
-	lines, isJSON := bodyLines(body, bodyMIME(headers, body))
-	visible := limit(len(lines), l.Limits.MaxBodyLines)
-	out := make([]string, 0, visible+1)
-	for _, line := range lines[:visible] {
+	lines, omitted, isJSON := bodyLines(body, bodyMIME(headers, body), l.Limits.MaxBodyLines)
+	out := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
 		line = l.bodyLine(line)
 		if isJSON {
 			line = highlightJSON(line)
 		}
 		out = append(out, line)
 	}
-	if omitted := len(lines) - visible; omitted > 0 {
+	if omitted > 0 {
 		out = append(out, faintStyle.Render("… "+count(omitted, "more line")))
 	}
 	return out
 }
 
 // bodyLine escapes one body line, applies --max-value-chars and expands tabs.
+// Escaping only lengthens a line, so it's cut a rune past the limit first,
+// which still earns the "…".
 func (l Listen) bodyLine(line string) string {
+	if most := l.Limits.MaxValueChars; most > 0 {
+		line, _ = runePrefix(line, most+1)
+	}
 	return strings.ReplaceAll(l.value(Sanitize(line)), "\t", "    ")
 }
 
@@ -606,10 +604,26 @@ func (l Listen) transportHint(target string, failure *proxy.TransportFailure) st
 
 // value applies --max-value-chars.
 func (l Listen) value(value string) string {
-	if most := l.Limits.MaxValueChars; most > 0 && utf8.RuneCountInString(value) > most {
-		return string([]rune(value)[:most]) + "…"
+	if prefix, cut := runePrefix(value, l.Limits.MaxValueChars); cut {
+		return prefix + "…"
 	}
 	return value
+}
+
+// runePrefix is text's first n runes, and whether that left any out; n <= 0
+// keeps all of it.
+func runePrefix(text string, n int) (string, bool) {
+	if n <= 0 {
+		return text, false
+	}
+	runes := 0
+	for i := range text {
+		if runes == n {
+			return text[:i], true
+		}
+		runes++
+	}
+	return text, false
 }
 
 // limit applies a --max-* limit to n items.
@@ -684,8 +698,8 @@ func count(n int, noun string) string {
 	return strconv.Itoa(n) + " " + noun + "s"
 }
 
-func timestamp(r Request) string {
-	return r.Received.Format("15:04:05.000")
+func timestamp(e session.Entry) string {
+	return e.Received.Format("15:04:05.000")
 }
 
 func localhostTarget(target string) bool {
@@ -729,18 +743,26 @@ func headerGet(headers http.Header, wanted string) string {
 	return ""
 }
 
-// bodyLines splits a body for display: indented JSON, or text when the media
-// type is textual and the bytes are UTF-8. Anything else has no lines.
-func bodyLines(body []byte, mimeType string) (lines []string, isJSON bool) {
-	trimmed := bytes.TrimSpace(body)
-	var pretty bytes.Buffer
-	if len(trimmed) > 0 && json.Indent(&pretty, trimmed, "", "  ") == nil {
-		return strings.Split(pretty.String(), "\n"), true
+// bodyLines splits a body for display, up to most lines (0 for all) and a
+// count of the rest: indented JSON, or text when the media type is textual
+// and the bytes are UTF-8. Anything else has no lines.
+func bodyLines(body []byte, mimeType string, most int) (lines []string, omitted int, isJSON bool) {
+	if len(body) == 0 {
+		return nil, 0, false
 	}
-	if len(body) == 0 || !textualMIME(mimeType) || !utf8.Valid(body) {
-		return nil, false
+	text, isJSON := session.BodyText(body)
+	if !isJSON && (!textualMIME(mimeType) || !utf8.Valid(body)) {
+		return nil, 0, false
 	}
-	return strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n"), "\n"), false
+	if most <= 0 {
+		return strings.Split(text, "\n"), 0, isJSON
+	}
+	lines = strings.SplitN(text, "\n", most+1)
+	if len(lines) > most {
+		omitted = strings.Count(lines[most], "\n") + 1
+		lines = lines[:most]
+	}
+	return lines, omitted, isJSON
 }
 
 func textualMIME(mimeType string) bool {
@@ -751,13 +773,6 @@ func textualMIME(mimeType string) bool {
 		strings.Contains(mimeType, "yaml") ||
 		mimeType == "application/x-www-form-urlencoded" ||
 		mimeType == "application/graphql"
-}
-
-func method(d ws.Delivery) string {
-	if d.Method == "" {
-		return http.MethodPost
-	}
-	return d.Method
 }
 
 func responseStatus(status int) string {

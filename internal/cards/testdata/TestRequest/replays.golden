@@ -8,6 +8,8 @@
 #50 ↻ #49  connection refused → 200  1ms → 30ms  stripe · POST /a…  12:34:56.789
 #51 ↻ #46  200 → connection refused  41ms → 1ms  stripe · POST /a…  12:34:56.789
   http://localhost:3000/api/webhooks is not reachable — is your server running?
+  inside a container, localhost is the container itself; use the service name
+  (http://app:3000) or host.docker.internal
 #53 ↻ #52  200 → 200  1ms → 1ms  stripe · POST /api/webhooks        12:34:56.789
   binary body 5 B → 7 B
 #55 ↻ #54  500 → 500  1ms → 1ms  stripe · POST /api/webhooks        12:34:56.789

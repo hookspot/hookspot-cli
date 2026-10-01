@@ -106,7 +106,7 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 	}
 	var prose []string
 	if e.Test {
-		prose = append(prose, "", cards.PathWorks(cards.Request{Target: e.Target, Failure: e.Failure}, width))
+		prose = append(prose, "", cards.PathWorks(e.Target, e.Failure, width))
 	}
 	if e.Target != "" {
 		prose = append(prose, "", faintStyle.Render(replaysAreLocal))

@@ -146,7 +146,7 @@ func (s *Session) Emit(event Event) error {
 // the response, so a completed forward is still acknowledged.
 func (s *Session) Handle(delivery ws.Delivery) (ws.Response, error) {
 	entry := Entry{Delivery: cloneDelivery(delivery), Received: s.now(), Test: s.sentTest(delivery)}
-	if route, ok := RouteFor(s.sources, delivery); ok {
+	if route, ok := routeFor(s.sources, delivery); ok {
 		entry.RouteUID = route.UID
 	}
 	if s.forwarder == nil {

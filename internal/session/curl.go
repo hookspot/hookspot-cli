@@ -11,10 +11,14 @@ import (
 	"hookspot/internal/proxy"
 )
 
+// maxInlineBody is the largest body a command carries inline. Linux caps one
+// argument at 128 KiB, and a bigger body would flood scrollback and the
+// clipboard.
+const maxInlineBody = 64 << 10
+
 // Curl is a request as a curl command for a POSIX shell. Its only control
-// characters are the line breaks between arguments and a body's tabs,
-// newlines and carriage returns, so pasting it can't end a bracketed paste or
-// break argv.
+// characters are line breaks, between arguments and in a body, so pasting it
+// can't end a bracketed paste or break argv.
 type Curl struct {
 	// Command is the full command; only the clipboard gets it.
 	Command string
@@ -32,9 +36,11 @@ type Curl struct {
 }
 
 // Curl builds entry n as a curl command to the URL it was forwarded to, or in
-// inspect mode its source's public URL. A body that can't go inline is
-// written to its fixture's .body file, and headers with control characters to
-// a .headers file (read with curl 7.55 and later).
+// inspect mode its source's public URL. A body over 64 KiB or with a control
+// character other than a newline is written to its fixture's .body file:
+// pasting turns a carriage return into a newline, and terminals copy tabs as
+// spaces. Headers with control characters go to a .headers file (read with
+// curl 7.55 and later).
 func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	entry, err := s.entry(n)
 	if err != nil {
@@ -54,11 +60,12 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	if !printable(d.Method+target, "") {
 		return Curl{}, fmt.Errorf("#%d: its method or URL has control characters", n)
 	}
-	method := deliveryMethod(d)
+	method := Method(d)
 	if !plainName.MatchString(method) {
 		method = quote(method)
 	}
-	full := []string{"curl -X " + method + " " + quote(target)}
+	// -g keeps curl from reading [] and {} in a query as URL globs.
+	full := []string{"curl -g -X " + method + " " + quote(target)}
 	shown := slices.Clone(full)
 
 	headers := proxy.Headers(d.Headers)
@@ -77,6 +84,12 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 			shown = append(shown, "-H "+quote(headerLine(name, value)))
 		}
 	}
+	if len(d.Body) > 0 && len(headers["Content-Type"]) == 0 {
+		// An empty value drops the form Content-Type curl adds to a body, which
+		// forwarding never sends.
+		full = append(full, "-H 'Content-Type:'")
+		shown = append(shown, "-H 'Content-Type:'")
+	}
 
 	var files []string
 	name := fixtureName(entry)
@@ -88,7 +101,7 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	}
 	if body := string(d.Body); body != "" {
 		// curl reads a body starting with @ as a file name.
-		if !printable(body, "\t\n\r") || strings.HasPrefix(body, "@") {
+		if len(body) > maxInlineBody || !printable(body, "\n") || strings.HasPrefix(body, "@") {
 			path, err := writeFixture(name+".body", d.Body)
 			if err != nil {
 				return Curl{}, err

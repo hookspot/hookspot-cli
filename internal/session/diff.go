@@ -27,9 +27,10 @@ type Comparison struct {
 	Failure  *proxy.TransportFailure
 	Latency  time.Duration
 	Size     int
-	// Removed and Added are the first response body lines only the original
-	// or only the replay has, at most six together; More counts the rest.
-	// Bodies compare only when both requests got a response.
+	// Removed and Added are the original's and the replay's response body
+	// lines between the first and last lines both share, at most six
+	// together; More counts the rest. Bodies compare only when both requests
+	// got a response.
 	Removed, Added []string
 	More           int
 	// Binary is set instead when the bodies differ and either isn't text, so
@@ -71,16 +72,23 @@ func Compare(original, replay Entry) Comparison {
 	return c
 }
 
-// bodyLines splits a text body as cards show it, indenting JSON.
+// bodyLines splits a body as listen shows it.
 func bodyLines(body []byte) []string {
 	if len(body) == 0 {
 		return nil
 	}
+	text, _ := BodyText(body)
+	return strings.Split(text, "\n")
+}
+
+// BodyText is a body as listen shows it, and whether it's JSON: indented
+// JSON, or else its bytes with LF line ends and no final newline.
+func BodyText(body []byte) (string, bool) {
 	var indented bytes.Buffer
 	if json.Indent(&indented, bytes.TrimSpace(body), "", "  ") == nil {
-		body = indented.Bytes()
+		return indented.String(), true
 	}
-	return strings.Split(strings.TrimSuffix(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n"), "\n")
+	return strings.TrimSuffix(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n"), false
 }
 
 // clip copies lines, cut to maxDiffLineBytes, so they don't pin the body.
