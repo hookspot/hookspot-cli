@@ -10,7 +10,7 @@
 │ Overview   Request   Response   Timing         │
 │ ━━━━━━━━                                       │
 │  ✗ connection refused  21ms  → http://localho… │
-│                                                │
-│ … 9 more lines                                 │
+│ http://localhost:3000/hooks is not reachable — │
+│ … 13 more lines                                │
 ╰────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  r replay  c curl …
+↑↓ select  ←→ tabs  f follow  / filter  r replay …

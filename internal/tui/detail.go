@@ -1,10 +1,16 @@
 package tui
 
 import (
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"hookspot/internal/cards"
 	"hookspot/internal/session"
@@ -28,7 +34,12 @@ const replaysAreLocal = "replays are local: they never change the delivery's sta
 
 // detail frames the selected request's open tab.
 func (m Fullscreen) detail(width, height int) []string {
-	e := m.entries[m.selectedIndex()]
+	i := m.selectedIndex()
+	if i < 0 {
+		// The filter shows nothing.
+		return make([]string, height)
+	}
+	e := m.entries[i]
 	inner := max(1, width-4)
 	lines := m.tabs()
 	switch m.tab {
@@ -70,6 +81,8 @@ func (m Fullscreen) tabs() []string {
 }
 
 // overview sums up what happened to e, where it came from and went, and when.
+// A failure says first why and what to do, and later how the target answered
+// since.
 func (m Fullscreen) overview(e session.Entry, width int) []string {
 	var lines []string
 	switch {
@@ -80,17 +93,20 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 	default:
 		lines = []string{outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency)+"  → "+cards.Line(e.Target))}
 	}
+	if failed(e) {
+		lines = append(lines, m.failure(e, width)...)
+	}
 	lines = append(lines, "",
 		field("source", sourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.sourceName(e.Delivery.SourceUID)))),
 		field("route", m.route(e.RouteUID)),
 		field("received", e.Received.Format(time.TimeOnly+".000")),
 	)
+	if failed(e) {
+		lines = append(lines, field("target", m.targetState()), field("last ok", m.lastSuccess()))
+	}
 	var prose []string
 	if e.Test {
 		prose = append(prose, "", cards.PathWorks(cards.Request{Target: e.Target, Failure: e.Failure}, width))
-	}
-	if e.Failure != nil && e.Replay == nil {
-		prose = append(append(prose, ""), m.Listen.TransportHints(e.Target, e.Failure)...)
 	}
 	if e.Target != "" {
 		prose = append(prose, "", faintStyle.Render(replaysAreLocal))
@@ -183,9 +199,190 @@ func outcomeBadge(e session.Entry) string {
 	if e.Failure != nil {
 		return cards.ColorBadge(cards.StatusColor(0), "✗ "+cards.TransportLabel(e.Failure.Kind))
 	}
-	status := strconv.Itoa(e.Response.Status)
-	if text := http.StatusText(e.Response.Status); text != "" {
-		status += " " + text
+	return cards.ColorBadge(cards.StatusColor(e.Response.Status), statusText(e.Response.Status))
+}
+
+// statusText is a status with its name, such as 500 Internal Server Error.
+func statusText(status int) string {
+	if text := http.StatusText(status); text != "" {
+		return strconv.Itoa(status) + " " + text
 	}
-	return cards.ColorBadge(cards.StatusColor(e.Response.Status), status)
+	return strconv.Itoa(status)
+}
+
+// failed reports whether e was forwarded and got no 2xx, as the failed count
+// has it.
+func failed(e session.Entry) bool {
+	return e.Target != "" && (e.Failure != nil || e.Response.Status < 200 || e.Response.Status >= 300)
+}
+
+// failure says what happened to failed e, then what to do: replay now or,
+// when nothing answered, wait for the target and then replay. A replay's
+// summary already says what happened.
+func (m Fullscreen) failure(e session.Entry, width int) []string {
+	var happened []string
+	switch {
+	case e.Replay != nil:
+	case e.Failure != nil:
+		happened = m.Listen.TransportHints(e.Target, e.Failure)
+	default:
+		happened = cards.RedirectHint(e.Response)
+	}
+	lines := append(wrap(width, happened), "", cards.Badge("r")+" replay now")
+	switch {
+	case m.wait.number == e.Number:
+		lines = append(lines, m.waitLine())
+	case e.Failure != nil:
+		lines = append(lines, cards.Badge("w")+" wait for "+m.targetAddress()+", then replay")
+	}
+	return lines
+}
+
+// targetState is the target and how it answered the newest request.
+func (m Fullscreen) targetState() string {
+	e := m.entries[len(m.entries)-1]
+	state := "answered " + lipgloss.NewStyle().Foreground(cards.StatusColor(e.Response.Status)).Render(strconv.Itoa(e.Response.Status))
+	if e.Failure != nil {
+		state = errorStyle.Render("✗ " + cards.TransportLabel(e.Failure.Kind))
+	}
+	return m.targetAddress() + "  " + state + faintStyle.Render(" · #"+strconv.Itoa(e.Number)+" at "+e.Received.Format(time.TimeOnly))
+}
+
+// lastSuccess is the newest request the target answered with a 2xx.
+func (m Fullscreen) lastSuccess() string {
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		if e := m.entries[i]; e.Target != "" && !failed(e) {
+			return "#" + strconv.Itoa(e.Number) + " at " + e.Received.Format(time.TimeOnly) + faintStyle.Render(" · "+cards.FormatLatency(e.Latency))
+		}
+	}
+	return faintStyle.Render("none yet")
+}
+
+// targetAddress is the --forward-to host and port, which w dials.
+func (m Fullscreen) targetAddress() string {
+	target, err := url.Parse(m.Target)
+	if err != nil {
+		return m.Target
+	}
+	port := target.Port()
+	switch {
+	case port != "":
+	case target.Scheme == "https":
+		port = "443"
+	default:
+		port = "80"
+	}
+	return net.JoinHostPort(target.Hostname(), port)
+}
+
+const dialTimeout = time.Second
+
+var waitKey = key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wait, then replay"))
+
+// wait is w's: it dials the target until it answers, then replays request
+// number. id tells its messages from an earlier wait's.
+type wait struct {
+	id, number int
+	// replaying is set once the target answered; result is the replay's
+	// outcome.
+	replaying bool
+	result    string
+}
+
+type (
+	// dialedMsg is a dial of wait id's target; err is nil when it answered.
+	dialedMsg struct {
+		id  int
+		err error
+	}
+	// waitReplayedMsg ends wait id with its replay's error.
+	waitReplayedMsg struct {
+		id  int
+		err error
+	}
+)
+
+// waiting reports whether a wait hasn't ended yet.
+func (m Fullscreen) waiting() bool {
+	return m.wait.number != 0 && m.wait.result == ""
+}
+
+// startWait waits on the selected request when it found nothing listening,
+// pausing on it so its detail shows the wait.
+func (m Fullscreen) startWait(i int) (Fullscreen, tea.Cmd) {
+	switch {
+	case m.Target == "":
+		return m.show(session.ErrNoTarget.Error())
+	case i < 0:
+		return m, nil
+	case m.entries[i].Failure == nil:
+		return m.show("#" + strconv.Itoa(m.entries[i].Number) + " got a response; r replays it now")
+	}
+	m.paused, m.selected = true, m.entries[i].Number
+	m.wait = wait{id: m.wait.id + 1, number: m.selected}
+	return m, dial(m.targetAddress(), 0, m.wait.id)
+}
+
+// dial tries address after a pause, off the event loop.
+func dial(address string, after time.Duration, id int) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(after)
+		conn, err := net.DialTimeout("tcp", address, dialTimeout)
+		if err == nil {
+			_ = conn.Close()
+		}
+		return dialedMsg{id: id, err: err}
+	}
+}
+
+// dialed replays once the target answers, else dials again after dialEvery.
+func (m Fullscreen) dialed(msg dialedMsg) (Fullscreen, tea.Cmd) {
+	if msg.id != m.wait.id || !m.waiting() || m.wait.replaying {
+		return m, nil
+	}
+	if msg.err != nil {
+		return m, dial(m.targetAddress(), m.dialInterval(), msg.id)
+	}
+	m.wait.replaying = true
+	replayer, n := m.Replayer, m.wait.number
+	return m, func() tea.Msg { return waitReplayedMsg{id: msg.id, err: replayer.Replay(n)} }
+}
+
+// waitReplayed puts the replay's outcome in place of the waiting line. The
+// replay's entry was recorded before Replay returned.
+func (m Fullscreen) waitReplayed(msg waitReplayedMsg) Fullscreen {
+	if msg.id != m.wait.id || !m.waiting() {
+		return m
+	}
+	if msg.err != nil {
+		m.wait.result = errorStyle.Render("✗") + " " + cards.Line(msg.err.Error())
+		return m
+	}
+	m.wait.result = markStyle.Render("↻") + " replayed"
+	for i := len(m.entries) - 1; i >= 0; i-- {
+		if e := m.entries[i]; e.ReplayOf == m.wait.number {
+			m.wait.result += " as #" + strconv.Itoa(e.Number) + " " + outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))
+			break
+		}
+	}
+	return m
+}
+
+// waitLine is w's progress: waiting, replaying, then the replay's outcome.
+func (m Fullscreen) waitLine() string {
+	address := m.targetAddress()
+	switch {
+	case m.wait.result != "":
+		return m.wait.result
+	case m.wait.replaying:
+		return markStyle.Render("↻") + " " + address + " answered, replaying #" + strconv.Itoa(m.wait.number) + "…"
+	}
+	return markStyle.Render("○") + " waiting for " + address + faintStyle.Render(" · checking every "+m.dialInterval().String()+" · esc stops")
+}
+
+func (m Fullscreen) dialInterval() time.Duration {
+	if m.dialEvery == 0 {
+		return time.Second
+	}
+	return m.dialEvery
 }

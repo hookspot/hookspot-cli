@@ -1,0 +1,24 @@
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 14ms
+● stripe   ● github
+/ source:shopify                                          0 matches · esc clears
+╭─ Requests · source:shopify ───────────────────────────────────────── 0 of 1 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
+│   no request matches · esc clears the filter                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …

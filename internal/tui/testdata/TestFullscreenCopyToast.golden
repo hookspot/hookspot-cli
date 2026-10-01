@@ -21,4 +21,4 @@
 copied #1 as cURL
 copying needs a terminal with OSC 52 (Terminal.app has none)
 sensitive headers are hidden; --show-sensitive-headers shows the full command
-↑↓ select  ←→ tabs  f follow  r replay  c curl  e export  t test  ? help  q quit
+↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …

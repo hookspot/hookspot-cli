@@ -317,7 +317,7 @@ func (l Listen) row(r Request, width int) string {
 	// The path keeps a few columns even when that overflows width.
 	const minPath, minSummary = 12, 8
 	room := max(minPath, width-lipgloss.Width(left)-lipgloss.Width(right)-2)
-	path, summary := Line(d.Path), l.summary(d)
+	path, summary := Line(d.Path), l.Summary(d)
 	if summaryRoom := room - lipgloss.Width(path) - 2; lipgloss.Width(summary) <= summaryRoom || summaryRoom >= minSummary {
 		left += path + "  " + faintStyle.Render(truncate(summary, summaryRoom))
 	} else {
@@ -485,9 +485,9 @@ func sourceStyle(uid string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(SourceColor(uid))
 }
 
-// summary names a delivery in its row: its event type when the body has one,
+// Summary names a delivery in its row: its event type when the body has one,
 // else its media type and size.
-func (l Listen) summary(d ws.Delivery) string {
+func (l Listen) Summary(d ws.Delivery) string {
 	var object map[string]json.RawMessage
 	if json.Unmarshal(d.Body, &object) == nil {
 		for _, key := range []string{"type", "event", "event_type", "action"} {
