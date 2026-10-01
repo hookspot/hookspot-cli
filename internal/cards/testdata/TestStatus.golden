@@ -1,0 +1,10 @@
+○ connecting… · Acme | Payments · 0 requests
+›                           ↵ replay last · r N replay #N · ? help · ctrl-c quit
+● live · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms
+› r 4\x1b                   ↵ replay last · r N replay #N · ? help · ctrl-c quit
+● live · Acme | Payments · 3 requests                                ctrl-c quit
+○ reconnecting · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms · …
+◌ stopping… · evil\x1b]0;title\x07\n · 0 requests              ctrl-c force quit
+■ stopped · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms
+● live · Acme | Payments · 12 requests …
+› r 4 

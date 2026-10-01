@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -20,6 +21,7 @@ import (
 	"hookspot/internal/endpoint"
 	"hookspot/internal/proxy"
 	"hookspot/internal/session"
+	"hookspot/internal/tui"
 	"hookspot/internal/ws"
 )
 
@@ -83,7 +85,8 @@ var listenCmd = &cobra.Command{
 			return fmt.Errorf("list project sources: %w", err)
 		}
 		sources, sourceUIDs, warnings, err := resolveSources(activeEndpoint, project, availableSources, sourceNames)
-		writer := cards.NewWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), cards.Listen{
+		requestsURL := dashboardRequestsURL(activeEndpoint, project)
+		listenCards := cards.Listen{
 			Sources:              sourceNamesByUID(sources),
 			ShowSensitiveHeaders: showSensitiveHeaders,
 			Container:            runningInContainer(),
@@ -92,7 +95,8 @@ var listenCmd = &cobra.Command{
 				MaxHeaders:    maxHeaders,
 				MaxValueChars: maxValueChars,
 			},
-		}, dashboardRequestsURL(activeEndpoint, project))
+		}
+		writer := cards.NewWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), listenCards, requestsURL)
 		// Warnings print even when no source is left; nothing else writes
 		// yet, so they skip the session.
 		for _, warning := range warnings {
@@ -104,14 +108,6 @@ var listenCmd = &cobra.Command{
 			return err
 		}
 
-		listenContext, stopListening := context.WithCancel(cmd.Context())
-		defer stopListening()
-		var local session.Forwarder
-		if forwarder != nil {
-			local = forwarder
-		}
-		sess := session.New(listenContext, sources, local, writer)
-
 		wsURL := activeEndpoint.WebSocket()
 		if wsURL == nil {
 			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
@@ -120,15 +116,48 @@ var listenCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		listenContext, stopListening := context.WithCancel(cmd.Context())
+		defer stopListening()
+		var local session.Forwarder
+		if forwarder != nil {
+			local = forwarder
+		}
+		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs)
+		listen := func(sess *session.Session) error {
+			if err := sess.Emit(session.Connecting{}); err != nil {
+				return err
+			}
+			notices := newConnectionNotices(sess.Emit)
+			wsClient.OnJoined = notices.joined
+			return superviseListen(listenContext, notices, wsClient, sess.Handle, reconnectPolicy{
+				Delay:              reconnectDelay,
+				MaxInitialAttempts: maxInitialConnectAttempts,
+			})
+		}
+		projectName := projectDisplayName(*project)
+
+		if cards.Terminal(cmd.OutOrStdout()) {
+			// The status line carries the hints.
+			if err := writer.Banner(projectName, routes, nil); err != nil {
+				return err
+			}
+			var input io.Reader
+			if isTerminalReader(cmd.InOrStdin()) {
+				input = cmd.InOrStdin()
+			}
+			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
+			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
+			stream := tui.Stream{Replayer: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil}
+			return runInTerminal(program, stream, func() error { return listen(sess) })
+		}
+
+		sess := session.New(listenContext, sources, local, writer)
 		commandsEnabled := forwarder != nil && isTerminalReader(cmd.InOrStdin())
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
 			hints = append(lineCommandHints, hints...)
 		}
-		if err := writer.Banner(projectDisplayName(*project), routes, hints); err != nil {
-			return err
-		}
-		if err := sess.Emit(session.Connecting{}); err != nil {
+		if err := writer.Banner(projectName, routes, hints); err != nil {
 			return err
 		}
 		var commands *lineCommandReader
@@ -137,16 +166,7 @@ var listenCmd = &cobra.Command{
 				return runLineCommand(sess, writer, line)
 			}, stopListening)
 		}
-		topic := "project:" + project.UID
-
-		notices := newConnectionNotices(sess.Emit)
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, topic, sourceUIDs)
-		wsClient.OnJoined = notices.joined
-
-		listenErr := superviseListen(listenContext, notices, wsClient, sess.Handle, reconnectPolicy{
-			Delay:              reconnectDelay,
-			MaxInitialAttempts: maxInitialConnectAttempts,
-		})
+		listenErr := listen(sess)
 		stopListening()
 		if commands != nil {
 			if err := commands.Stop(); err != nil {
@@ -155,6 +175,24 @@ var listenCmd = &cobra.Command{
 		}
 		return listenErr
 	},
+}
+
+// runInTerminal runs listen under program: listen ending quits the program,
+// and the program ending first stops listen. When both fail, the program's
+// error wins.
+func runInTerminal(program *tui.Program, model tea.Model, listen func() error) error {
+	listened := make(chan error, 1)
+	go func() {
+		err := listen()
+		program.Quit()
+		listened <- err
+	}()
+	_, runErr := program.Run(model)
+	listenErr := <-listened
+	if runErr != nil {
+		return runErr
+	}
+	return listenErr
 }
 
 type websocketListener interface {

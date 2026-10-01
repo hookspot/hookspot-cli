@@ -7,11 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
 	"testing"
 	"time"
+
+	"hookspot/internal/session"
+	"hookspot/internal/tui"
 )
 
 const signalFixtureEnvironment = "HOOKSPOT_TEST_SIGNAL_MODE"
@@ -22,13 +26,22 @@ func TestSignalFixture(t *testing.T) {
 		return
 	}
 	err := executeWithSignalContext(func(ctx context.Context) error {
+		if mode == "program" {
+			// listen's terminal stream with stdin not a terminal, so input
+			// isn't raw and Ctrl-C stays a SIGINT.
+			listenContext, stop := context.WithCancel(ctx)
+			ctx = listenContext
+			program := tui.NewProgram(nil, io.Discard, stop)
+			go func() { _, _ = program.Run(tui.Stream{}) }()
+			program.Send(session.Ready{})
+		}
 		fmt.Fprintln(os.Stdout, "ready")
 		if mode == "normal" {
 			return nil
 		}
 		<-ctx.Done()
 		fmt.Fprintln(os.Stdout, "canceled")
-		if mode == "blocked" {
+		if mode == "blocked" || mode == "program" {
 			select {}
 		}
 		return nil
@@ -51,36 +64,40 @@ func TestFirstInterruptAllowsGracefulCleanup(t *testing.T) {
 }
 
 func TestLaterInterruptForcesExitDuringBlockedCleanup(t *testing.T) {
-	fixture := startSignalFixture(t, "blocked")
-	waitForFixtureLine(t, fixture.scanner, "ready")
-	if err := fixture.command.Process.Signal(os.Interrupt); err != nil {
-		t.Fatal(err)
-	}
-	waitForFixtureLine(t, fixture.scanner, "canceled")
-
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-forceSignals:
-	for {
-		select {
-		case <-fixture.exited:
-			break forceSignals
-		case <-ticker.C:
-			if err := fixture.command.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	for _, mode := range []string{"blocked", "program"} {
+		t.Run(mode, func(t *testing.T) {
+			fixture := startSignalFixture(t, mode)
+			waitForFixtureLine(t, fixture.scanner, "ready")
+			if err := fixture.command.Process.Signal(os.Interrupt); err != nil {
 				t.Fatal(err)
 			}
-		}
-	}
+			waitForFixtureLine(t, fixture.scanner, "canceled")
 
-	err := fixture.waitErr
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
-		t.Fatalf("blocked fixture exit = %v, want signal exit", err)
-	}
-	status, ok := exitErr.Sys().(syscall.WaitStatus)
-	if !ok || !status.Signaled() || status.Signal() != syscall.SIGINT {
-		t.Fatalf("blocked fixture status = %#v, want SIGINT", exitErr.Sys())
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+
+		forceSignals:
+			for {
+				select {
+				case <-fixture.exited:
+					break forceSignals
+				case <-ticker.C:
+					if err := fixture.command.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			err := fixture.waitErr
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				t.Fatalf("blocked fixture exit = %v, want signal exit", err)
+			}
+			status, ok := exitErr.Sys().(syscall.WaitStatus)
+			if !ok || !status.Signaled() || status.Signal() != syscall.SIGINT {
+				t.Fatalf("blocked fixture status = %#v, want SIGINT", exitErr.Sys())
+			}
+		})
 	}
 }
 

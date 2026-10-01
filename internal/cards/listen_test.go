@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"hookspot/internal/proxy"
+	"hookspot/internal/session"
 	"hookspot/internal/ws"
 )
 
@@ -126,6 +127,25 @@ func TestConnectionStatesAndNoticesKeepPlainWording(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStatus(t *testing.T) {
+	hints := []string{"↵ replay last", "r N replay #N", "? help", "ctrl-c quit"}
+	forwarded := session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond}
+	lines := []string{
+		Status{Project: "Acme | Payments"}.Line(80),
+		Prompt("", hints, 80),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded}.Line(80),
+		Prompt("r 4\x1b", hints, 80),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: session.Stats{Count: 3}, Hints: []string{"ctrl-c quit"}}.Line(80),
+		Status{State: StateOffline, Err: errors.New("dial tcp: connection refused\x1b[2J"), Project: "Acme | Payments", Totals: forwarded}.Line(80),
+		Status{State: StateStopping, Project: "evil\x1b]0;title\x07\n", Hints: []string{"ctrl-c force quit"}}.Line(80),
+		Status{State: StateStopped, Project: "Acme | Payments", Totals: forwarded}.Line(80),
+		// Hints go first when a line doesn't fit, then the rest is cut.
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Hints: hints}.Line(40),
+		Prompt("r 4", hints, 40),
+	}
+	golden.RequireEqual(t, noColor(t, strings.Join(lines, "\n")))
 }
 
 func TestRequest(t *testing.T) {

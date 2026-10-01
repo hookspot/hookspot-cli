@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -26,6 +27,7 @@ import (
 	"hookspot/internal/endpoint"
 	"hookspot/internal/proxy"
 	"hookspot/internal/session"
+	"hookspot/internal/tui"
 	"hookspot/internal/ws"
 )
 
@@ -841,6 +843,36 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	if want := "#9: no such request\n" + help + help; stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
+}
+
+func TestRunInTerminal(t *testing.T) {
+	t.Run("listen ending quits the program", func(t *testing.T) {
+		_, stop := context.WithCancel(context.Background())
+		defer stop()
+		listenErr := errors.New("project not found")
+		err := runInTerminal(tui.NewProgram(nil, io.Discard, stop), tui.Stream{}, func() error { return listenErr })
+		if !errors.Is(err, listenErr) {
+			t.Fatalf("runInTerminal = %v, want listen's error", err)
+		}
+	})
+	t.Run("the program failing first stops listen and wins", func(t *testing.T) {
+		ctx, stop := context.WithCancel(context.Background())
+		defer stop()
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = writer.Close()
+		_ = reader.Close()
+		listenErr := errors.New("listen failed")
+		err = runInTerminal(tui.NewProgram(reader, io.Discard, stop), tui.Stream{}, func() error {
+			<-ctx.Done()
+			return listenErr
+		})
+		if err == nil || errors.Is(err, listenErr) {
+			t.Fatalf("runInTerminal = %v, want the program's error", err)
+		}
+	})
 }
 
 // listenStreamSources are two sources: one route named, one not.

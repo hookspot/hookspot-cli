@@ -63,7 +63,7 @@ func (w *Writer) Emit(event session.Event) error {
 	case session.RootNotFound:
 		return w.write(w.errOut, RootNotFound(e.Root, e.Status))
 	case session.Recorded:
-		return w.write(w.out, w.listen.Request(request(e.Entry), Width(w.out.w)))
+		return w.write(w.out, w.listen.Entry(e.Entry, Width(w.out.w)))
 	}
 	return nil
 }
@@ -83,6 +83,11 @@ func (w *Writer) write(s stream, text string) error {
 		err = io.ErrShortWrite
 	}
 	return err
+}
+
+// Entry renders a recorded entry as Request does.
+func (l Listen) Entry(e session.Entry, width int) string {
+	return l.Request(request(e), width)
 }
 
 func request(e session.Entry) Request {

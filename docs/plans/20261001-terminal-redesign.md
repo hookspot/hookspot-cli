@@ -381,20 +381,27 @@
 - Modify: `main.go`
 - Modify: `main_signal_unix_test.go`
 
-- [ ] add `charm.land/bubbletea/v2` and `github.com/charmbracelet/x/exp/teatest/v2`, pinned
-- [ ] `tui.Program` helper: `WithoutSignalHandler`; the input/output options from Solution Overview; the sinks (the `Println` wrapper that returns `ErrClosed`, `Send`); the Ctrl-C, `q` and program-exits-first sequences with an injectable exit function
-- [ ] inline stream model: the view is a status line (connection, project, counts, p50, hints) plus the `›` prompt when stdin is a terminal; it becomes the default when stdout is a terminal
-- [ ] `↵` replays the last request, `r N` replays #N, `?` shows help; replays run in `tea.Cmd`s
-- [ ] the error mapping from Solution Overview (a panic stays an error)
-- [ ] write teatest tests:
+- [x] add `charm.land/bubbletea/v2` and `github.com/charmbracelet/x/exp/teatest/v2`, pinned
+- [x] `tui.Program` helper: `WithoutSignalHandler`; the input/output options from Solution Overview; the sinks (the `Println` wrapper that returns `ErrClosed`, `Send`); the Ctrl-C, `q` and program-exits-first sequences with an injectable exit function
+- [x] inline stream model: the view is a status line (connection, project, counts, p50, hints) plus the `›` prompt when stdin is a terminal; it becomes the default when stdout is a terminal
+- [x] `↵` replays the last request, `r N` replays #N, `?` shows help; replays run in `tea.Cmd`s
+- [x] the error mapping from Solution Overview (a panic stays an error)
+- [x] write teatest tests:
   - whole cards in order under a burst and with a racing replay;
   - counts update; reconnect states;
   - `r N` on missing and evicted numbers;
   - first Ctrl-C stops gracefully; second Ctrl-C calls `Kill` and the injected exit with 130, without hanging the handler;
   - the program exiting first (startup error, panic) stops the listener with no "delivery could not be processed" error;
   - non-terminal stdin shows no prompt.
-- [ ] keep `main_signal_unix_test.go` passing: a second SIGINT still kills the process when input isn't raw
-- [ ] run tests - must pass before next task
+- [x] keep `main_signal_unix_test.go` passing: a second SIGINT still kills the process when input isn't raw
+- [x] run tests - must pass before next task
+- ➕ API for Tasks 9–14: `tui.NewProgram(input, output, stop)`, `Run(model)` (returns the final model), `Println`, `Send`, `Quit` (after listen returns), `StreamSink(cards.Listen, requestsURL)`, the `tui.Stop` Cmd for full-screen `q`, and `tui.Stream{Replayer, Project, Forwarding, Prompt}`. `cmd/listen.go`'s `runInTerminal` runs listen under a program. `cards.Status{State, Err, Project, Totals, Hints}.Line(width)` and `cards.Prompt(input, hints, width)` render the status and prompt lines (golden `TestStatus`); `cards.Listen.Entry` renders a recorded entry
+- ➕ `github.com/charmbracelet/ultraviolet` moved to `eb96d541d798` (2026-09-06): the version lipgloss v2.0.6 pulled in clamps the inline cursor row when a frame shrinks, leaving the taller frame's top lines on screen (e.g. after `?` help)
+- ⚠️ `main.go` is unchanged: the first raw-mode Ctrl-C cancels the listen context, a child of the signal context, so `main.go` keeps handling SIGTERM and `kill -INT` alone. The signal test gained a `program` mode that runs the stream with non-raw input
+- ⚠️ only a bare `ErrProgramKilled` (from `Kill`) maps to nil; wrapped, it carries a panic or an input read failure, which stay errors. `Handle` needs no `ErrClosed` check: the program cancels the listen context before `Println` fails, and the websocket client returns the cancelled context for a handler that ends after it (tested with a real `ws.Client`)
+- ⚠️ the commands and `ctrl-c quit` sit at the right of the prompt line (the status line has no room at 80 columns); without a prompt the status line names `ctrl-c quit`, and after the first Ctrl-C `ctrl-c force quit`. The terminal banner has no hints. Replies (a typo, an evicted number, multi-line `?` help, a failed replay) show above the status line until the next command; a failed replay doesn't end listen as in plain mode
+- ⚠️ `ConnectionLost` only updates the status line (`○ reconnecting · … · <error>`), since every retry would print a line; `Reconnected` and the root-404 hint print above it; source warnings still go to stderr before the program starts. The final frame is a `■ stopped` summary line, kept by ending the view with an empty line (bubbletea erases the frame's last line on exit)
+- ⚠️ the prompt draws a reverse-video block cursor instead of the terminal cursor. Command behaviour is tested on the model (`Update`, then the returned Cmd), because the inline renderer redraws only changed cells and a reply can't be read off the output reliably; printed cards are checked with `teatest.WaitFor` and final views are goldened
 
 ### Task 9: Replay summary and response diff
 

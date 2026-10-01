@@ -17,6 +17,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"hookspot/internal/proxy"
+	"hookspot/internal/session"
 	"hookspot/internal/ws"
 )
 
@@ -107,6 +108,83 @@ func ConnectionLost(err error, retryIn time.Duration) string {
 func Reconnected(offline time.Duration, requestsURL string) string {
 	return okStyle.Render("Reconnected") + fmt.Sprintf(" after %s offline. ", offline.Round(time.Second)) +
 		faintStyle.Render("Requests that arrived meanwhile were not delivered; retry them from ") + Line(requestsURL)
+}
+
+// State is what a listen run's connection is doing.
+type State int
+
+const (
+	StateConnecting State = iota
+	StateLive
+	StateOffline
+	StateStopping
+	StateStopped
+)
+
+// Status is the terminal stream's status line.
+type Status struct {
+	State State
+	// Err is why the connection dropped, while offline.
+	Err     error
+	Project string
+	Totals  session.Stats
+	Hints   []string
+}
+
+// Line renders the status at width: state, project, counts and p50, then the
+// hints while they fit.
+func (s Status) Line(width int) string {
+	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), count(s.Totals.Count, "request")}
+	if t := s.Totals; t.OK+t.Failed > 0 {
+		failed := strconv.Itoa(t.Failed) + " failed"
+		if t.Failed > 0 {
+			failed = errorStyle.Render(failed)
+		}
+		parts = append(parts, okStyle.Render(strconv.Itoa(t.OK)+" ok"), failed)
+	}
+	// Max is zero until a request got a response or timed out.
+	if s.Totals.Max > 0 {
+		parts = append(parts, "p50 "+formatLatency(s.Totals.P50))
+	}
+	if s.State == StateOffline && s.Err != nil {
+		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
+	}
+	return withHints(strings.Join(parts, faintStyle.Render(" · ")), s.Hints, width)
+}
+
+func (s Status) state() string {
+	switch s.State {
+	case StateLive:
+		return okStyle.Render("●") + " live"
+	case StateOffline:
+		return warnStyle.Render("○") + " reconnecting"
+	case StateStopping:
+		return faintStyle.Render("◌ stopping…")
+	case StateStopped:
+		return faintStyle.Render("■ stopped")
+	default:
+		return faintStyle.Render("○ connecting…")
+	}
+}
+
+var cursorStyle = lipgloss.NewStyle().Reverse(true)
+
+// Prompt is the › prompt with the typed input and a block cursor, then hints
+// at the right end while they fit.
+func Prompt(input string, hints []string, width int) string {
+	return withHints(faintStyle.Render("›")+" "+Line(input)+cursorStyle.Render(" "), hints, width)
+}
+
+// withHints puts hints at the right end of line while they fit, then cuts the
+// line to width.
+func withHints(line string, hints []string, width int) string {
+	if len(hints) > 0 {
+		joined := faintStyle.Render(strings.Join(hints, " · "))
+		if gap := width - lipgloss.Width(line) - lipgloss.Width(joined); gap >= 2 {
+			line += strings.Repeat(" ", gap) + joined
+		}
+	}
+	return truncate(line, width)
 }
 
 // DisabledSource warns that a listened source rejects its requests.
