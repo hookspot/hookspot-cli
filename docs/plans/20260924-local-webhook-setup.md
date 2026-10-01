@@ -321,11 +321,16 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - Modify: `internal/ws/client.go`, `internal/ws/client_test.go`
 - Modify: `cmd/listen.go`, `cmd/listen_test.go`
 
-- [ ] add `OnJoined` to `ws.Client` (called after a successful join reply only)
-- [ ] banner ends with `Connecting…`; `superviseListen` prints `Ready …` (and the replay hint) on the first join, and `Reconnected after <d> offline …` with the dashboard requests URL on later joins
-- [ ] write tests: `OnJoined` fires once per successful join and never on a rejected join
-- [ ] write tests (fake listener): `Ready` only after the join (stdout); the reconnect line with a measured duration and escaped URL (stderr); initial-connect failure unchanged
-- [ ] run tests - must pass before next task
+- [x] add `OnJoined` to `ws.Client` (called after a successful join reply only)
+- [x] banner ends with `Connecting…`; `superviseListen` prints `Ready …` (and the replay hint) on the first join, and `Reconnected after <d> offline …` with the dashboard requests URL on later joins
+- [x] write tests: `OnJoined` fires once per successful join and never on a rejected join
+- [x] write tests (fake listener): `Ready` only after the join (stdout); the reconnect line with a measured duration and escaped URL (stderr); initial-connect failure unchanged
+- [x] run tests - must pass before next task
+- ⚠️ `OnJoined` is `func() error`: a failed `Ready` write ends `listen` as a fatal handler error, like other output failures.
+- ➕ Connection output lives in `connectionNotices` (`joined`, `lost`); `superviseListen` takes it instead of `errOut`.
+- ➕ The banner keeps its `Requests ───` divider; `Connecting…` replaces `Waiting for requests...`. `printListenInfoWithReplay` became `printListenInfo`; the replay hint prints after the `Ready` line.
+- ➕ A slug that fails `endpoint.Segment` makes the reconnect line say `retry them from the dashboard`.
+- ➕ E2E: `listen` against a fake server prints `Ready` once after `Connecting…`, then `Reconnected …` with the URL on stderr; a rejected join prints no `Ready`.
 
 ### Task 7: CLI: `listen` banner and source messages
 

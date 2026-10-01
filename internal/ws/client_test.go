@@ -286,6 +286,10 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 			wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
 
 			client := New(wsURL, "test-key", "project:proj_1", nil)
+			client.OnJoined = func() error {
+				t.Error("OnJoined ran for a rejected join")
+				return nil
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -305,6 +309,64 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 				t.Fatal("join error is retryable")
 			}
 		})
+	}
+}
+
+func TestClientOnJoinedRunsOncePerAcceptedJoinBeforeDeliveries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn := acceptTestConnection(t, w, r)
+		defer conn.Close()
+		join := readFrame(t, conn)
+		writeJoinAccepted(t, conn, join)
+		writeTestMessage(t, conn, message{Topic: join.Topic, Event: deliveryEvent, Payload: backendDelivery("att_1", "POST", "")})
+		_ = readFrame(t, conn)
+	}))
+	defer server.Close()
+
+	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions())
+	joins := 0
+	client.OnJoined = func() error {
+		joins++
+		return nil
+	}
+	for session := 1; session <= 2; session++ {
+		err := client.Listen(context.Background(), func(Delivery) (Response, error) {
+			if joins != session {
+				t.Errorf("session %d delivery handled after %d joins", session, joins)
+			}
+			return Response{Status: http.StatusOK}, nil
+		})
+		var sessionErr *SessionError
+		if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionDisconnected {
+			t.Fatalf("session %d Listen error = %#v, want disconnect", session, err)
+		}
+	}
+	if joins != 2 {
+		t.Fatalf("OnJoined calls = %d, want 2", joins)
+	}
+}
+
+func TestClientOnJoinedFailureEndsSessionBeforeDeliveries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn := acceptTestConnection(t, w, r)
+		defer conn.Close()
+		join := readFrame(t, conn)
+		writeJoinAccepted(t, conn, join)
+		writeTestMessage(t, conn, message{Topic: join.Topic, Event: deliveryEvent, Payload: backendDelivery("att_1", "POST", "")})
+		_, _, _ = conn.ReadMessage()
+	}))
+	defer server.Close()
+
+	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions())
+	wantErr := errors.New("stdout closed")
+	client.OnJoined = func() error { return wantErr }
+	err := client.Listen(context.Background(), func(Delivery) (Response, error) {
+		t.Error("delivery handled after OnJoined failed")
+		return Response{Status: http.StatusOK}, nil
+	})
+	var sessionErr *SessionError
+	if !errors.Is(err, wantErr) || !errors.As(err, &sessionErr) || sessionErr.Kind != SessionHandler || !sessionErr.Connected {
+		t.Fatalf("Listen error = %#v, want fatal handler error", err)
 	}
 }
 

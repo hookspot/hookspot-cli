@@ -16,6 +16,7 @@ import (
 	"golang.org/x/term"
 
 	"hookspot/internal/api"
+	"hookspot/internal/endpoint"
 	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
@@ -116,7 +117,7 @@ var listenCmd = &cobra.Command{
 		if wsURL == nil {
 			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
 		}
-		if err := printListenInfoWithReplay(cmd.OutOrStdout(), sources, forwarder, replayEnabled); err != nil {
+		if err := printListenInfo(cmd.OutOrStdout(), sources, forwarder); err != nil {
 			return err
 		}
 		var replay *replayInputSession
@@ -125,9 +126,11 @@ var listenCmd = &cobra.Command{
 		}
 		topic := "project:" + project.UID
 
+		notices := newConnectionNotices(cmd.OutOrStdout(), cmd.ErrOrStderr(), replayEnabled, dashboardRequestsURL(activeEndpoint, project))
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, topic, sourceUIDs)
+		wsClient.OnJoined = notices.joined
 
-		listenErr := superviseListen(listenContext, cmd.ErrOrStderr(), wsClient, handler, reconnectPolicy{
+		listenErr := superviseListen(listenContext, notices, wsClient, handler, reconnectPolicy{
 			Delay:              reconnectDelay,
 			MaxInitialAttempts: maxInitialConnectAttempts,
 		})
@@ -154,7 +157,7 @@ type reconnectPolicy struct {
 // command. Authentication, not-found, protocol, and handler failures are
 // fatal; an initial connection is bounded, while a session that connected once
 // retries until cancellation.
-func superviseListen(ctx context.Context, errOut io.Writer, listener websocketListener, handler ws.Handler, policy reconnectPolicy) error {
+func superviseListen(ctx context.Context, notices *connectionNotices, listener websocketListener, handler ws.Handler, policy reconnectPolicy) error {
 	initialAttempts := 0
 	connectedOnce := false
 
@@ -189,14 +192,68 @@ func superviseListen(ctx context.Context, errOut io.Writer, listener websocketLi
 			}
 		}
 
-		notice := fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(err.Error()), policy.Delay)
-		if err := writeCommandText(errOut, notice); err != nil {
+		if err := notices.lost(err, policy.Delay); err != nil {
 			return fmt.Errorf("write reconnect notice: %w", err)
 		}
 		if !waitForReconnect(ctx, policy.Delay) {
 			return nil
 		}
 	}
+}
+
+// connectionNotices reports connection state while listen runs. Deliveries
+// start only after the channel join, so Ready waits for it; requests that
+// arrive during an outage are never retried, so a reconnect says where to
+// retry them.
+type connectionNotices struct {
+	out          io.Writer
+	errOut       io.Writer
+	replay       bool
+	requestsURL  string
+	now          func() time.Time
+	ready        bool
+	offlineSince time.Time
+}
+
+func newConnectionNotices(out, errOut io.Writer, replay bool, requestsURL string) *connectionNotices {
+	return &connectionNotices{out: out, errOut: errOut, replay: replay, requestsURL: requestsURL, now: time.Now}
+}
+
+func (n *connectionNotices) joined() error {
+	if !n.ready {
+		n.ready = true
+		text := "Ready. Waiting for requests (Ctrl-C to quit)\n"
+		if n.replay {
+			text += "↵ replay last request\n"
+		}
+		return writeCommandText(n.out, text)
+	}
+	offline := n.now().Sub(n.offlineSince).Round(time.Second)
+	n.offlineSince = time.Time{}
+	return writeCommandText(n.errOut, fmt.Sprintf(
+		"Reconnected after %s offline. Requests that arrived meanwhile were not delivered; retry them from %s\n",
+		offline, n.requestsURL,
+	))
+}
+
+// lost reports a failed session. An outage is timed from its first failed
+// session, not from the latest reconnect attempt.
+func (n *connectionNotices) lost(err error, retryIn time.Duration) error {
+	if n.ready && n.offlineSince.IsZero() {
+		n.offlineSince = n.now()
+	}
+	return writeCommandText(n.errOut, fmt.Sprintf("connection lost: %s; reconnecting in %s...\n", safeDisplayText(err.Error()), retryIn))
+}
+
+func dashboardRequestsURL(base endpoint.Base, project *api.Project) string {
+	organization, organizationErr := endpoint.Segment(project.Organization.Slug)
+	slug, slugErr := endpoint.Segment(project.Slug)
+	if organizationErr == nil && slugErr == nil {
+		if u := base.API(organization + "/" + slug + "/requests"); u != nil {
+			return u.String()
+		}
+	}
+	return "the dashboard"
 }
 
 func waitForReconnect(ctx context.Context, delay time.Duration) bool {
@@ -266,7 +323,7 @@ func sourceNamesByUID(sources []api.Source) map[string]string {
 	return names
 }
 
-func printListenInfoWithReplay(out io.Writer, sources []api.Source, forwarder *proxy.Forwarder, replay bool) error {
+func printListenInfo(out io.Writer, sources []api.Source, forwarder *proxy.Forwarder) error {
 	var output strings.Builder
 	routeCount := 0
 	for _, source := range sources {
@@ -312,10 +369,7 @@ func printListenInfoWithReplay(out io.Writer, sources []api.Source, forwarder *p
 	fmt.Fprintln(&output)
 	fmt.Fprintln(&output, "Requests ──────────────────────────────────────")
 	fmt.Fprintln(&output)
-	if replay {
-		fmt.Fprintln(&output, "↵ replay last request")
-	}
-	fmt.Fprintln(&output, "Waiting for requests...")
+	fmt.Fprintln(&output, "Connecting…")
 	return writeCommandText(out, output.String())
 }
 
