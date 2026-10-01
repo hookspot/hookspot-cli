@@ -339,11 +339,14 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - Modify: `cmd/listen_test.go` (incl. `:95-122`)
 - Modify: `cmd/project_test.go` (`:742`)
 
-- [ ] banner starts with `Listening in <Org | Project> …`; disabled-source warning; route-less named source warning instead of a silent skip
-- [ ] replace `no matching routes found` with the two messages and the dashboard hint; add "did you mean" for a single case-insensitive match
-- [ ] write tests: the project in the banner; disabled and route-less warnings on stderr; the all-skipped error; no-args error text and hint URL; "did you mean" only for exactly one fold match
-- [ ] update the existing assertions that expected the old messages or the silent skip
-- [ ] run tests - must pass before next task
+- [x] banner starts with `Listening in <Org | Project> …`; disabled-source warning; route-less named source warning instead of a silent skip
+- [x] replace `no matching routes found` with the two messages and the dashboard hint; add "did you mean" for a single case-insensitive match
+- [x] write tests: the project in the banner; disabled and route-less warnings on stderr; the all-skipped error; no-args error text and hint URL; "did you mean" only for exactly one fold match
+- [x] update the existing assertions that expected the old messages or the silent skip
+- [x] run tests - must pass before next task
+- ➕ The new-route URL is `<app>/<org>/<project>/routes/new` (built like the requests URL); with an unsafe slug the hint is `Add a route in the dashboard.`
+- ➕ Source warnings go to stderr before the banner. An unknown name errors before any warning; route-less warnings still print before the all-skipped error.
+- ➕ The unknown-name error keeps its `in project acme/payments` slug label; only the `; did you mean …?` suffix is new.
 
 ### Task 8: CLI: forwarding fixes
 

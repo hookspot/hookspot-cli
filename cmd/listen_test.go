@@ -50,7 +50,7 @@ func TestFormatProjectLabelEscapesBackendControls(t *testing.T) {
 	if got := formatProjectLabel(project); got != want {
 		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
 	}
-	_, _, err := resolveSources(project, nil, []string{"missing"})
+	_, _, err := resolveSources(io.Discard, endpoint.Base{}, project, nil, []string{"missing"})
 	if err == nil || !strings.Contains(err.Error(), want) || strings.ContainsRune(err.Error(), '\x1b') {
 		t.Fatalf("missing-source error = %q", err)
 	}
@@ -66,7 +66,7 @@ func TestResolveSources_SelectsNamesInArgumentOrder(t *testing.T) {
 		{Name: "stripe", UID: "src_stripe", Routes: []api.Route{{UID: "rte_stripe"}}},
 	}
 
-	sources, uids, err := resolveSources(project, available, []string{"stripe", "shopify"})
+	sources, uids, err := resolveSources(io.Discard, endpoint.Base{}, project, available, []string{"stripe", "shopify"})
 	if err != nil {
 		t.Fatalf("resolveSources() error = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestResolveSources_SelectsOnlySourcesWithRoutesWithoutFilter(t *testing.T) 
 		{Name: "stripe", UID: "src_stripe"},
 	}
 
-	sources, uids, err := resolveSources(project, available, nil)
+	sources, uids, err := resolveSources(io.Discard, endpoint.Base{}, project, available, nil)
 	if err != nil {
 		t.Fatalf("resolveSources() error = %v", err)
 	}
@@ -100,34 +100,36 @@ func TestResolveSources_SelectsOnlySourcesWithRoutesWithoutFilter(t *testing.T) 
 	}
 }
 
-func TestResolveSources_ReturnsErrorWithoutMatchingRoutes(t *testing.T) {
-	project := &api.Project{Slug: "payments", Organization: api.Organization{Slug: "acme"}}
-	available := []api.Source{{Name: "shopify", UID: "src_shopify"}}
-
-	_, _, err := resolveSources(project, available, []string{"shopify"})
-	if err == nil {
-		t.Fatal("resolveSources() returned nil error")
-	}
-	if got, want := err.Error(), "no matching routes found"; got != want {
-		t.Fatalf("error = %q, want %q", got, want)
-	}
-}
-
-func TestResolveSources_RejectsNameMissingFromProject(t *testing.T) {
+func TestResolveSources_SuggestsOnlyAnUnambiguousCaseMatch(t *testing.T) {
 	project := &api.Project{
 		Slug:         "payments",
 		Organization: api.Organization{Slug: "acme"},
 	}
-	available := []api.Source{{Name: "shopify", UID: "src_shopify"}}
-
-	_, _, err := resolveSources(project, available, []string{"missing"})
-	if err == nil {
-		t.Fatal("resolveSources() returned nil error")
+	missing := `source "Stripe" is not present in project acme/payments`
+	tests := []struct {
+		name      string
+		available []string
+		want      string
+	}{
+		{"one case match", []string{"stripe", "shopify"}, missing + `; did you mean "stripe"?`},
+		{"two case matches", []string{"stripe", "STRIPE"}, missing},
+		{"no case match", []string{"shopify"}, missing},
 	}
-	if got, want := err.Error(), `source "missing" is not present in project acme/payments`; got != want {
-		t.Fatalf("error = %q, want %q", got, want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var available []api.Source
+			for _, name := range test.available {
+				available = append(available, api.Source{Name: name, Routes: []api.Route{{UID: "rte_" + name}}})
+			}
+			_, _, err := resolveSources(io.Discard, endpoint.Base{}, project, available, []string{"Stripe"})
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
+
+var listenTestProject = &api.Project{Name: "Payments", Organization: api.Organization{Name: "Acme"}}
 
 func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 	var buf bytes.Buffer
@@ -150,11 +152,11 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := printListenInfo(&buf, sources, forwarder); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, forwarder); err != nil {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 route\n" +
+	want := "Listening in Acme | Payments on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"│  Requests to → https://events.example.com/shopify\n" +
@@ -178,11 +180,11 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		},
 	}
 
-	if err := printListenInfo(&buf, sources, nil); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 route\n" +
+	want := "Listening in Acme | Payments on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"├ Requests to → https://events.example.com/shopify\n" +
@@ -203,11 +205,11 @@ func TestPrintListenInfo_CountsRoutesAcrossSources(t *testing.T) {
 		{Name: "stripe", Routes: []api.Route{{UID: "rte_3"}}},
 	}
 
-	if err := printListenInfo(&buf, sources, nil); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if got, want := strings.SplitN(buf.String(), "\n", 2)[0], "Listening on 2 sources • 3 routes"; got != want {
+	if got, want := strings.SplitN(buf.String(), "\n", 2)[0], "Listening in Acme | Payments on 2 sources • 3 routes"; got != want {
 		t.Fatalf("banner = %q, want %q", got, want)
 	}
 }
@@ -215,10 +217,10 @@ func TestPrintListenInfo_CountsRoutesAcrossSources(t *testing.T) {
 func TestPrintListenInfoReturnsWriterAndShortWriteFailures(t *testing.T) {
 	sources := []api.Source{{Name: "shopify", URL: "https://events.example.invalid", Routes: []api.Route{{UID: "rte_1"}}}}
 	wantErr := errors.New("stdout unavailable")
-	if err := printListenInfo(failingWriter{err: wantErr}, sources, nil); !errors.Is(err, wantErr) {
+	if err := printListenInfo(failingWriter{err: wantErr}, listenTestProject, sources, nil); !errors.Is(err, wantErr) {
 		t.Fatalf("writer error = %v, want output failure", err)
 	}
-	if err := printListenInfo(shortWriter{}, sources, nil); !errors.Is(err, io.ErrShortWrite) {
+	if err := printListenInfo(shortWriter{}, listenTestProject, sources, nil); !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("short write error = %v, want io.ErrShortWrite", err)
 	}
 }
@@ -237,7 +239,7 @@ func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
 	}
 	for _, selectedForwarder := range []*proxy.Forwarder{nil, forwarder} {
 		var output bytes.Buffer
-		if err := printListenInfo(&output, sources, selectedForwarder); err != nil {
+		if err := printListenInfo(&output, listenTestProject, sources, selectedForwarder); err != nil {
 			t.Fatal(err)
 		}
 		text := output.String()
@@ -700,6 +702,90 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 		}
 	default:
 		t.Fatal("listen did not join a channel")
+	}
+}
+
+// runListenAgainst runs listen against a fake server for the Acme | Payments
+// project with the given sources JSON. The channel join is rejected, so a
+// listen that gets past the banner ends right after it.
+func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, string) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cli/projects/proj_payments":
+			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
+		case "/cli/projects/proj_payments/sources":
+			_, _ = w.Write([]byte(sources))
+		case "/cli/websocket":
+			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			var join []json.RawMessage
+			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
+				return
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{
+				"status":   "error",
+				"response": map[string]string{"reason": "not_found"},
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+	return runCommandProcess(t, "", developmentMetadata(server.URL), append([]string{"--config", configPath, "listen"}, args...)...), server.URL
+}
+
+func TestListenBannerNamesProjectAndWarnsAboutSources(t *testing.T) {
+	sources := `[
+		{"uid":"src_stripe","name":"stripe","active":true,"routes":[{"uid":"rte_stripe","destination":{"path":"/"}}]},
+		{"uid":"src_github","name":"github","active":false,"routes":[{"uid":"rte_github","destination":{"path":"/"}}]},
+		{"uid":"src_shopify","name":"shopify","active":true,"routes":[]}
+	]`
+	result, _ := runListenAgainst(t, sources, "stripe", "github", "shopify")
+
+	if !strings.HasPrefix(result.stdout, "Listening in Acme | Payments on 2 sources • 2 routes\n") {
+		t.Fatalf("stdout = %q, want the banner naming the project", result.stdout)
+	}
+	if strings.Contains(result.stdout, "⚠") {
+		t.Fatalf("stdout = %q, want warnings on stderr only", result.stdout)
+	}
+	wantWarnings := "⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +
+		"⚠ github is disabled: requests to it are rejected. Enable it in the dashboard.\n"
+	if !strings.HasPrefix(result.stderr, wantWarnings) {
+		t.Fatalf("stderr = %q, want the source warnings first", result.stderr)
+	}
+}
+
+func TestListenRequiresASourceWithRoutes(t *testing.T) {
+	sources := `[{"uid":"src_shopify","name":"shopify","active":true,"routes":[]}]`
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{name: "no names", wantStderr: "no sources with routes in Acme | Payments\n"},
+		{
+			name: "every named source skipped",
+			args: []string{"shopify"},
+			wantStderr: "⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +
+				"none of the named sources has a route\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, serverURL := runListenAgainst(t, sources, test.args...)
+			want := test.wantStderr + "\nAdd a route in the dashboard: " + serverURL + "/acme/payments/routes/new\n"
+			if result.err == nil || result.stdout != "" || result.stderr != want {
+				t.Fatalf("listen = %v, stdout %q, stderr:\n%q\nwant:\n%q", result.err, result.stdout, result.stderr, want)
+			}
+		})
 	}
 }
 

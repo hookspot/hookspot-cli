@@ -85,7 +85,7 @@ var listenCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("list project sources: %w", err)
 		}
-		sources, sourceUIDs, err := resolveSources(project, availableSources, sourceNames)
+		sources, sourceUIDs, err := resolveSources(cmd.ErrOrStderr(), activeEndpoint, project, availableSources, sourceNames)
 		if err != nil {
 			return err
 		}
@@ -117,7 +117,7 @@ var listenCmd = &cobra.Command{
 		if wsURL == nil {
 			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
 		}
-		if err := printListenInfo(cmd.OutOrStdout(), sources, forwarder); err != nil {
+		if err := printListenInfo(cmd.OutOrStdout(), project, sources, forwarder); err != nil {
 			return err
 		}
 		var replay *replayInputSession
@@ -246,14 +246,30 @@ func (n *connectionNotices) lost(err error, retryIn time.Duration) error {
 }
 
 func dashboardRequestsURL(base endpoint.Base, project *api.Project) string {
-	organization, organizationErr := endpoint.Segment(project.Organization.Slug)
-	slug, slugErr := endpoint.Segment(project.Slug)
-	if organizationErr == nil && slugErr == nil {
-		if u := base.API(organization + "/" + slug + "/requests"); u != nil {
-			return u.String()
-		}
+	if u := dashboardURL(base, project, "requests"); u != "" {
+		return u
 	}
 	return "the dashboard"
+}
+
+func addRouteHint(base endpoint.Base, project *api.Project) string {
+	if u := dashboardURL(base, project, "routes/new"); u != "" {
+		return "Add a route in the dashboard: " + u
+	}
+	return "Add a route in the dashboard."
+}
+
+// dashboardURL returns "" when a slug isn't a safe path segment.
+func dashboardURL(base endpoint.Base, project *api.Project, page string) string {
+	organization, organizationErr := endpoint.Segment(project.Organization.Slug)
+	slug, slugErr := endpoint.Segment(project.Slug)
+	if organizationErr != nil || slugErr != nil {
+		return ""
+	}
+	if u := base.API(organization + "/" + slug + "/" + page); u != nil {
+		return u.String()
+	}
+	return ""
 }
 
 func waitForReconnect(ctx context.Context, delay time.Duration) bool {
@@ -271,38 +287,66 @@ func formatProjectLabel(project *api.Project) string {
 	return safeDisplayText(project.Organization.Slug) + "/" + safeDisplayText(project.Slug)
 }
 
-func resolveSources(project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, error) {
+// resolveSources returns the sources to listen to and the UIDs to join with
+// (none means every source). It warns about named sources skipped for having
+// no route and about disabled sources, whose requests are rejected.
+func resolveSources(errOut io.Writer, base endpoint.Base, project *api.Project, availableSources []api.Source, sourceNames []string) ([]api.Source, []string, error) {
+	var selectedSources []api.Source
+	var sourceUIDs []string
+	var warnings strings.Builder
 	if len(sourceNames) == 0 {
-		selectedSources := sourcesWithRoutes(availableSources)
-		if len(selectedSources) == 0 {
-			return nil, nil, fmt.Errorf("no matching routes found")
+		selectedSources = sourcesWithRoutes(availableSources)
+	} else {
+		availableByName := make(map[string]api.Source, len(availableSources))
+		for _, source := range availableSources {
+			availableByName[source.Name] = source
 		}
-		return selectedSources, nil, nil
+		for _, sourceName := range sourceNames {
+			source, ok := availableByName[sourceName]
+			if !ok {
+				return nil, nil, unknownSourceError(project, availableSources, sourceName)
+			}
+			if len(source.Routes) == 0 {
+				fmt.Fprintf(&warnings, "⚠ %s has no route and is skipped. Add one in the dashboard.\n", safeDisplayText(source.Name))
+				continue
+			}
+			selectedSources = append(selectedSources, source)
+			sourceUIDs = append(sourceUIDs, source.UID)
+		}
+	}
+	for _, source := range selectedSources {
+		if !source.Active {
+			fmt.Fprintf(&warnings, "⚠ %s is disabled: requests to it are rejected. Enable it in the dashboard.\n", safeDisplayText(source.Name))
+		}
+	}
+	if err := writeCommandText(errOut, warnings.String()); err != nil {
+		return nil, nil, fmt.Errorf("write source warnings: %w", err)
 	}
 
-	availableByName := make(map[string]api.Source, len(availableSources))
-	for _, source := range availableSources {
-		availableByName[source.Name] = source
-	}
-
-	selectedSources := make([]api.Source, 0, len(sourceNames))
-	sourceUIDs := make([]string, 0, len(sourceNames))
-	for _, sourceName := range sourceNames {
-		source, ok := availableByName[sourceName]
-		if !ok {
-			return nil, nil, fmt.Errorf("source %q is not present in project %s", sourceName, formatProjectLabel(project))
-		}
-		if len(source.Routes) == 0 {
-			continue
-		}
-		selectedSources = append(selectedSources, source)
-		sourceUIDs = append(sourceUIDs, source.UID)
-	}
 	if len(selectedSources) == 0 {
-		return nil, nil, fmt.Errorf("no matching routes found")
+		message := "none of the named sources has a route"
+		if len(sourceNames) == 0 {
+			message = "no sources with routes in " + projectDisplayName(*project)
+		}
+		return nil, nil, newCommandError(message, addRouteHint(base, project))
 	}
-
 	return selectedSources, sourceUIDs, nil
+}
+
+// unknownSourceError suggests a name only when it is unambiguous: exactly one
+// source matches ignoring case.
+func unknownSourceError(project *api.Project, availableSources []api.Source, sourceName string) error {
+	var matches []string
+	for _, source := range availableSources {
+		if strings.EqualFold(source.Name, sourceName) {
+			matches = append(matches, source.Name)
+		}
+	}
+	message := fmt.Sprintf("source %q is not present in project %s", sourceName, formatProjectLabel(project))
+	if len(matches) == 1 {
+		message += fmt.Sprintf("; did you mean %q?", matches[0])
+	}
+	return errors.New(message)
 }
 
 func sourcesWithRoutes(sources []api.Source) []api.Source {
@@ -323,7 +367,7 @@ func sourceNamesByUID(sources []api.Source) map[string]string {
 	return names
 }
 
-func printListenInfo(out io.Writer, sources []api.Source, forwarder *proxy.Forwarder) error {
+func printListenInfo(out io.Writer, project *api.Project, sources []api.Source, forwarder *proxy.Forwarder) error {
 	var output strings.Builder
 	routeCount := 0
 	for _, source := range sources {
@@ -338,7 +382,7 @@ func printListenInfo(out io.Writer, sources []api.Source, forwarder *proxy.Forwa
 	if routeCount == 1 {
 		routeSuffix = ""
 	}
-	fmt.Fprintf(&output, "Listening on %d source%s • %d route%s\n", len(sources), sourceSuffix, routeCount, routeSuffix)
+	fmt.Fprintf(&output, "Listening in %s on %d source%s • %d route%s\n", projectDisplayName(*project), len(sources), sourceSuffix, routeCount, routeSuffix)
 
 	for _, source := range sources {
 		fmt.Fprintln(&output)
