@@ -590,27 +590,31 @@
 - Modify: `.gitattributes`
 - Modify: `.github/workflows/ci.yml`
 
-- [ ] PTY harness:
+- [x] PTY harness:
   - run the command on a pseudo-terminal (`charmbracelet/x/xpty` or `creack/pty`, pinned), re-executing the test binary as `runCommandProcess` does;
   - give each run a fixed size, `TERM=xterm-256color`, `TZ=UTC`, a temporary `HOME`, and the existing fake API and websocket servers;
   - rebuild the screen with a virtual terminal (`charmbracelet/x/vt` or `hinshun/vt10x`);
   - wait on screen conditions with a timeout, never sleep.
-- [ ] mode selection:
+- [x] mode selection:
   - stdin and stdout both terminals → alt screen and request list;
   - `--stream` → status line and `›` prompt;
   - non-terminal stdin with a terminal stdout → status line, no prompt;
   - piped stdout → no escape sequences;
   - `NO_COLOR` in a terminal → no color SGR.
-- [ ] full-screen journey: a delivery renders its row; `q` exits 0, leaves the alt screen and restores the terminal mode (termios before = after)
+- [x] full-screen journey: a delivery renders its row; `q` exits 0, leaves the alt screen and restores the terminal mode (termios before = after)
 - [ ] Ctrl-C in raw mode: the first stops gracefully (same exit status as a single SIGINT today) and the second exits 130; the terminal is restored after both
 - [ ] layout:
   - a resize (`Setsize`, SIGWINCH) reflows the full-screen view and the stream status line;
   - a 60-column terminal stays usable;
   - wide characters, emoji and control characters in delivery data keep every screen line within the width and leak no escape sequences.
 - [ ] project picker: `↓` then `↵` selects; `esc` and Ctrl-C cancel with exit 0; the terminal is restored
-- [ ] `.gitattributes`: `*.golden -text`, so a Windows checkout can't rewrite goldens
+- [x] `.gitattributes`: `*.golden -text`, so a Windows checkout can't rewrite goldens
 - [ ] CI: a job runs the terminal tests natively on `macos-latest` and `windows-latest` with the pinned Go version (Ubuntu runs them in `make test`). Windows cases ConPTY can't support are skipped with the reason and a ⚠️ note here.
 - [ ] run `make test` and `make vet` - must pass
+- ➕ harness API (`cmd/terminal_test.go`): `startTerminal(t, terminalOptions{width, height, environment, stdin, stdout}, metadata, args...)` returns a `*terminalRun` with `send` (raw bytes), `waitFor(what, func(screen string) bool)`, `waitForText`, `resize`, `text`, `written` (raw output), `altScreen`, `wait` (exit code, once the output has ended) and `requireRestored` (termios). `startFakeHookspot(t, sources)` serves one run: `listen(args...)` builds its command line, `deliver` sends a delivery, `end` sends the invalid one. `commandProcess` (`cmd/version_test.go`) builds the subprocess for both runners
+- ➕ `cmd/terminal_unix_test.go` makes the terminal the command's controlling terminal (`Setsid`, `Setctty`), so a resize sends SIGWINCH and Ctrl-C outside raw mode sends SIGINT, and reads termios from the master side, which outlives the command. `cmd/terminal_windows_test.go` only compiles: ConPTY ignores `stdin`/`stdout`, hides the console mode (`terminalMode` is empty), and is untested; the CI item owns its skips, and `wait`, since ConPTY's output may stay open after the command exits
+- ⚠️ the full-screen case of mode selection lives in the journey test, which also checks a terminal gets color as the control for `NO_COLOR`; `NO_COLOR` runs `--stream`, which covers the writer's banner, printed cards and the status line. No older test was fully covered, so none was deleted. The new modules are test-only, so `THIRD_PARTY_NOTICES.txt` is unchanged
+- ⚠️ bubbletea flushes its startup capability query on its first frame tick (~16ms). A run that ends sooner sends it at shutdown, after cooked mode is restored, so the tty echoes the terminal's reply (`^[[?2026;0$y`) onto the screen; a test that checks the screen after exit waits for a drawn frame first
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*

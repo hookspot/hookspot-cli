@@ -59,12 +59,7 @@ func runCommandProcessEnvironment(t *testing.T, input string, metadata, environm
 
 func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string, metadata, environment map[string]string, args ...string) commandResult {
 	t.Helper()
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	commandArgs := append([]string{"-test.run=TestCommandHelper", "--"}, args...)
-	command := exec.Command(executable, commandArgs...)
+	command := commandProcess(t, metadata, environment, args...)
 	if directory != "" {
 		command.Dir = directory
 	}
@@ -72,6 +67,20 @@ func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
+	err := command.Run()
+	return commandResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
+}
+
+// commandProcess re-executes the test binary as the command, with only the
+// given environment and a temporary HOME unless it sets one.
+func commandProcess(t *testing.T, metadata, environment map[string]string, args ...string) *exec.Cmd {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandArgs := append([]string{"-test.run=TestCommandHelper", "--"}, args...)
+	command := exec.Command(executable, commandArgs...)
 	home := t.TempDir()
 	if configured, set := environment["HOME"]; set {
 		home = configured
@@ -102,8 +111,7 @@ func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string
 		}
 		command.Env = append(command.Env, key+"="+value)
 	}
-	err = command.Run()
-	return commandResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
+	return command
 }
 
 func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {

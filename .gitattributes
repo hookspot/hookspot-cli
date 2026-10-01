@@ -2,3 +2,6 @@
 # Git checks out with core.autocrlf=true; a CRLF shebang line does not run.
 *.sh text eol=lf
 *.js text eol=lf
+# Goldens are compared byte for byte, so a Windows checkout must not convert
+# their line endings.
+*.golden -text
