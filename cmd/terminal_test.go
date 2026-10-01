@@ -124,7 +124,7 @@ func TestTerminalModes(t *testing.T) {
 		run.send("\r")
 		run.waitFor("the replay on stdout", func(string) bool { return strings.Contains(run.piped(), "\n#2 ↻ #1 ") })
 		run.send("c 1\r")
-		run.waitForText("curl -X POST '" + local.URL + "/webhooks/stripe'")
+		run.waitForText("curl -g -X POST '" + local.URL + "/webhooks/stripe'")
 		run.send("?\r")
 		run.waitForText("↵       replay the last request")
 		hookspot.end(t)
