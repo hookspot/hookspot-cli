@@ -70,12 +70,16 @@ release-snapshot:
 	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
 
-# Unpublished macOS binary for a non-prod server; see scripts/build-*.fish.
-# The tmpfs keeps release-snapshot's dist/, and the skipped hooks only stage the
-# prod npm package and build-info.json.
+# Unpublished binary for a non-prod server (host macOS by default); see
+# scripts/build-local.fish. The tmpfs keeps release-snapshot's dist/, and the
+# skipped hooks only stage the prod npm package and build-info.json.
+LOCAL_GOOS ?= darwin
+LOCAL_GOARCH ?= $(shell uname -m | sed s/x86_64/amd64/)
+LOCAL_OUTPUT ?= tmp/dist/hookspot_$(CONFIG_PREFIX)
+
 local-build: release-tools
-	mkdir -p tmp/dist
-	$(DOCKER_RUN) --tmpfs /src/dist -e SERVER_URL="$(SERVER_URL)" -e CONFIG_PREFIX=$(CONFIG_PREFIX) -e GOOS=darwin -e GOARCH=$(shell uname -m | sed s/x86_64/amd64/) $(RELEASE_IMAGE) build --snapshot --single-target --skip=before,post-hooks --output tmp/dist/hookspot_$(CONFIG_PREFIX)
+	mkdir -p $(dir $(LOCAL_OUTPUT))
+	$(DOCKER_RUN) --tmpfs /src/dist -e SERVER_URL="$(SERVER_URL)" -e CONFIG_PREFIX=$(CONFIG_PREFIX) -e GOOS=$(LOCAL_GOOS) -e GOARCH=$(LOCAL_GOARCH) $(RELEASE_IMAGE) build --snapshot --single-target --skip=before,post-hooks --output $(LOCAL_OUTPUT)
 
 # CI only: publishes the GitHub Release and the Homebrew formula.
 release-publish:
