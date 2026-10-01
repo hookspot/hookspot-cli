@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -94,6 +95,7 @@ var listenCmd = &cobra.Command{
 			Sources:              sourceNamesByUID(sources),
 			ShowSensitiveHeaders: showSensitiveHeaders,
 			Color:                printer.SupportsColor(cmd.OutOrStdout()),
+			Notices:              cmd.ErrOrStderr(),
 			Limits: printer.Limits{
 				MaxBodyLines:  maxBodyLines,
 				MaxHeaders:    maxHeaders,
@@ -442,10 +444,12 @@ type forwardSession struct {
 	printer   *printer.Printer
 	cache     replayCache
 	now       func() time.Time
+	rootHint  sync.Once
 }
 
 type deliveryForwarder interface {
 	Forward(context.Context, string, string, string, []byte, http.Header) (*http.Response, error)
+	DestinationURL(string, string) (*url.URL, error)
 }
 
 func newForwardSession(ctx context.Context, forwarder deliveryForwarder, target string, output *printer.Printer) *forwardSession {
@@ -525,7 +529,29 @@ func (s *forwardSession) forward(delivery ws.Delivery, replay bool) (printer.For
 		TargetURL: s.target,
 		Replay:    replay,
 	}
-	return outcome, s.printer.PrintForward(delivery, outcome)
+	if err := s.printer.PrintForward(delivery, outcome); err != nil {
+		return outcome, err
+	}
+	return outcome, s.printRootHint(delivery, response.StatusCode)
+}
+
+// A 404 or 405 at the bare --forward-to root usually means it lacks the app's webhook route.
+func (s *forwardSession) printRootHint(delivery ws.Delivery, status int) error {
+	if status != http.StatusNotFound && status != http.StatusMethodNotAllowed {
+		return nil
+	}
+	destination, err := s.forwarder.DestinationURL(delivery.Path, "")
+	if err != nil || destination.Path != "/" {
+		return nil
+	}
+	var printErr error
+	s.rootHint.Do(func() {
+		printErr = s.printer.PrintNotice(fmt.Sprintf(
+			"%s returned %d. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to %swebhooks\n",
+			destination, status, destination,
+		))
+	})
+	return printErr
 }
 
 func readLocalResponseBody(body io.Reader) ([]byte, error) {

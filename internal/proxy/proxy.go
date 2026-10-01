@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -109,13 +110,19 @@ func Failure(err error) *TransportFailure {
 // Forwarder forwards received event bytes to a local target via HTTP POST.
 type Forwarder struct {
 	targetBaseURL string
+	trailingSlash bool
 	client        *http.Client
 }
+
+var barePort = regexp.MustCompile(`^[0-9]+(/.*)?$`)
 
 // New returns a Forwarder that sends requests to targetBaseURL.
 func New(targetBaseURL string) (*Forwarder, error) {
 	if targetBaseURL == "" {
 		return nil, errors.New("forward target is empty")
+	}
+	if barePort.MatchString(targetBaseURL) {
+		targetBaseURL = "localhost:" + targetBaseURL
 	}
 	if !strings.Contains(targetBaseURL, "://") {
 		targetBaseURL = "http://" + targetBaseURL
@@ -125,10 +132,16 @@ func New(targetBaseURL string) (*Forwarder, error) {
 		return nil, fmt.Errorf("invalid forward target: %w", err)
 	}
 
+	// Docker injects HTTP_PROXY into containers; it must not capture the local hop.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+
 	return &Forwarder{
 		targetBaseURL: base.String(),
+		trailingSlash: strings.HasSuffix(targetBaseURL, "/"),
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: transport,
+			Timeout:   30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -152,9 +165,16 @@ func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, 
 	if !strings.HasPrefix(destinationPath, "/") {
 		destinationPath = "/" + destinationPath
 	}
+	// A root destination is the --forward-to URL itself, slash only if typed.
+	if destinationPath == "/" && !f.trailingSlash {
+		destinationPath = ""
+	}
 	target, err := url.Parse(f.targetBaseURL + destinationPath)
 	if err != nil {
 		return nil, errors.New("invalid destination path")
+	}
+	if target.Path == "" {
+		target.Path = "/"
 	}
 	target.RawQuery = rawQuery
 	return target, nil

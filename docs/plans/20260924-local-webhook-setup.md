@@ -355,11 +355,15 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - Modify: `internal/printer/printer.go`, `internal/printer/printer_test.go`
 - Modify: `cmd/listen.go` (`forwardSession` root 404 hint), `cmd/listen_test.go`
 
-- [ ] bare-port mapping; typed-trailing-slash flag and the root-path rule; a dedicated transport with `Proxy: nil`
-- [ ] printer: 3xx `Location` + hint; Docker-aware refused hint; `forwardSession`: one-time root 404/405 hint
-- [ ] write proxy tests: `3000`, `3000/webhooks`, `99999`; the trailing-slash table (incl. query kept, `?`/`#` rejected); with `HTTP_PROXY` pointing at a failing proxy, a forward to an `httptest` server still succeeds
-- [ ] write printer and listen tests: 308 shows `Location`; refused hint differs inside and outside a container; the root hint prints once, not for non-root URLs, and never in print-only mode
-- [ ] run tests - must pass before next task
+- [x] bare-port mapping; typed-trailing-slash flag and the root-path rule; a dedicated transport with `Proxy: nil`
+- [x] printer: 3xx `Location` + hint; Docker-aware refused hint; `forwardSession`: one-time root 404/405 hint
+- [x] write proxy tests: `3000`, `3000/webhooks`, `99999`; the trailing-slash table (incl. query kept, `?`/`#` rejected); with `HTTP_PROXY` pointing at a failing proxy, a forward to an `httptest` server still succeeds
+- [x] write printer and listen tests: 308 shows `Location`; refused hint differs inside and outside a container; the root hint prints once, not for non-root URLs, and never in print-only mode
+- [x] run tests - must pass before next task
+- ➕ hints reach stderr through `printer.Options.Notices` and `Printer.PrintNotice`; the stdout forward block, including the `└─ target … is not reachable` line, is unchanged.
+- ⚠️ the redirect notice (`Location: <url>` plus the hint) prints only when the 3xx response has a `Location` header.
+- ⚠️ the root-404 hint's example is the full root URL (`--forward-to http://localhost:3000/webhooks`), not `3000/webhooks`, so it stays valid for any `--forward-to` host.
+- ⚠️ the `HTTP_PROXY` test sets the variable in `TestMain` (Go reads it once per process) and dials `0.0.0.0` (Go never proxies loopback hosts).
 
 ### Task 9: CLI: login timeout hint for new accounts
 

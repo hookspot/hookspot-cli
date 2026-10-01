@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,8 @@ type Options struct {
 	Limits               Limits
 	ShowSensitiveHeaders bool
 	Color                bool
+	// Notices receives forwarding hints; nil discards them.
+	Notices io.Writer
 }
 
 // ForwardOutcome is the complete result of one local forwarding operation.
@@ -57,6 +60,7 @@ type Printer struct {
 	options   Options
 	now       func() time.Time
 	sourceLen int
+	container bool
 	mu        sync.Mutex
 }
 
@@ -64,6 +68,9 @@ type Printer struct {
 func New(out io.Writer, options Options) *Printer {
 	if _, disabled := os.LookupEnv("NO_COLOR"); disabled {
 		options.Color = false
+	}
+	if options.Notices == nil {
+		options.Notices = io.Discard
 	}
 
 	sourceLen := 0
@@ -81,7 +88,14 @@ func New(out io.Writer, options Options) *Printer {
 		options:   options,
 		now:       time.Now,
 		sourceLen: sourceLen,
+		container: runningInContainer(),
 	}
+}
+
+func runningInContainer() bool {
+	_, docker := os.Stat("/.dockerenv")
+	_, podman := os.Stat("/run/.containerenv")
+	return docker == nil || podman == nil
 }
 
 // SupportsColor reports whether out is an interactive terminal and color has
@@ -105,12 +119,27 @@ func (p *Printer) Handle(d ws.Delivery) (ws.Response, error) {
 	return ws.Response{Status: http.StatusOK}, nil
 }
 
-// PrintForward prints one local forwarding result atomically.
+// PrintForward prints one local forwarding result, then its hint, atomically.
 func (p *Printer) PrintForward(d ws.Delivery, outcome ForwardOutcome) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.renderForward(d, outcome)
+	if err := p.renderForward(d, outcome); err != nil {
+		return err
+	}
+	notice := p.forwardNotice(outcome)
+	if notice == "" {
+		return nil
+	}
+	return writeOutput(p.options.Notices, notice)
+}
+
+// PrintNotice writes a hint to the notices stream.
+func (p *Printer) PrintNotice(text string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return writeOutput(p.options.Notices, text)
 }
 
 func (p *Printer) renderInspect(d ws.Delivery) error {
@@ -325,6 +354,26 @@ func (p *Printer) summary(body []byte, headers http.Header) string {
 		return "(empty) · 0 B"
 	}
 	return singleLine(bodyMIME(headers, body)) + " · " + formatBytes(len(body))
+}
+
+func (p *Printer) forwardNotice(outcome ForwardOutcome) string {
+	if outcome.Failure != nil {
+		if outcome.Failure.Kind == proxy.TransportConnectionRefused && p.container && localhostTarget(outcome.TargetURL) {
+			return "inside a container, localhost is the container itself; use the service name (http://app:3000) or host.docker.internal\n"
+		}
+		return ""
+	}
+	location := headerGet(outcome.Response.Headers, "Location")
+	if outcome.Response.Status >= 300 && outcome.Response.Status < 400 && location != "" {
+		return "Location: " + singleLine(location) + "\n" +
+			"webhook senders don't follow redirects; point --forward-to at the final URL\n"
+	}
+	return ""
+}
+
+func localhostTarget(target string) bool {
+	parsed, err := url.Parse(target)
+	return err == nil && slices.Contains([]string{"localhost", "127.0.0.1", "::1"}, parsed.Hostname())
 }
 
 func (p *Printer) transportHint(target string, failure *proxy.TransportFailure) string {
