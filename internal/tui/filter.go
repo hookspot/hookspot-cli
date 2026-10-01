@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,17 +82,14 @@ func (t term) matches(e session.Entry, l cards.Listen) bool {
 // statusMatches takes error for a failure as the counts have it, a class
 // such as 4xx, or a code.
 func statusMatches(e session.Entry, value string) bool {
-	if value == "error" {
-		return failed(e)
+	answered, status := e.Target != "" && e.Failure == nil, strconv.Itoa(e.Response.Status)
+	switch {
+	case value == "error":
+		return e.Failed()
+	case len(value) == 3 && value[1:] == "xx":
+		return answered && status[0] == value[0]
 	}
-	if e.Target == "" || e.Failure != nil {
-		return false
-	}
-	status := strconv.Itoa(e.Response.Status)
-	if len(value) == 3 && value[1:] == "xx" {
-		return status[0] == value[0]
-	}
-	return status == value
+	return answered && status == value
 }
 
 // apply filters entries by the typed input; an empty one shows them all.
@@ -126,11 +124,8 @@ func (f filter) recorded(r session.Recorded, l cards.Listen) filter {
 }
 
 func (f filter) shows(n int) bool {
-	if f.text == "" {
-		return true
-	}
-	i := sort.SearchInts(f.numbers, n)
-	return i < len(f.numbers) && f.numbers[i] == n
+	_, found := slices.BinarySearch(f.numbers, n)
+	return f.text == "" || found
 }
 
 // editFilter takes keys while the filter line is open: enter applies it, esc

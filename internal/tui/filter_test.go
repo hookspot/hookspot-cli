@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"errors"
 	"net"
+	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,24 +38,6 @@ func typed(text string) []tea.Msg {
 	return keys
 }
 
-func TestParseFilter(t *testing.T) {
-	tests := []struct {
-		text string
-		want []term
-	}{
-		{text: "", want: nil},
-		{text: "status:error", want: []term{{key: "status", value: "error"}}},
-		{text: " source:stripe  path:/hooks invoice ", want: []term{{key: "source", value: "stripe"}, {key: "path", value: "/hooks"}, {value: "invoice"}}},
-		// Unknown keys and empty values are plain text.
-		{text: "type:invoice.paid status:", want: []term{{value: "type:invoice.paid"}, {value: "status:"}}},
-	}
-	for _, test := range tests {
-		if got := parseFilter(test.text); !reflect.DeepEqual(got, test.want) {
-			t.Errorf("parseFilter(%q) = %v, want %v", test.text, got, test.want)
-		}
-	}
-}
-
 func TestFilterMatches(t *testing.T) {
 	push := entry(4, "src_github", 404)
 	push.Delivery.Body = []byte(`{"action":"push"}`)
@@ -81,7 +66,9 @@ func TestFilterMatches(t *testing.T) {
 		{filter: "HOOKS", want: []int{1, 3, 5, 6}},
 		{filter: "Push", want: []int{4}},
 		{filter: "invoice path:/hooks status:2xx", want: []int{1}},
+		// Unknown keys and empty values are plain text.
 		{filter: "type:push", want: nil},
+		{filter: "status:", want: nil},
 	}
 	for _, test := range tests {
 		var got []int
@@ -97,29 +84,64 @@ func TestFilterMatches(t *testing.T) {
 }
 
 func TestFullscreenFilter(t *testing.T) {
+	githubOnly := append(append([]tea.Msg{letter('/')}, typed("source:github")...), enter)
 	tests := []struct {
 		name   string
-		events func(r *requests) []tea.Msg
+		events func(r *tally) []tea.Msg
 	}{
-		{name: "typing", events: func(r *requests) []tea.Msg {
+		{name: "typing", events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), letter('/')}
-			return append(append(msgs, typed("path:/hooks invo")...), backspace)
+			// A paste is typed on the filter line as one.
+			msgs = append(msgs, tea.PasteMsg{Content: "path:/hooks\n"})
+			return append(append(msgs, typed("invo")...), backspace)
 		}},
-		{name: "applied", events: func(r *requests) []tea.Msg {
+		{name: "applied", events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), r.recorded(refused(3)), letter('/')}
 			msgs = append(append(msgs, typed("status:error")...), enter)
 			// Later requests join when they match; evicted ones leave.
 			return append(msgs, r.recorded(entry(4, "src_github", 503)), r.recorded(entry(5, "src_stripe", 200), 1, 2))
 		}},
-		{name: "no match", events: func(r *requests) []tea.Msg {
+		{name: "no match", events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), letter('/')}
 			return append(append(msgs, typed("source:shopify")...), enter)
+		}},
+		{name: "reopened", events: func(r *tally) []tea.Msg {
+			msgs := append([]tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500))}, githubOnly...)
+			return append(msgs, letter('/'))
+		}},
+		{name: "emptied", events: func(r *tally) []tea.Msg {
+			msgs := append([]tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500))}, githubOnly...)
+			msgs = append(append(msgs, letter('/')), slices.Repeat([]tea.Msg{backspace}, len("source:github"))...)
+			return append(msgs, enter)
+		}},
+		{name: "esc clears", events: func(r *tally) []tea.Msg {
+			// esc ends typing, and then clears the applied filter.
+			msgs := []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), letter('/'), letter('x'), esc}
+			return append(append(msgs, githubOnly...), esc)
+		}},
+		{name: "hidden selection", events: func(r *tally) []tea.Msg {
+			// Paused on #1, which the filter hides, so #2 is selected.
+			msgs := []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), r.recorded(entry(3, "src_stripe", 200)), up, up}
+			return append(msgs, githubOnly...)
+		}},
+		{name: "hidden requests evicted", events: func(r *tally) []tea.Msg {
+			msgs := []tea.Msg{session.Ready{}}
+			for n := 1; n <= 14; n++ {
+				status := http.StatusOK
+				if n%2 == 0 {
+					status = http.StatusInternalServerError
+				}
+				msgs = append(msgs, r.recorded(entry(n, "src_stripe", status)))
+			}
+			msgs = append(append(append(msgs, letter('/')), typed("status:error")...), enter, up)
+			// The paused list stays put as a request it hides leaves.
+			return append(msgs, r.recorded(entry(15, "src_stripe", 200), 1))
 		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			tm := teatest.NewTestModel(t, screen(), teatest.WithInitialTermSize(80, 24))
-			for _, msg := range test.events(&requests{}) {
+			for _, msg := range test.events(&tally{}) {
 				tm.Send(msg)
 			}
 			golden.RequireEqual(t, final(t, tm))
@@ -127,35 +149,13 @@ func TestFullscreenFilter(t *testing.T) {
 	}
 }
 
-func TestFullscreenFilterEscClears(t *testing.T) {
-	r := &requests{}
-	model := tea.Model(screen())
-	for _, msg := range []tea.Msg{r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), letter('/'), letter('x'), esc} {
-		model, _ = model.Update(msg)
-	}
-	if f := model.(Fullscreen).filter; f.editing || f.text != "" {
-		t.Fatalf("esc while typing left %+v", f)
-	}
-
-	for _, msg := range append(append([]tea.Msg{letter('/')}, typed("source:github")...), enter) {
-		model, _ = model.Update(msg)
-	}
-	if shown := model.(Fullscreen).shown(); len(shown) != 1 {
-		t.Fatalf("source:github shows %d requests, want 1", len(shown))
-	}
-	model, _ = model.Update(esc)
-	if shown := model.(Fullscreen).shown(); len(shown) != 2 {
-		t.Fatalf("esc left %d requests shown, want both", len(shown))
-	}
-}
-
 // waitingScreen lists a refused request, #3, to a target at address, and
 // waits on it.
-func waitingScreen(t *testing.T, address string, replayer Replayer) (tea.Model, tea.Cmd) {
+func waitingScreen(t *testing.T, address string, requests Requests) (tea.Model, tea.Cmd) {
 	t.Helper()
-	r := &requests{}
+	r := &tally{}
 	m := screen()
-	m.Replayer = replayer
+	m.Requests = requests
 	m.dialEvery = 10 * time.Millisecond
 	if address != "" {
 		m.Target = "http://" + address
@@ -168,7 +168,8 @@ func waitingScreen(t *testing.T, address string, replayer Replayer) (tea.Model, 
 }
 
 func TestFullscreenWaitReplaysWhenTargetAnswers(t *testing.T) {
-	// The address of a server that isn't running yet.
+	// The address of a server that isn't running yet. Another process could
+	// take the port before the server does, which is unlikely enough here.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +180,7 @@ func TestFullscreenWaitReplaysWhenTargetAnswers(t *testing.T) {
 	// The replay's events reach the model before Replay returns, as through
 	// the program.
 	var events []tea.Msg
-	replays := &replayer{requests: &requests{}, replayed: make(chan int, 1), send: func(msg tea.Msg) { events = append(events, msg) }}
+	replays := &replayer{tally: &tally{}, replayed: make(chan int, 1), send: func(msg tea.Msg) { events = append(events, msg) }}
 	model, cmd := waitingScreen(t, address, replays)
 
 	msg := cmd()
@@ -201,11 +202,11 @@ func TestFullscreenWaitReplaysWhenTargetAnswers(t *testing.T) {
 		t.Fatalf("dial after the server started got %#v", msg)
 	}
 	model, cmd = model.Update(msg)
-	if cmd == nil {
-		t.Fatal("the answer started no replay")
+	if view := ansi.Strip(model.View().Content); cmd == nil || !strings.Contains(view, "↻ "+address+" answered, replaying #3…") {
+		t.Fatalf("the answer started no replay:\n%s", view)
 	}
 	msg = cmd()
-	if n := <-replays.replayed; n != 3 {
+	if n := receive(t, replays.replayed); n != 3 {
 		t.Fatalf("replayed #%d, want the waited #3", n)
 	}
 	for _, event := range events {
@@ -219,6 +220,56 @@ func TestFullscreenWaitReplaysWhenTargetAnswers(t *testing.T) {
 	}
 }
 
+func TestFullscreenWaitShowsAFailedReplay(t *testing.T) {
+	requests := newFake()
+	requests.err = errors.New("#3: request dropped from history\x1b")
+	model, _ := waitingScreen(t, "", requests)
+	model = press(model, dialedMsg{id: model.(Fullscreen).wait.id})
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, `✗ #3: request dropped from history\x1b`) {
+		t.Fatalf("no failed replay in\n%s", view)
+	}
+}
+
+func TestFullscreenWaitRefuses(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		inspect bool
+		keys    []tea.Msg
+		want    string
+	}{
+		{name: "in inspect mode", inspect: true, want: "nothing to replay without --forward-to"},
+		{name: "a request that got a response", keys: []tea.Msg{up}, want: "#2 got a response; r replays it now"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			r := &tally{}
+			m := screen()
+			if test.inspect {
+				m.Target = ""
+			}
+			model := tea.Model(m)
+			for _, msg := range append([]tea.Msg{r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), r.recorded(refused(3))}, test.keys...) {
+				model, _ = model.Update(msg)
+			}
+			model, _ = model.Update(letter('w'))
+			if m := model.(Fullscreen); m.toast != test.want || m.waiting() {
+				t.Fatalf("w toasts %q, waiting %t; want %q", m.toast, m.waiting(), test.want)
+			}
+		})
+	}
+}
+
+func TestTargetAddress(t *testing.T) {
+	for target, want := range map[string]string{
+		"http://localhost:3000": "localhost:3000",
+		"http://app.test":       "app.test:80",
+		"https://app.test":      "app.test:443",
+	} {
+		if got := (Fullscreen{Target: target}).targetAddress(); got != want {
+			t.Errorf("targetAddress of %s = %s, want %s", target, got, want)
+		}
+	}
+}
+
 func TestFullscreenEscStopsWaiting(t *testing.T) {
 	// No dial runs, so nothing answers.
 	model, cmd := waitingScreen(t, "", nil)
@@ -228,9 +279,12 @@ func TestFullscreenEscStopsWaiting(t *testing.T) {
 	golden.RequireEqual(t, ansi.Strip(model.View().Content))
 
 	id := model.(Fullscreen).wait.id
-	model, _ = model.Update(esc)
-	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "w  wait for localhost:3000, then replay") {
-		t.Fatalf("esc kept waiting:\n%s", view)
+	for _, msg := range append(append([]tea.Msg{letter('/')}, typed("status:error")...), enter, esc) {
+		model, _ = model.Update(msg)
+	}
+	// esc stops the wait and keeps the filter.
+	if view := ansi.Strip(model.View().Content); !strings.Contains(view, "w  wait for localhost:3000, then replay") || !strings.Contains(view, "/ status:error") {
+		t.Fatalf("esc kept waiting or cleared the filter:\n%s", view)
 	}
 	// The stopped wait's dial answers too late to replay.
 	if _, cmd = model.Update(dialedMsg{id: id}); cmd != nil {

@@ -86,6 +86,9 @@ func (w *Writer) Print(text string) error {
 	return w.write(w.errOut, Sanitize(text))
 }
 
+// ClipboardNote says where copying to the clipboard works.
+const ClipboardNote = "copying needs a terminal with OSC 52 (Terminal.app has none)"
+
 // CurlNotes says what request n's cURL command does and what it leaves out;
 // copied is set when the full command went to the clipboard.
 func CurlNotes(n int, c session.Curl, copied bool) string {
@@ -98,7 +101,7 @@ func CurlNotes(n int, c session.Curl, copied bool) string {
 	}
 	notes := []string{note}
 	if copied {
-		notes = append(notes, "copying needs a terminal with OSC 52 (Terminal.app has none)")
+		notes = append(notes, ClipboardNote)
 	}
 	if c.Redacted {
 		notes = append(notes, "sensitive headers are hidden; --show-sensitive-headers shows the full command")

@@ -1,23 +1,29 @@
-● live · Acme | Payments · 3 requests · 3 ok · 0 failed · p50 11ms
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
 ● stripe   ● github   following newest
-╭─ Requests ─────────────────────────────────────────────────────────────── 3 ─╮
+╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
-│   2  14:02:02  stripe  POST    /hooks                 200         14ms       │
-│ › 3  14:02:03  stripe  POST    /hooks                 200         21ms       │
+│ › 1  14:02:01  stripe  POST    /hooks                 200          7ms  test │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #3 stripe · POST /hooks ──────────────────────────────────────────── req_3 ─╮
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
 │ Overview   Request   Response   Timing                                       │
 │ ━━━━━━━━                                                                     │
-│  200 OK  21ms  → http://localhost:3000/hooks                                 │
+│  200 OK  7ms  → http://localhost:3000/hooks                                  │
 │                                                                              │
 │ source    stripe                                                             │
 │ route     payments → http://localhost:3000/hooks                             │
-│ received  14:02:03.000                                                       │
+│ received  14:02:01.000                                                       │
+│                                                                              │
+│ ✓ path works: hookspot → this terminal → http://localhost:3000/hooks         │
 │                                                                              │
 │ replays are local: they never change the delivery's status in Hookspot       │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

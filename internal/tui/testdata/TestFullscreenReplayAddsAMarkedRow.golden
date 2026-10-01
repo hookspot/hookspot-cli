@@ -1,4 +1,4 @@
-● live · Acme | Payments · 3 requests · 2 ok · 1 failed · p50 14ms
+● live · Acme | Payments · 3 requests · 2 ok · 1 failed · p50 11ms
 ● stripe   ● github   paused on #2 · f follows newest
 ╭─ Requests ─────────────────────────────────────────────────────────────── 4 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
@@ -18,7 +18,7 @@
 │ source    github                                                             │
 │ route     /github → http://localhost:3000/github                             │
 │ received  14:02:02.000                                                       │
-│ … 4 more lines                                                               │
+│ … 4 more lines · pgdn scrolls                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 replayed #2 as #4
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

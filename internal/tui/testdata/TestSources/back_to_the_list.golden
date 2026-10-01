@@ -1,24 +1,24 @@
-● live · Acme | Payments · 5 requests · 2 ok · 3 failed · p50 35ms
-● stripe   ● github   paused on #4 · f follows newest
-╭─ Requests ─────────────────────────────────────────────────────────────── 5 ─╮
+● live · Acme | Payments · 6 requests · 3 ok · 3 failed · p50 21ms
+● stripe   ● github   paused on #5 · f follows newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 6 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
 │   2  14:02:02  github  POST    /github                500         14ms       │
 │   3  14:02:03  stripe  POST    /hooks                 refused        —       │
-│ › 4  14:02:04  stripe  POST    /refunds               200         28ms       │
-│   5  14:02:05  github  POST    /other                 404         35ms       │
+│   4  14:02:04  stripe  POST    /refunds               200         28ms       │
+│ › 5  14:02:05  github  POST    /other                 404         35ms       │
+│   6  14:02:06  stripe  POST    /hooks                 200         42ms       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #4 stripe · POST /refunds ────────────────────────────────────────── req_4 ─╮
+╭─ #5 github · POST /other ──────────────────────────────────────────── req_5 ─╮
 │ Overview   Request   Response   Timing                                       │
 │ ━━━━━━━━                                                                     │
-│  200 OK  28ms  → http://localhost:3000/refunds                               │
+│  404 Not Found  35ms  → http://localhost:3000/other                          │
 │                                                                              │
-│ source    stripe                                                             │
-│ route     refunds → http://localhost:3000/refunds                            │
-│ received  14:02:04.000                                                       │
+│  r  replay now                                                               │
 │                                                                              │
-│ replays are local: they never change the delivery's status in Hookspot       │
-│                                                                              │
-│                                                                              │
+│ source    github                                                             │
+│ route     unmatched                                                          │
+│ received  14:02:05.000                                                       │
+│ target    localhost:3000  answered 200 · #6 at 14:02:06                      │
+│ … 3 more lines · pgdn scrolls                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

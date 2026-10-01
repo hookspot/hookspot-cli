@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -9,30 +10,23 @@ import (
 	"hookspot/internal/session"
 )
 
-// Replayer replays requests by number, as *session.Session does.
-type Replayer interface {
+// Requests is what listen's commands ask of the session, as
+// *session.Session answers them.
+type Requests interface {
 	Replay(n int) error
 	ReplayLast() error
-}
-
-// Exporter copies requests as cURL and exports them as fixtures, as
-// *session.Session does.
-type Exporter interface {
 	Curl(n int, redact bool) (session.Curl, error)
 	ExportFixture(n int, redact bool) (session.Fixture, error)
-}
-
-// Tester sends test events, as *session.Session does.
-type Tester interface {
 	SendTest(source string) (string, error)
 }
 
 // Stream is listen's terminal stream: cards scroll above a status line and,
 // when stdin is a terminal, the › prompt for request commands.
 type Stream struct {
-	Replayer Replayer
-	Exporter Exporter
-	Project  string
+	Requests Requests
+	// Println prints above the stream, as Program.Println does.
+	Println func(string) error
+	Project string
 	// Forwarding is set with --forward-to; without it nothing replays.
 	Forwarding bool
 	// Prompt is set when stdin is a terminal.
@@ -40,12 +34,9 @@ type Stream struct {
 	// ShowSensitiveHeaders keeps sensitive header values in shown commands
 	// and fixtures.
 	ShowSensitiveHeaders bool
-	// Tester sends the t command's test events.
-	Tester Tester
 
+	connection
 	width  int
-	state  cards.State
-	lost   error
 	totals session.Stats
 	input  string
 	reply  string
@@ -58,9 +49,9 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case session.Ready, session.Reconnected:
-		m = m.connection(cards.StateLive, nil)
+		m.connection = m.follow(cards.StateLive, nil)
 	case session.ConnectionLost:
-		m = m.connection(cards.StateOffline, msg.Err)
+		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.Recorded:
 		m.totals = msg.Totals
 	case stoppingMsg:
@@ -71,7 +62,14 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reply = string(msg)
 	case copiedMsg:
 		m.reply = msg.notes
-		return m, tea.Batch(tea.SetClipboard(msg.command), tea.Println(msg.shown))
+		return m, tea.Batch(tea.SetClipboard(msg.command), func() tea.Msg {
+			_ = m.Println(msg.shown)
+			return nil
+		})
+	case tea.PasteMsg:
+		if m.prompting() {
+			m.input += pasted(msg.Content)
+		}
 	case tea.KeyPressMsg:
 		if m.prompting() {
 			return m.key(msg)
@@ -83,7 +81,9 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Stream) View() tea.View {
 	var lines []string
 	if m.reply != "" {
-		lines = strings.Split(m.reply, "\n")
+		// The renderer cuts lines at the terminal's width, and replies name
+		// paths and warnings that must show whole.
+		lines = wrap(m.width, strings.Split(m.reply, "\n"))
 	}
 	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}.Line(m.width))
 	if m.prompting() {
@@ -102,12 +102,30 @@ type copiedMsg struct {
 	notes, command, shown string
 }
 
-// connection follows the connection until listening stops.
-func (m Stream) connection(state cards.State, lost error) Stream {
-	if m.state < cards.StateStopping {
-		m.state, m.lost = state, lost
+// connection is the listen connection's state, as the status line shows it.
+type connection struct {
+	state cards.State
+	// lost is why the connection dropped, while offline.
+	lost error
+}
+
+// follow takes the connection's new state until listening stops.
+func (c connection) follow(state cards.State, lost error) connection {
+	if c.state < cards.StateStopping {
+		c.state, c.lost = state, lost
 	}
-	return m
+	return c
+}
+
+// pasted is pasted text as typed: line breaks and other control characters
+// become spaces.
+func pasted(text string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, text)
 }
 
 func (m Stream) prompting() bool {
@@ -148,9 +166,8 @@ func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// run runs one typed line: ↵ replays the last request, r N replays #N, c N
-// copies #N as cURL, e N exports it as a fixture, t [source] sends a test
-// event, ? shows help, and anything else gets the command list.
+// run runs one typed line; ? shows help, and anything that isn't a command
+// gets the command list.
 func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 	m.reply = ""
 	command, ok := ParseCommand(line)
@@ -158,18 +175,18 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 		m.reply = CommandUsage(m.Forwarding)
 		return m, nil
 	}
+	requests := m.Requests
 	switch command.Key {
 	case "":
-		return m.replay(m.Replayer.ReplayLast)
+		return m.replay(requests.ReplayLast)
 	case "r":
-		replayer := m.Replayer
-		return m.replay(func() error { return replayer.Replay(command.N) })
+		return m.replay(func() error { return requests.Replay(command.N) })
 	case "c":
-		return m, copyCurl(m.Exporter, command.N, !m.ShowSensitiveHeaders)
+		return m, copyCurl(requests, command.N, !m.ShowSensitiveHeaders)
 	case "e":
-		return m, exportFixture(m.Exporter, command.N, !m.ShowSensitiveHeaders)
+		return m, exportFixture(requests, command.N, !m.ShowSensitiveHeaders)
 	case "t":
-		return m, sendTest(m.Tester, command.Source)
+		return m, sendTest(requests, command.Source)
 	}
 	m.reply = CommandHelp(m.Forwarding)
 	return m, nil
@@ -177,9 +194,9 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 
 // copyCurl builds request n's cURL command off the event loop: the full one
 // for the clipboard, and the one to show, redacted when redact is set.
-func copyCurl(exporter Exporter, n int, redact bool) tea.Cmd {
+func copyCurl(requests Requests, n int, redact bool) tea.Cmd {
 	return func() tea.Msg {
-		curl, err := exporter.Curl(n, redact)
+		curl, err := requests.Curl(n, redact)
 		if err != nil {
 			return replyMsg(cards.Line(err.Error()))
 		}
@@ -188,9 +205,9 @@ func copyCurl(exporter Exporter, n int, redact bool) tea.Cmd {
 }
 
 // exportFixture writes request n's fixture off the event loop.
-func exportFixture(exporter Exporter, n int, redact bool) tea.Cmd {
+func exportFixture(requests Requests, n int, redact bool) tea.Cmd {
 	return func() tea.Msg {
-		fixture, err := exporter.ExportFixture(n, redact)
+		fixture, err := requests.ExportFixture(n, redact)
 		if err != nil {
 			return replyMsg(cards.Line(err.Error()))
 		}
@@ -220,9 +237,9 @@ func runReplay(replay func() error) tea.Cmd {
 
 // sendTest sends a test event off the event loop; the reply says where it
 // went or why it didn't.
-func sendTest(tester Tester, source string) tea.Cmd {
+func sendTest(requests Requests, source string) tea.Cmd {
 	return func() tea.Msg {
-		name, err := tester.SendTest(source)
+		name, err := requests.SendTest(source)
 		if err != nil {
 			return replyMsg(cards.Line(err.Error()))
 		}
@@ -247,8 +264,8 @@ func (s streamSink) Emit(event session.Event) error {
 	var text string
 	switch e := event.(type) {
 	case session.Recorded:
-		// tea's Println erases right after each line, which in a terminal
-		// clears the last column of a line that fills it.
+		// Println pads a line that fills the terminal onto another row, so
+		// cards leave its last column free.
 		text = s.listen.Entry(e.Entry, cards.Width(s.program.output)-1)
 	case session.Reconnected:
 		text = cards.Reconnected(e.Offline, s.requestsURL)

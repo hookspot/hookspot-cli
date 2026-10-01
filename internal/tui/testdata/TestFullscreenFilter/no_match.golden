@@ -1,4 +1,4 @@
-● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 14ms
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
 ● stripe   ● github
 / source:shopify                                          0 matches · esc clears
 ╭─ Requests · source:shopify ───────────────────────────────────────── 0 of 1 ─╮
@@ -21,4 +21,4 @@
 
 
 
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

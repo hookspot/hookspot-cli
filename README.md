@@ -146,6 +146,7 @@ requests and 64 MiB of bodies; naming an older number says it was dropped.
 |---|---|
 | `↑` `↓` | select a request; stops following |
 | `←` `→` | detail tabs: Overview, Request, Response, Timing |
+| `pgup` `pgdn` | scroll the detail; stops following |
 | `f` | follow the newest request |
 | `/` | filter; `↵` applies, `esc` clears |
 | `r` | replay the selected request |

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -63,7 +62,7 @@ func (m Fullscreen) sourcesKey(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		m.sources.copying = len(m.Routes) > 0
 	case key.Matches(msg, keys.test):
 		if len(m.Routes) > 0 {
-			return m, sendTest(m.Tester, m.Routes[m.sources.selected].Source)
+			return m, sendTest(m.Requests, m.Routes[m.sources.selected].Source)
 		}
 	case key.Matches(msg, sourcesKeys.back):
 		m.sources.open = false
@@ -80,7 +79,7 @@ func (m Fullscreen) sourcesKey(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 // value the toast shows.
 func (m Fullscreen) copyField(n int) (Fullscreen, tea.Cmd) {
 	value := cards.Line(m.routeFields(m.Routes[m.sources.selected])[n-1].value)
-	m, expire := m.show("copied " + value + "\ncopying needs a terminal with OSC 52 (Terminal.app has none)")
+	m, expire := m.show("copied " + value + "\n" + cards.ClipboardNote)
 	return m, tea.Batch(tea.SetClipboard(value), expire)
 }
 
@@ -120,7 +119,7 @@ func shellWord(s string) string {
 	if plainWord.MatchString(s) {
 		return s
 	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return session.Quote(s)
 }
 
 // sourcesView lists every route with its stats, then the selected route's
@@ -387,10 +386,6 @@ func (m Fullscreen) routeDetail(route cards.BannerRoute) []string {
 // mode forwards nothing, so it shows only counts and times.
 func (m Fullscreen) activity(route cards.BannerRoute) []string {
 	stats := m.routes[route.RouteUID]
-	now := time.Now
-	if m.now != nil {
-		now = m.now
-	}
 	requests := strconv.Itoa(stats.Count)
 	if m.Target != "" {
 		failed := strconv.Itoa(stats.Failed) + " failed"
@@ -407,7 +402,7 @@ func (m Fullscreen) activity(route cards.BannerRoute) []string {
 		}
 		lines = append(lines, activityLine("latency", latency))
 	}
-	lines = append(lines, activityLine("per minute", sparkline(stats.PerMinuteAt(now()))+faintStyle.Render("  last 15 min")))
+	lines = append(lines, activityLine("per minute", sparkline(stats.PerMinuteAt(m.clock()))+faintStyle.Render("  last 15 min")))
 	last := faintStyle.Render("—")
 	if e := stats.Last; e.Number != 0 {
 		last = "#" + strconv.Itoa(e.Number) + "  " + faintStyle.Render(e.Received.Format(time.TimeOnly))
@@ -479,12 +474,7 @@ func sparkline(counts [15]int) string {
 
 // sourcesFooter lists the page's keys, or all of them in columns after ?.
 func (m Fullscreen) sourcesFooter(width int) []string {
-	h := help.New()
-	h.ShowAll = m.help && !m.sources.copying
-	h.ShortSeparator = "  "
-	h.Styles = helpStyles
-	h.SetWidth(width)
-	return strings.Split(h.View(sourcesKeyMap{copying: m.sources.copying}), "\n")
+	return helpView(sourcesKeyMap{copying: m.sources.copying}, m.help && !m.sources.copying, width)
 }
 
 // sourcesKeyMap lists the page's keys; after c, only the field numbers.

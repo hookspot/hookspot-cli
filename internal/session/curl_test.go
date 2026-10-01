@@ -125,10 +125,10 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 				if curl.Resend == mode.forward {
 					t.Errorf("#%d Resend = %v in %s mode", n+1, curl.Resend, mode.name)
 				}
-				if test.fixture == "" && len(d.Body) > 0 && !strings.Contains(curl.Command, "--data-binary "+quote(string(d.Body))) {
+				if test.fixture == "" && len(d.Body) > 0 && !strings.Contains(curl.Command, "--data-binary "+Quote(string(d.Body))) {
 					t.Errorf("#%d body is not inline:\n%s", n+1, curl.Command)
 				}
-				if test.fixture != "" && !strings.Contains(curl.Command, "--data-binary "+quote("@"+filepath.Join(fixtures, test.fixture+".body"))) {
+				if test.fixture != "" && !strings.Contains(curl.Command, "--data-binary "+Quote("@"+filepath.Join(fixtures, test.fixture+".body"))) {
 					t.Errorf("#%d body is not read from its absolute fixture path:\n%s", n+1, curl.Command)
 				}
 				if test.headersFile != (curl.HeadersFile != "") || test.headersFile && curl.HeadersFile != filepath.Join(fixtures, test.fixture+".headers") {

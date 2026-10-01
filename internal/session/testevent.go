@@ -115,5 +115,5 @@ func (s *Session) sentTest(delivery ws.Delivery) bool {
 // TestCurl is a POSIX shell command that sends a test event to publicURL from
 // anywhere. It carries no test id, so its deliveries aren't marked Test.
 func TestCurl(publicURL string) string {
-	return "curl -X POST " + quote(publicURL) + ` -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'`
+	return "curl -X POST " + Quote(publicURL) + ` -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'`
 }

@@ -10,8 +10,7 @@
 
 No requests yet. Check the whole path with a test event:
 
-  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: applicat…
-  curl -X POST 'https://in.hookspot.test/src_github' -H 'Content-Type: applicat…
+  The curls are wider than this screen; on Sources (s), c then 6 copies one.
 
  t  send a test event to stripe
 
@@ -21,4 +20,5 @@ No requests yet. Check the whole path with a test event:
 
 
 
-↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl  e export  t test …
+
+? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

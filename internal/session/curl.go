@@ -62,10 +62,10 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	}
 	method := Method(d)
 	if !plainName.MatchString(method) {
-		method = quote(method)
+		method = Quote(method)
 	}
 	// -g keeps curl from reading [] and {} in a query as URL globs.
-	full := []string{"curl -g -X " + method + " " + quote(target)}
+	full := []string{"curl -g -X " + method + " " + Quote(target)}
 	shown := slices.Clone(full)
 
 	headers := proxy.Headers(d.Headers)
@@ -77,11 +77,11 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 				unprintable = append(unprintable, headerLine(name, value))
 				continue
 			}
-			full = append(full, "-H "+quote(headerLine(name, value)))
+			full = append(full, "-H "+Quote(headerLine(name, value)))
 			if redact && SensitiveHeader(name) {
 				value, curl.Redacted = redactedValue, true
 			}
-			shown = append(shown, "-H "+quote(headerLine(name, value)))
+			shown = append(shown, "-H "+Quote(headerLine(name, value)))
 		}
 	}
 	if len(d.Body) > 0 && len(headers["Content-Type"]) == 0 {
@@ -97,7 +97,7 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 		if curl.HeadersFile, err = writeFixture(name+".headers", []byte(strings.Join(unprintable, "\n")+"\n")); err != nil {
 			return Curl{}, err
 		}
-		files = append(files, "-H "+quote("@"+curl.HeadersFile))
+		files = append(files, "-H "+Quote("@"+curl.HeadersFile))
 	}
 	if body := string(d.Body); body != "" {
 		// curl reads a body starting with @ as a file name.
@@ -108,7 +108,7 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 			}
 			body = "@" + path
 		}
-		files = append(files, "--data-binary "+quote(body))
+		files = append(files, "--data-binary "+Quote(body))
 	}
 	curl.Command = strings.Join(append(full, files...), " \\\n  ")
 	curl.Shown = strings.Join(append(shown, files...), " \\\n  ")
@@ -148,7 +148,7 @@ func printable(text, allowed string) bool {
 	})
 }
 
-// quote single-quotes text for a POSIX shell.
-func quote(text string) string {
+// Quote single-quotes text for a POSIX shell.
+func Quote(text string) string {
 	return "'" + strings.ReplaceAll(text, "'", `'\''`) + "'"
 }

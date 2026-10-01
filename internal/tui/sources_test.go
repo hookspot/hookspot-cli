@@ -2,11 +2,9 @@ package tui
 
 import (
 	"bytes"
-	"maps"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -42,57 +40,6 @@ func inspected(m Fullscreen) Fullscreen {
 	return m
 }
 
-// tally reports entries as a session would, with stats per route. The slowest
-// response is p50, p95 and max at once, and every request falls in the
-// clock's minute.
-type tally struct {
-	totals session.Stats
-	routes map[string]session.Stats
-}
-
-func (t *tally) recorded(e session.Entry) session.Recorded {
-	t.totals = add(t.totals, e)
-	r := session.Recorded{Entry: e, Totals: t.totals}
-	if e.RouteUID != "" {
-		if t.routes == nil {
-			t.routes = map[string]session.Stats{}
-		}
-		t.routes[e.RouteUID] = add(t.routes[e.RouteUID], e)
-		r.Route = t.routes[e.RouteUID]
-	}
-	return r
-}
-
-func add(s session.Stats, e session.Entry) session.Stats {
-	s.Count++
-	s.Last = e
-	s.PerMinute[14]++
-	s.Minute = clock.Truncate(time.Minute)
-	if e.Target == "" {
-		return s
-	}
-	o := session.Outcome{Status: e.Response.Status}
-	if e.Failure == nil && e.Response.Status < 300 {
-		s.OK++
-	} else {
-		s.Failed++
-	}
-	if e.Failure != nil {
-		o = session.Outcome{Failure: e.Failure.Kind}
-	}
-	// Earlier snapshots keep their own counts.
-	s.Outcomes = maps.Clone(s.Outcomes)
-	if s.Outcomes == nil {
-		s.Outcomes = map[session.Outcome]int{}
-	}
-	s.Outcomes[o]++
-	if e.Failure == nil {
-		s.Max = max(s.Max, e.Latency)
-		s.P50, s.P95 = s.Max, s.Max
-	}
-	return s
-}
-
 // refunds is entry n to stripe's refunds route.
 func refunds(n, status int) session.Entry {
 	e := entry(n, "src_stripe", status)
@@ -107,12 +54,12 @@ func unmatched(n int) session.Entry {
 	return e
 }
 
-// traffic is a run's first five requests, one of them unmatched.
+// traffic is a run's first six requests, one of them unmatched.
 func traffic(t *tally) []tea.Msg {
 	return []tea.Msg{
 		session.Ready{},
 		t.recorded(entry(1, "src_stripe", 200)), t.recorded(entry(2, "src_github", 500)), t.recorded(refused(3)),
-		t.recorded(refunds(4, 200)), t.recorded(unmatched(5)),
+		t.recorded(refunds(4, 200)), t.recorded(unmatched(5)), t.recorded(entry(6, "src_stripe", 200)),
 	}
 }
 
@@ -134,7 +81,7 @@ func TestSources(t *testing.T) {
 			return append(traffic(t), open, letter('c'))
 		}},
 		{name: "live update", width: 80, height: 30, events: func(t *tally) []tea.Msg {
-			return append([]tea.Msg{open}, append(traffic(t), t.recorded(entry(6, "src_stripe", 422)))...)
+			return append([]tea.Msg{open}, append(traffic(t), t.recorded(entry(7, "src_stripe", 422)))...)
 		}},
 		{name: "inspect", width: 80, height: 24, inspect: true, events: func(t *tally) []tea.Msg {
 			e := entry(1, "src_stripe", 0)
@@ -145,8 +92,8 @@ func TestSources(t *testing.T) {
 			return append(traffic(t), open, letter('?'))
 		}},
 		{name: "back to the list", width: 80, height: 24, events: func(t *tally) []tea.Msg {
-			// The requests view stays paused on #4.
-			return append(traffic(t), up, open, down, tea.KeyPressMsg{Code: tea.KeyEscape})
+			// The requests view stays paused on #5.
+			return append(traffic(t), up, open, down, open)
 		}},
 	}
 	for _, test := range tests {
@@ -169,9 +116,9 @@ func TestSourcesCopiesAField(t *testing.T) {
 	for _, msg := range append(traffic(&tally{}), letter('s'), down, down, letter('c'), letter('1')) {
 		tm.Send(msg)
 	}
-	teatest.WaitFor(t, tm.Output(), func(out []byte) bool {
+	waitFor(t, tm.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(ansi.SetSystemClipboard("https://in.hookspot.test/src_github")))
-	}, teatest.WithDuration(5*time.Second))
+	})
 	// The toast shows the copy and copy mode is over.
 	golden.RequireEqual(t, final(t, tm))
 }
@@ -237,14 +184,14 @@ func TestSourcesCopyModeCancels(t *testing.T) {
 }
 
 func TestSourcesTestEvent(t *testing.T) {
-	var asked string
+	requests := newFake()
 	m := sourcesScreen()
-	m.Tester = tester{asked: &asked}
+	m.Requests = requests
 	model := press(tea.Model(m), letter('s'))
 	for i, want := range []string{"stripe", "stripe", "github"} {
 		model = press(model, letter('t'))
-		if asked != want || model.(Fullscreen).toast != "test event sent to "+want {
-			t.Fatalf("t on route %d tested %q, toast %q; want %s", i+1, asked, model.(Fullscreen).toast, want)
+		if asked := receive(t, requests.asked); asked != "test "+want || model.(Fullscreen).toast != "test event sent to "+want {
+			t.Fatalf("t on route %d asked for %s, toast %q; want %s", i+1, asked, model.(Fullscreen).toast, want)
 		}
 		model = press(model, down)
 	}

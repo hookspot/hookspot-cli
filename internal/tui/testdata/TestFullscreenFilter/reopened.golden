@@ -1,10 +1,10 @@
 ● live · Acme | Payments · 2 requests · 1 ok · 1 failed · p50 7ms
 ● stripe   ● github   following newest
-/ path:/hooks inv           status: source: path: or text · ↵ apply · esc clears
-╭─ Requests ─────────────────────────────────────────────────────────────── 2 ─╮
+/ source:github             status: source: path: or text · ↵ apply · esc clears
+╭─ Requests · source:github ────────────────────────────────────────── 1 of 2 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
 │ › 2  14:02:02  github  POST    /github                500         14ms       │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

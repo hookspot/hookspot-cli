@@ -1,4 +1,4 @@
-● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 14ms
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
 ● stripe   ● github   following newest
 ╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
@@ -17,8 +17,8 @@
 │                                                                              │
 │ replays are local: they never change the delivery's status in Hookspot       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select a request     r replay locally       s sources and routes
-←→ switch tabs          w wait, then replay    ? close help        
-f  follow the newest    c copy as cURL         q stop listening    
-/  filter the list      e export a fixture                         
-                        t send a test event                        
+↑↓        select a request     r replay locally       s sources and routes
+←→        switch tabs          w wait, then replay    ? close help        
+pgup pgdn scroll the detail    c copy as cURL         q stop listening    
+f         follow the newest    e export a fixture                         
+/         filter the list      t send a test event                        

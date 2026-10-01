@@ -1,30 +1,24 @@
 ● live · Acme | Payments · 1 request · 0 ok · 1 failed · p50 4ms
-● stripe   ● github   following newest
+● stripe   ● github   paused on #1 · f follows newest
 ╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│ › 1  14:02:01  github  POST    /github                500          7ms       │
-│                                                                              │
-│                                                                              │
+│ › 1  14:02:01  stripe  POST    /hooks                 500          7ms       │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #1 github · POST /github ─────────────────────────────────────────── req_1 ─╮
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
 │ Overview   Request   Response   Timing                                       │
 │                      ━━━━━━━━                                                │
-│  500 Internal Server Error  7ms                                              │
-│                                                                              │
-│ headers · 1                                                                  │
-│ content-type  application/json                                               │
+│ server         value                                                         │
+│ vary           value                                                         │
+│ x-request-id   value                                                         │
+│ x-runtime      value                                                         │
 │                                                                              │
 │ body · application/json · 12 B                                               │
 │ {                                                                            │
 │   "ok": false                                                                │
 │ }                                                                            │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

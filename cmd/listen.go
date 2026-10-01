@@ -143,7 +143,7 @@ var listenCmd = &cobra.Command{
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
 			if input != nil && !streamOutput {
 				sess := session.New(listenContext, sources, local, program.FullscreenSink())
-				screen := tui.Fullscreen{Replayer: sess, Exporter: sess, Tester: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
+				screen := tui.Fullscreen{Requests: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
 				if forwarder != nil {
 					screen.Target = forwarder.String()
 				}
@@ -162,7 +162,7 @@ var listenCmd = &cobra.Command{
 				return err
 			}
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Replayer: sess, Exporter: sess, Tester: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
+			stream := tui.Stream{Requests: sess, Println: program.Println, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
 

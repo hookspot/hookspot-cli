@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,7 +33,8 @@ var tabTitles = [tabCount]string{"Overview", "Request", "Response", "Timing"}
 // replaysAreLocal notes that a replay only resends to the local target.
 const replaysAreLocal = "replays are local: they never change the delivery's status in Hookspot"
 
-// detail frames the selected request's open tab.
+// detail frames the selected request's open tab from the line it's scrolled
+// to.
 func (m Fullscreen) detail(width, height int) []string {
 	i := m.selectedIndex()
 	if i < 0 {
@@ -40,18 +42,13 @@ func (m Fullscreen) detail(width, height int) []string {
 		return make([]string, height)
 	}
 	e := m.entries[i]
-	inner := max(1, width-4)
-	lines := m.tabs()
-	switch m.tab {
-	case overviewTab:
-		lines = append(lines, m.overview(e, inner)...)
-	case requestTab:
-		lines = append(lines, m.request(e)...)
-	case responseTab:
-		lines = append(lines, m.response(e, inner)...)
-	case timingTab:
-		lines = append(lines, m.timing(e)...)
+	content, rows := m.tabLines(e, width), detailRows(height)
+	content = content[m.scrolled(e, len(content), rows):]
+	if len(content) > rows {
+		more := faintStyle.Render(fmt.Sprintf("… %d more lines · pgdn scrolls", len(content)-rows+1))
+		content = append(content[:rows-1:rows-1], more)
 	}
+	lines := append(m.tabs(), content...)
 	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + sourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.sourceName(e.Delivery.SourceUID))) +
 		faintStyle.Render(" · ") + cards.Line(method(e)) + " " + cards.Line(e.Delivery.Path)
 	label := ""
@@ -59,6 +56,58 @@ func (m Fullscreen) detail(width, height int) []string {
 		label = faintStyle.Render(cards.Line(e.Delivery.RequestUID))
 	}
 	return panel(title, label, width, height, lines)
+}
+
+// tabLines are the open tab's lines for e, in a detail width wide.
+func (m Fullscreen) tabLines(e session.Entry, width int) []string {
+	inner := max(1, width-4)
+	switch m.tab {
+	case requestTab:
+		return m.request(e)
+	case responseTab:
+		return m.response(e, inner)
+	case timingTab:
+		return m.timing(e)
+	}
+	return m.overview(e, inner)
+}
+
+// detailRows is how many of a tab's lines a detail height high shows: its
+// borders and the tab names take four.
+func detailRows(height int) int {
+	return max(1, height-4)
+}
+
+// detailScroll is how many lines request number's tab is scrolled down.
+type detailScroll struct {
+	number int
+	tab    tab
+	lines  int
+}
+
+// scrolled is the first of e's open tab's lines to show, rows at a time; any
+// other request or tab shows from the top.
+func (m Fullscreen) scrolled(e session.Entry, lines, rows int) int {
+	if m.scroll.number != e.Number || m.scroll.tab != m.tab {
+		return 0
+	}
+	return max(0, min(m.scroll.lines, lines-rows))
+}
+
+// scrollDetail scrolls the selected request's open tab by pages, pausing on
+// the request so an arrival doesn't take its place.
+func (m Fullscreen) scrollDetail(pages int) Fullscreen {
+	i := m.selectedIndex()
+	if i < 0 {
+		return m
+	}
+	e, l := m.entries[i], m.layout()
+	lines, rows := len(m.tabLines(e, l.detailWidth)), detailRows(l.detailHeight)
+	// A page goes on from the line the "more lines" note hid.
+	first := m.scrolled(e, lines, rows) + pages*max(1, rows-1)
+	m.paused, m.selected = true, e.Number
+	m.scroll = detailScroll{number: e.Number, tab: m.tab, lines: max(0, min(first, lines-rows))}
+	return m
 }
 
 // tabs names the tabs and underlines the open one.
@@ -93,7 +142,7 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 	default:
 		lines = []string{outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency)+"  → "+cards.Line(e.Target))}
 	}
-	if failed(e) {
+	if e.Failed() {
 		lines = append(lines, m.failure(e, width)...)
 	}
 	lines = append(lines, "",
@@ -101,7 +150,7 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 		field("route", m.route(e.RouteUID)),
 		field("received", e.Received.Format(time.TimeOnly+".000")),
 	)
-	if failed(e) {
+	if e.Failed() {
 		lines = append(lines, field("target", m.targetState()), field("last ok", m.lastSuccess()))
 	}
 	var prose []string
@@ -210,12 +259,6 @@ func statusText(status int) string {
 	return strconv.Itoa(status)
 }
 
-// failed reports whether e was forwarded and got no 2xx, as the failed count
-// has it.
-func failed(e session.Entry) bool {
-	return e.Target != "" && (e.Failure != nil || e.Response.Status < 200 || e.Response.Status >= 300)
-}
-
 // failure says what happened to failed e, then what to do: replay now or,
 // when nothing answered, wait for the target and then replay. A replay's
 // summary already says what happened.
@@ -251,19 +294,17 @@ func (m Fullscreen) targetState() string {
 // lastSuccess is the newest request the target answered with a 2xx.
 func (m Fullscreen) lastSuccess() string {
 	for i := len(m.entries) - 1; i >= 0; i-- {
-		if e := m.entries[i]; e.Target != "" && !failed(e) {
+		if e := m.entries[i]; e.Target != "" && !e.Failed() {
 			return "#" + strconv.Itoa(e.Number) + " at " + e.Received.Format(time.TimeOnly) + faintStyle.Render(" · "+cards.FormatLatency(e.Latency))
 		}
 	}
 	return faintStyle.Render("none yet")
 }
 
-// targetAddress is the --forward-to host and port, which w dials.
+// targetAddress is the --forward-to host and port, which w dials. Target is
+// a URL proxy.New already parsed.
 func (m Fullscreen) targetAddress() string {
-	target, err := url.Parse(m.Target)
-	if err != nil {
-		return m.Target
-	}
+	target, _ := url.Parse(m.Target)
 	port := target.Port()
 	switch {
 	case port != "":
@@ -337,15 +378,15 @@ func dial(address string, after time.Duration, id int) tea.Cmd {
 
 // dialed replays once the target answers, else dials again after dialEvery.
 func (m Fullscreen) dialed(msg dialedMsg) (Fullscreen, tea.Cmd) {
-	if msg.id != m.wait.id || !m.waiting() || m.wait.replaying {
+	if msg.id != m.wait.id || !m.waiting() {
 		return m, nil
 	}
 	if msg.err != nil {
 		return m, dial(m.targetAddress(), m.dialInterval(), msg.id)
 	}
 	m.wait.replaying = true
-	replayer, n := m.Replayer, m.wait.number
-	return m, func() tea.Msg { return waitReplayedMsg{id: msg.id, err: replayer.Replay(n)} }
+	requests, n := m.Requests, m.wait.number
+	return m, func() tea.Msg { return waitReplayedMsg{id: msg.id, err: requests.Replay(n)} }
 }
 
 // waitReplayed puts the replay's outcome in place of the waiting line. The

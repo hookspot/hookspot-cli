@@ -65,10 +65,10 @@ func (s *stats) add(entry Entry) {
 	if !entry.forwarded() {
 		return
 	}
-	if entry.Failure == nil && entry.Response.Status >= 200 && entry.Response.Status < 300 {
-		s.ok++
-	} else {
+	if entry.Failed() {
 		s.failed++
+	} else {
+		s.ok++
 	}
 	outcome := Outcome{Status: entry.Response.Status}
 	if entry.Failure != nil {
@@ -78,8 +78,7 @@ func (s *stats) add(entry Entry) {
 		s.outcomes = map[Outcome]int{}
 	}
 	s.outcomes[outcome]++
-	// Other transport failures end before the target answers, so their time says nothing about it.
-	if entry.Failure != nil && entry.Failure.Kind != proxy.TransportTimeout {
+	if !entry.Timed() {
 		return
 	}
 	if len(s.latencies) < maxLatencySamples {
