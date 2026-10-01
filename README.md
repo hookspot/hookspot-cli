@@ -108,17 +108,33 @@ hookspot listen orders billing
 hookspot listen orders --forward-to http://localhost:3000
 ```
 
-Inspect mode redacts authorization and cookie headers unless
-`--show-sensitive-headers` is set. `--max-body-lines`, `--max-headers`, and
-`--max-value-chars` bound terminal output; zero disables an individual display
-limit. The deprecated `--log-level` flag is accepted for compatibility but has
-no effect.
+Sensitive header values (authorization, cookies, API keys) are hidden on
+screen, in cURL commands and in fixtures unless `--show-sensitive-headers` is
+set. `--max-body-lines`, `--max-headers`, and `--max-value-chars` bound
+terminal output; zero disables an individual display limit. The deprecated
+`--log-level` flag is accepted for compatibility but has no effect.
+
+`--forward-to 3000` means `http://localhost:3000`, and `3000/webhooks` means
+`http://localhost:3000/webhooks`. A delivery to `/` goes to the `--forward-to`
+URL itself, ending in `/` only when you typed one (`8000/webhooks/` for
+Django's `APPEND_SLASH`). The local hop ignores `HTTP_PROXY` and
+`HTTPS_PROXY`, which still apply to the connection to Hookspot.
+
+In plain mode, `listen` prints `Ready. Waiting for requests (Ctrl-C to quit)`
+once deliveries can flow; scripts should wait for it. When a dropped
+connection comes back, `Reconnected after <time> offline` says requests from
+the gap were not delivered and links to the dashboard to retry them. Plain
+mode writes `Ready` and request blocks to stdout; connection notices, source
+warnings, and the root-404 and test hints go to stderr.
 
 The first response from the local server is reported as-is, including a
-redirect, and redirects are not followed. API redirects are also blocked so a
-Hookspot CLI key is never forwarded to a different endpoint. Incoming delivery
-bodies may use padded or unpadded standard Base64; responses sent back over
-Phoenix Channels use padded Base64.
+redirect, and redirects are not followed; a 3xx shows its `Location`, since
+webhook senders don't follow redirects either. A refused `localhost` inside a
+container suggests the service name or `host.docker.internal`, and the first
+404 or 405 from the bare `--forward-to` root suggests adding the webhook path.
+API redirects are also blocked so a Hookspot CLI key is never forwarded to a
+different endpoint. Incoming delivery bodies may use padded or unpadded
+standard Base64; responses sent back over Phoenix Channels use padded Base64.
 
 ### Output modes
 
@@ -150,10 +166,10 @@ requests and 64 MiB of bodies; naming an older number says it was dropped.
 | `f` | follow the newest request |
 | `/` | filter; `↵` applies, `esc` clears |
 | `r` | replay the selected request |
-| `w` | wait until the local server accepts connections, then replay (transport failures only) |
+| `w` | wait until the local server accepts connections, then replay (transport failures only); `esc` stops waiting |
 | `c` | copy as cURL |
 | `e` | export a fixture |
-| `t` | send a test event to the selected request's source |
+| `t` | send a test event to the selected request's source (before any request, the first source) |
 | `s` | Sources page |
 | `?` | full help |
 | `q`, `ctrl-c` | stop listening; a second `ctrl-c` forces exit |
@@ -175,8 +191,7 @@ Type at the `›` prompt, or in plain mode at the terminal, and press Enter:
 | `t [source]` | send a test event |
 | `?` | help |
 
-Anything else lists the commands. Plain mode prints the cURL command instead of
-copying it.
+Anything else lists the commands.
 
 ### Replay
 
@@ -192,8 +207,10 @@ status in Hookspot. Without `--forward-to` there is nothing to replay; `c`,
 it was forwarded to. Without `--forward-to` it targets the source's public URL,
 so it resends the request through Hookspot. The full command goes to the
 clipboard through OSC 52, which needs a terminal that supports it (Terminal.app
-does not). The command shown on screen hides sensitive header values unless
-`--show-sensitive-headers` is set.
+does not). Full-screen copies the command only; the stream also prints it, and
+plain mode prints it instead (to stderr). Printed commands hide sensitive
+header values unless `--show-sensitive-headers` is set. Without OSC 52, use
+`c N` in the stream or in plain mode.
 
 A body over 64 KiB, or with control characters other than newlines, is written
 to `hookspot-fixtures/<name>.body` and passed as `--data-binary @<path>`. Headers
@@ -210,7 +227,8 @@ route matched, or `entry-<N>` when that isn't a plain file name (letters,
 digits, `_`, and `-`). Exporting the same request or its replay again
 overwrites its files. Sensitive header values are written as
 `[redacted]` unless `--show-sensitive-headers` is set, and the confirmation
-says when they were. Fixture files are readable only by their owner.
+says when they were. On macOS and Linux, fixture files are readable only by
+their owner.
 
 ### Test event
 
@@ -306,7 +324,7 @@ restored, a later Ctrl-C can force exit and may interrupt cleanup.
 
 ## Development
 
-All Go build and test commands run in the pinned Docker toolchain:
+The `make` targets run Go in the pinned Docker toolchain:
 
 ```sh
 # api.example.invalid is reserved and intentionally not a live default.
@@ -318,6 +336,12 @@ make vet
 make run SERVER_URL=https://api.example.invalid ARGS='version --json'
 make run SERVER_URL=https://api.example.invalid ARGS='--help'
 ```
+
+Golden files under `testdata/` pin rendered output. After an intended output
+change, regenerate them with
+`go test ./cmd ./internal/cards ./internal/tui -update` (other packages reject
+the flag) and review the diff. CI also runs the pseudo-terminal tests natively
+on macOS and Windows: `go test -run '^TestTerminal' ./cmd`.
 
 `make npm-test` runs the npm launcher tests with the host `node` (18 or newer),
 and `scripts/smoke_test.sh` exercises the post-release smoke script against

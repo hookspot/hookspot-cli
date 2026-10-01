@@ -610,7 +610,7 @@ func (r *lineCommandReader) Stop() error {
 func init() {
 	listenCmd.Flags().StringVar(&forwardTo, "forward-to", "", "base URL to forward events to, e.g. localhost:3000 (deliveries keep their own path; omit to only print)")
 	listenCmd.Flags().BoolVar(&streamOutput, "stream", false, "print requests as a scrolling stream instead of the full-screen view")
-	listenCmd.Flags().BoolVar(&showSensitiveHeaders, "show-sensitive-headers", false, "show authorization and cookie header values")
+	listenCmd.Flags().BoolVar(&showSensitiveHeaders, "show-sensitive-headers", false, "show sensitive header values on screen, in cURL commands and in fixtures")
 	listenCmd.Flags().IntVar(&maxBodyLines, "max-body-lines", 12, "maximum body lines to print (0 for unlimited)")
 	listenCmd.Flags().IntVar(&maxHeaders, "max-headers", 20, "maximum headers to print (0 for unlimited)")
 	listenCmd.Flags().IntVar(&maxValueChars, "max-value-chars", 160, "maximum characters per value or body line (0 for unlimited)")
