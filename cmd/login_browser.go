@@ -9,7 +9,10 @@ import (
 	"os"
 	"time"
 
+	"charm.land/lipgloss/v2"
+
 	"hookspot/internal/api"
+	"hookspot/internal/cards"
 	"hookspot/internal/endpoint"
 )
 
@@ -63,12 +66,8 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 		return newCommandError("the Hookspot server returned an invalid browser login token", "Run 'hookspot login' again.")
 	}
 
-	fmt.Fprintf(deps.out, "Confirmation code: %s\n", safeDisplayText(attempt.Code))
-	fmt.Fprintf(deps.out, "Opening %s in your browser.\n", safeDisplayText(browserURL.String()))
-	if err := deps.openBrowser(browserURL.String()); err != nil {
-		fmt.Fprintln(deps.out, "If it doesn't open, visit the URL manually.")
-	}
-	fmt.Fprintln(deps.out, "Waiting for approval… (Ctrl+C to cancel)")
+	opened := deps.openBrowser(browserURL.String()) == nil
+	lipgloss.Fprintln(deps.out, cards.Login(attempt.Code, browserURL.String(), opened, cards.Width(deps.out)))
 
 	deadline := time.NewTimer(browserLoginTTL(attempt.ExpiresIn))
 	defer deadline.Stop()
@@ -117,9 +116,9 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Fprintf(deps.out, "Logged in as %s\n", safeDisplayText(result.User.Email))
+		lipgloss.Fprintln(deps.out, cards.Done("Logged in as", result.User.Email))
 		if result.Project != nil {
-			fmt.Fprintf(deps.out, "Active project set to %s\n", projectDisplayName(*result.Project))
+			lipgloss.Fprintln(deps.out, cards.Done("Active project set to", projectDisplayName(*result.Project)))
 		} else {
 			fmt.Fprintln(deps.out, "No active project set; run 'hookspot project use' to select one.")
 		}

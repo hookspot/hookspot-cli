@@ -125,7 +125,10 @@ func TestLogoutClearsSavedKeyWithoutCredentialResolution(t *testing.T) {
 			if result.err != nil {
 				t.Fatalf("logout failed: %v\n%s", result.err, result.stderr)
 			}
-			if got := strings.Contains(result.stdout, "environment-provided CLI key"); got != test.wantWarning {
+			if !strings.HasPrefix(result.stdout, "✓ Logged out\n") {
+				t.Fatalf("output = %q", result.stdout)
+			}
+			if got := strings.Contains(result.stdout, "HOOKSPOT_CLI_KEY is set in this shell."); got != test.wantWarning {
 				t.Fatalf("warning = %v, output = %q", got, result.stdout)
 			}
 			contents, err := os.ReadFile(path)

@@ -3,7 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
+
+	"hookspot/internal/cards"
 )
 
 var logoutCmd = &cobra.Command{
@@ -15,10 +18,8 @@ var logoutCmd = &cobra.Command{
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Fprintln(cmd.OutOrStdout(), "Logged out.")
-		if store.EnvironmentCLIKeyActive() {
-			fmt.Fprintln(cmd.OutOrStdout(), "An environment-provided CLI key is still active; unset it to finish logging out.")
-		}
+		out := cmd.OutOrStdout()
+		lipgloss.Fprintln(out, cards.Logout(store.EnvironmentCLIKeyActive(), cards.Width(out)))
 		return nil
 	},
 }

@@ -328,6 +328,7 @@
 - [ ] write command-level tests (masked times, run ended by an invalid delivery payload): piped `listen` in inspect and forward modes matches the golden stream; interleaved deliveries stay ordered; write errors surface through the handler as today
 - [ ] update the `cmd/listen_test.go` assertions on the old text
 - [ ] run tests - must pass before next task
+- ➕ Task 15 already moved `cmd/version.go`'s `SupportsColor` use to `cards`, so that item is done. It also left `safeDisplayText` in `cmd/errors.go` as a `cards.Line` wrapper used only by `cmd/listen.go`: replace those calls and delete it
 
 ### Task 8: Terminal stream: status line and prompt
 
@@ -458,11 +459,16 @@
 - Modify: `cmd/login.go`, `cmd/login_browser.go`, `cmd/logout.go`, `cmd/version.go`, `cmd/project.go`, `cmd/errors.go`
 - Modify: `cmd/login_test.go`, `cmd/version_test.go`, `cmd/project_test.go`, `cmd/errors_test.go`
 
-- [ ] login: the browser box with the code, a static "waiting for approval" line and the ✓ lines; the `-i` prompt; logout with the environment-key warning; version with the update box; the project list table with an active badge
-- [ ] `version --json` output stays byte-identical (the release smoke test and the Homebrew test read it)
-- [ ] `HandleError` renders a red-bordered box with the hint, or plain text when stderr isn't a terminal; replace `safeErrorText`/`safeDisplayText` with `cards.Sanitize`/`cards.Line`
-- [ ] write golden and command-level tests for each command, including no-color and piped output
-- [ ] run tests - must pass before next task
+- [x] login: the browser box with the code, a static "waiting for approval" line and the ✓ lines; the `-i` prompt; logout with the environment-key warning; version with the update box; the project list table with an active badge
+- [x] `version --json` output stays byte-identical (the release smoke test and the Homebrew test read it)
+- [x] `HandleError` renders a red-bordered box with the hint, or plain text when stderr isn't a terminal; replace `safeErrorText`/`safeDisplayText` with `cards.Sanitize`/`cards.Line`
+- [x] write golden and command-level tests for each command, including no-color and piped output
+- [x] run tests - must pass before next task
+- ➕ `cmd/password.go` writes the `-i` prompt (`cards.KeyPrompt`); the logout command test lives in `cmd/config_test.go`; `cards.Terminal` picks the error box or plain text
+- ⚠️ the login URL and the waiting line sit below the box, unwrapped, so the URL can be copied where no browser opens; the update box shows `1.2.3 → 1.3.0` without an upgrade command, since the install channel (npm, Homebrew, archive) is unknown
+- ⚠️ the error box is titled `✗ Error` with the whole message in its body, because messages carry no separate summary; the version line stays `hookspot version X`, matching `--version`
+- ⚠️ `project list` badges the saved project (`store.SavedProject()`), the one `project use` marks current
+- ⚠️ `safeDisplayText` remains as a `cards.Line` wrapper for `cmd/listen.go` only, which the prerequisite's Tasks 6–8 edit concurrently; Task 7 removes it
 
 ### Task 16: Project picker on bubbletea
 

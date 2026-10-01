@@ -273,7 +273,7 @@ func TestCheckLatestVersionPrintsUpgradeNotice(t *testing.T) {
 
 	var output bytes.Buffer
 	checkLatestVersion(context.Background(), &output, "1.2.3")
-	if output.String() != "A newer version of the Hookspot CLI is available, please update to: v1.3.0\n" {
+	if !strings.Contains(output.String(), "1.2.3 → 1.3.0") {
 		t.Fatalf("output = %q", output.String())
 	}
 
@@ -287,6 +287,29 @@ func TestCheckLatestVersionPrintsUpgradeNotice(t *testing.T) {
 	checkLatestVersion(context.Background(), &output, "dev")
 	if output.Len() != 0 || requests != 2 {
 		t.Fatalf("dev build checked GitHub: output = %q, requests = %d", output.String(), requests)
+	}
+}
+
+func TestVersionPrintsUpdateCard(t *testing.T) {
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v1.3.0"}`))
+	}))
+	defer github.Close()
+	release := map[string]string{
+		"version": "1.2.3", "server_url": "https://prod.example.invalid",
+		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
+	}
+
+	result := runCommandProcessEnvironment(t, "", release, map[string]string{"TEST_GITHUB_API_URL": github.URL}, "version")
+	if result.err != nil {
+		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
+	}
+	want := "hookspot version 1.2.3\n" +
+		"╭─ Update available ──╮\n" +
+		"│ 1.2.3 → 1.3.0       │\n" +
+		"╰─────────────────────╯\n"
+	if result.stdout != want {
+		t.Fatalf("stdout = %q, want %q", result.stdout, want)
 	}
 }
 

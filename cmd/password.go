@@ -10,7 +10,10 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"charm.land/lipgloss/v2"
 	"golang.org/x/term"
+
+	"hookspot/internal/cards"
 )
 
 const maxLoginKeyBytes = 64 * 1024
@@ -54,8 +57,7 @@ func (r *credentialReader) read(ctx context.Context, in io.Reader, out io.Writer
 		}()
 	}
 
-	if _, err := fmt.Fprint(out,
-		"Enter your hookspot CLI key (Account settings > CLI key): "); err != nil {
+	if _, err := lipgloss.Fprint(out, cards.KeyPrompt()); err != nil {
 		return "", fmt.Errorf("write CLI key prompt: %w", err)
 	}
 	if err := ctx.Err(); err != nil {

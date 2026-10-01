@@ -20,6 +20,12 @@ var (
 	badgeStyle      = lipgloss.NewStyle().Padding(0, 1)
 	plainBadgeStyle = badgeStyle.Foreground(lipgloss.BrightWhite).Background(lipgloss.BrightBlack)
 	colorBadgeStyle = badgeStyle.Foreground(lipgloss.Black)
+
+	faintStyle = lipgloss.NewStyle().Faint(true)
+	boldStyle  = lipgloss.NewStyle().Bold(true)
+	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Green)
+	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
+	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Red)
 )
 
 // DefaultWidth is the card width when the output isn't a terminal or its size
@@ -54,6 +60,12 @@ func Badge(text string) string {
 // ColorBadge renders a chip on bg, such as a status or a connection state.
 func ColorBadge(bg color.Color, text string) string {
 	return colorBadgeStyle.Background(bg).Render(text)
+}
+
+// Terminal reports whether out is a terminal.
+func Terminal(out io.Writer) bool {
+	file, ok := out.(interface{ Fd() uintptr })
+	return ok && term.IsTerminal(int(file.Fd()))
 }
 
 // Width is out's terminal width, or DefaultWidth when unknown.

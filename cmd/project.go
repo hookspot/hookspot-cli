@@ -7,11 +7,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"text/tabwriter"
 
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/api"
+	"hookspot/internal/cards"
 	"hookspot/internal/config"
 	"hookspot/internal/endpoint"
 )
@@ -42,12 +43,9 @@ var projectListCmd = &cobra.Command{
 			return fmt.Errorf("list projects: %w", err)
 		}
 
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "UID\tOrganization\tProject")
-		for _, p := range projects {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", safeDisplayText(p.UID), safeDisplayText(p.Organization.Name), safeDisplayText(p.Name))
-		}
-		return w.Flush()
+		out := cmd.OutOrStdout()
+		_, err = lipgloss.Fprintln(out, cards.Projects(projects, store.SavedProject(), cards.Width(out)))
+		return err
 	},
 }
 
@@ -147,12 +145,12 @@ func projectCandidates(projects []api.Project, args []string) ([]api.Project, er
 	}
 	if len(candidates) == 0 {
 		if len(args) == 1 {
-			return nil, fmt.Errorf("no projects match organization %q", safeDisplayText(args[0]))
+			return nil, fmt.Errorf("no projects match organization %q", cards.Line(args[0]))
 		}
-		return nil, fmt.Errorf("no projects match %q in organization %q", safeDisplayText(args[1]), safeDisplayText(args[0]))
+		return nil, fmt.Errorf("no projects match %q in organization %q", cards.Line(args[1]), cards.Line(args[0]))
 	}
 	if len(args) == 2 && len(candidates) > 1 {
-		return nil, fmt.Errorf("multiple projects match %q in organization %q", safeDisplayText(args[1]), safeDisplayText(args[0]))
+		return nil, fmt.Errorf("multiple projects match %q in organization %q", cards.Line(args[1]), cards.Line(args[0]))
 	}
 	return candidates, nil
 }
@@ -208,7 +206,7 @@ func projectUseHint() string {
 }
 
 func projectDisplayName(project api.Project) string {
-	return safeDisplayText(project.Organization.Name) + " | " + safeDisplayText(project.Name)
+	return cards.Line(project.Organization.Name) + " | " + cards.Line(project.Name)
 }
 
 func init() {

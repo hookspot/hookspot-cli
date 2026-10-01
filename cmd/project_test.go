@@ -891,3 +891,33 @@ func TestProjectDisplayNameEscapesBackendControls(t *testing.T) {
 		t.Fatalf("projectDisplayName() = %q, want %q", got, want)
 	}
 }
+
+func TestProjectListMarksSavedProjectActive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cli/projects" || r.Header.Get("X-CLI-KEY") != "test-key" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(selectionProjects())
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'test-key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", configPath, "project", "list")
+	if result.err != nil {
+		t.Fatalf("project list failed: %v\n%s", result.err, result.stderr)
+	}
+	want := "╭─ Projects ───────────────────────────────────── 3 ─╮\n" +
+		"│ UID              ORGANIZATION  PROJECT             │\n" +
+		"├────────────────────────────────────────────────────┤\n" +
+		"│ proj_storefront  Acme Inc.     Storefront          │\n" +
+		"│ proj_payments    Acme Inc.     Payments    active  │\n" +
+		"│ proj_billing     Other         Billing             │\n" +
+		"╰────────────────────────────────────────────────────╯\n"
+	if result.stdout != want {
+		t.Fatalf("stdout:\n%s\nwant:\n%s", result.stdout, want)
+	}
+}

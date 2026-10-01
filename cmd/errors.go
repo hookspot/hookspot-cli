@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode"
+
+	"charm.land/lipgloss/v2"
 
 	"hookspot/internal/api"
+	"hookspot/internal/cards"
 	"hookspot/internal/ws"
 )
 
@@ -61,10 +63,14 @@ func HandleError(out io.Writer, err error) int {
 	}
 
 	message, hint := fatalErrorMessage(err)
-	fmt.Fprintln(out, safeErrorText(message))
+	if cards.Terminal(out) {
+		lipgloss.Fprintln(out, cards.Error(message, hint, cards.Width(out)))
+		return 1
+	}
+	fmt.Fprintln(out, cards.Sanitize(message))
 	if hint != "" {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, safeErrorText(hint))
+		fmt.Fprintln(out, cards.Sanitize(hint))
 	}
 	return 1
 }
@@ -128,46 +134,7 @@ func projectNotFoundHint() string {
 	return "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 }
 
-func safeErrorText(value string) string {
-	var safe strings.Builder
-	for _, r := range value {
-		switch {
-		case r == '\n' || r == '\t':
-			safe.WriteRune(r)
-		case r == '\r':
-			safe.WriteString("\\r")
-		case unicode.IsControl(r):
-			if r <= 0xff {
-				fmt.Fprintf(&safe, "\\x%02x", r)
-			} else {
-				fmt.Fprintf(&safe, "\\u%04x", r)
-			}
-		default:
-			safe.WriteRune(r)
-		}
-	}
-	return safe.String()
-}
-
+// safeDisplayText serves cmd/listen.go until its output moves to cards.
 func safeDisplayText(value string) string {
-	var safe strings.Builder
-	for _, r := range value {
-		switch {
-		case r == '\n':
-			safe.WriteString("\\n")
-		case r == '\t':
-			safe.WriteString("\\t")
-		case r == '\r':
-			safe.WriteString("\\r")
-		case unicode.IsControl(r):
-			if r <= 0xff {
-				fmt.Fprintf(&safe, "\\x%02x", r)
-			} else {
-				fmt.Fprintf(&safe, "\\u%04x", r)
-			}
-		default:
-			safe.WriteRune(r)
-		}
-	}
-	return safe.String()
+	return cards.Line(value)
 }

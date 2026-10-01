@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 
-	"hookspot/internal/printer"
+	"hookspot/internal/cards"
 )
 
 var versionJSON bool
@@ -55,11 +56,7 @@ func checkLatestVersion(ctx context.Context, out io.Writer, current string) {
 	if !needsToUpgrade(current, latest) {
 		return
 	}
-	notice := "A newer version of the Hookspot CLI is available, please update to: " + latest
-	if printer.SupportsColor(out) {
-		notice = "\x1b[3m" + notice + "\x1b[0m"
-	}
-	fmt.Fprintln(out, notice)
+	lipgloss.Fprintln(out, cards.Update(current, latest, cards.Width(out)))
 }
 
 func latestVersion(ctx context.Context, current string) string {

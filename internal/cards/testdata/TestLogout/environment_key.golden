@@ -1,0 +1,5 @@
+✓ Logged out
+╭─ Still signed in via env ──────────────╮
+│ HOOKSPOT_CLI_KEY is set in this shell. │
+│ Unset it to finish logging out.        │
+╰────────────────────────────────────────╯

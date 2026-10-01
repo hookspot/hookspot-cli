@@ -21,6 +21,9 @@ func TestPalette(t *testing.T) {
 		out.WriteString(ColorBadge(StatusColor(status), strconv.Itoa(status)) + "\n")
 	}
 	out.WriteString(Badge("POST") + "\n")
+	for _, style := range []lipgloss.Style{faintStyle, boldStyle, okStyle, warnStyle, errorStyle} {
+		out.WriteString(style.Render("text") + "\n")
+	}
 	golden.RequireEqual(t, out.String())
 }
 
@@ -35,6 +38,9 @@ func TestWidthFallsBackWhenNotATerminal(t *testing.T) {
 	for _, out := range []io.Writer{&bytes.Buffer{}, writer} {
 		if got := Width(out); got != DefaultWidth {
 			t.Errorf("Width(%T) = %d, want %d", out, got, DefaultWidth)
+		}
+		if Terminal(out) {
+			t.Errorf("Terminal(%T) = true", out)
 		}
 	}
 }
