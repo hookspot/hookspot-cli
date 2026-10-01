@@ -370,9 +370,10 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 **Files:**
 - Modify: `cmd/login_browser.go`, `cmd/login_test.go`
 
-- [ ] add `If you just created your account, run 'hookspot login' again.` to the timeout message
-- [ ] write a test for the timeout text
-- [ ] run tests - must pass before next task
+- [x] add `If you just created your account, run 'hookspot login' again.` to the timeout message
+- [x] write a test for the timeout text
+- [x] run tests - must pass before next task
+- ➕ the hint is also added to the poll-404 expiry: the server expires the attempt before the CLI deadline, so that path usually fires first
 
 ### Task 10: Verify acceptance criteria
 - [ ] locally: `listen stripe --forward-to 3000/webhooks/stripe` shows the project, `Connecting…`, then `Ready` after the join; killing and restoring the backend shows `Reconnected after …`

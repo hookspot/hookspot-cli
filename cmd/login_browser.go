@@ -80,7 +80,7 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return newCommandError("login attempt expired", "Run 'hookspot login' again.")
+			return loginExpiredError()
 		case <-ticker.C:
 		}
 
@@ -92,7 +92,7 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 			var apiErr *api.Error
 			if errors.As(err, &apiErr) {
 				if apiErr.StatusCode == http.StatusNotFound {
-					return newCommandError("login attempt expired", "Run 'hookspot login' again.")
+					return loginExpiredError()
 				}
 				if apiErr.StatusCode < http.StatusInternalServerError && apiErr.StatusCode != http.StatusTooManyRequests {
 					return fmt.Errorf("poll browser login: %w", err)
@@ -125,6 +125,12 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 		}
 		return nil
 	}
+}
+
+// loginExpiredError covers a sign-up whose email confirmation outlasted the
+// attempt: the account now exists, so a fresh login succeeds.
+func loginExpiredError() error {
+	return newCommandError("login attempt expired", "Run 'hookspot login' again. If you just created your account, run 'hookspot login' again.")
 }
 
 // browserLoginTTL clamps the server-provided lifetime so a bad value can not
