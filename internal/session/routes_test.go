@@ -33,9 +33,9 @@ func TestRouteFor(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			route, ok := RouteFor(sources, test.delivery)
+			route, ok := routeFor(sources, test.delivery)
 			if route.UID != test.want || ok != (test.want != "") {
-				t.Fatalf("RouteFor() = %q, %v; want %q", route.UID, ok, test.want)
+				t.Fatalf("routeFor() = %q, %v; want %q", route.UID, ok, test.want)
 			}
 		})
 	}

@@ -719,6 +719,10 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	if stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
+	// The plain banner names the commands with ctrl-c quit at the default width.
+	if banner := cards.Banner("Acme | Payments", nil, append(tui.CommandHints(true), "ctrl-c quit"), cards.DefaultWidth); !strings.Contains(banner, "t test event · ctrl-c quit") {
+		t.Fatalf("banner cuts its hints:\n%s", banner)
+	}
 }
 
 func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
@@ -747,10 +751,11 @@ func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
 	refused := "nothing to replay without --forward-to\n"
 	want := "#1 as cURL, which resends it through Hookspot\n" +
 		"sensitive headers are hidden; --show-sensitive-headers shows the full command\n" +
-		"curl -X POST 'https://in.hookspot.test/src_stripe' \\\n" +
+		"curl -g -X POST 'https://in.hookspot.test/src_stripe' \\\n" +
 		"  -H 'Authorization: [redacted]' \\\n" +
+		"  -H 'Content-Type:' \\\n" +
 		"  --data-binary '{\"type\":\"paid\"}'\n" +
-		"exported #1 to " + filepath.Join(dir, "req_1.json") + " and " + filepath.Join(dir, "req_1.body") + " · sensitive headers redacted\n" +
+		"exported #1 to " + filepath.Join(dir, "req_1_rte_stripe.json") + " and " + filepath.Join(dir, "req_1_rte_stripe.body") + " · sensitive headers redacted\n" +
 		"#9: no such request\n" + refused + refused +
 		"c N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\n" +
 		"replays need --forward-to\nctrl-c  stop listening\n"

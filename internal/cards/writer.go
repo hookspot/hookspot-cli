@@ -129,28 +129,3 @@ func (w *Writer) write(s stream, text string) error {
 	}
 	return err
 }
-
-// Entry renders a recorded entry as Request does; a test event's delivery is
-// followed by the path it proved.
-func (l Listen) Entry(e session.Entry, width int) string {
-	r := request(e)
-	text := l.Request(r, width)
-	if r.Test {
-		text += "\n" + PathWorks(r, width)
-	}
-	return text
-}
-
-func request(e session.Entry) Request {
-	return Request{
-		Number:   e.Number,
-		Test:     e.Test,
-		Delivery: e.Delivery,
-		Received: e.Received,
-		Target:   e.Target,
-		Response: e.Response,
-		Latency:  e.Latency,
-		Failure:  e.Failure,
-		Replay:   e.Replay,
-	}
-}

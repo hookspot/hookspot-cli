@@ -27,7 +27,8 @@ type Stats struct {
 	// oldest first.
 	PerMinute [statsMinutes]int
 	Minute    time.Time
-	// Last is the newest request; its Number is 0 before the first.
+	// Last is the newest request without its headers and bodies; its Number
+	// is 0 before the first.
 	Last Entry
 }
 
@@ -44,7 +45,7 @@ type stats struct {
 	// latencies is a ring of the newest samples; next is where the next goes.
 	latencies []time.Duration
 	next      int
-	// minutes ends at the minute minute.
+	// minutes counts requests per minute, oldest first, ending at minute.
 	minutes [statsMinutes]int
 	minute  time.Time
 	last    Entry
@@ -52,7 +53,11 @@ type stats struct {
 
 func (s *stats) add(entry Entry) {
 	s.count++
+	// The last entry can outlive its place in history, so it holds no headers
+	// or bodies.
 	s.last = entry
+	s.last.Delivery.Headers, s.last.Delivery.Body = nil, nil
+	s.last.Response.Headers, s.last.Response.Body = nil, nil
 	s.shift(entry.Received)
 	if back := int(s.minute.Sub(entry.Received.Truncate(time.Minute)) / time.Minute); back < statsMinutes {
 		s.minutes[statsMinutes-1-back]++

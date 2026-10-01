@@ -48,24 +48,28 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	card := noColor(t, testListen().Request(request(entry), DefaultWidth))
-	if want := "Connecting…\nReady. Waiting for requests (Ctrl-C to quit)\n" + card; out.String() != want {
+	if want := noColor(t, Connecting()) + noColor(t, Ready()) + noColor(t, testListen().Entry(entry, DefaultWidth)); out.String() != want {
 		t.Errorf("out:\n%s\nwant:\n%s", out.String(), want)
 	}
-	if !strings.Contains(card, "#2 ↻ #1  200 → 502") {
-		t.Errorf("recorded entry lost its replay summary:\n%s", card)
-	}
-	wantErr := "⚠ github is disabled: requests to it are rejected. Enable it in the dashboard.\n" +
-		"⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +
-		"http://localhost:3000/ returned 404. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to http://localhost:3000/webhooks\n" +
-		"connection lost: dropped; reconnecting in 2s...\n" +
-		"Reconnected after 3s offline. Requests that arrived meanwhile were not delivered; retry them from https://hookspot.test/acme/payments/requests\n" +
+	wantErr := noColor(t, DisabledSource("github")) +
+		noColor(t, SkippedSource("shopify")) +
+		noColor(t, RootNotFound("http://localhost:3000/", http.StatusNotFound)) +
+		noColor(t, ConnectionLost(errors.New("dropped"), 2*time.Second)) +
+		noColor(t, Reconnected(3*time.Second, "https://hookspot.test/acme/payments/requests")) +
 		`#9: no such request\x1b` + "\n"
 	if errOut.String() != wantErr {
 		t.Errorf("errOut:\n%s\nwant:\n%s", errOut.String(), wantErr)
 	}
 	if out.writes != 3 || errOut.writes != 6 {
 		t.Errorf("writes = %d and %d, want one per event", out.writes, errOut.writes)
+	}
+}
+
+func TestCurlNotesWarnAboutTheHeadersFile(t *testing.T) {
+	c := session.Curl{HeadersFile: "/work/hookspot-fixtures/req_1\x1b[2J.headers"}
+	want := "#3 as cURL\n" + `/work/hookspot-fixtures/req_1\x1b[2J.headers holds unredacted headers, which may contain credentials`
+	if got := CurlNotes(3, c, false); got != want {
+		t.Fatalf("notes = %q, want %q", got, want)
 	}
 }
 

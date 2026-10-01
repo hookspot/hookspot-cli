@@ -32,10 +32,6 @@ func TestLogin(t *testing.T) {
 	})
 }
 
-func TestKeyPrompt(t *testing.T) {
-	golden.RequireEqual(t, noColor(t, KeyPrompt()))
-}
-
 func TestDone(t *testing.T) {
 	golden.RequireEqual(t, noColor(t, strings.Join([]string{
 		Done("Logged in as", "dev@example.com"),
@@ -44,17 +40,9 @@ func TestDone(t *testing.T) {
 	}, "\n")))
 }
 
+// cmd's tests pin the saved-key-only logout, the key prompt and the update card.
 func TestLogout(t *testing.T) {
-	t.Run("saved key only", func(t *testing.T) {
-		golden.RequireEqual(t, noColor(t, Logout(false, 80)))
-	})
-	t.Run("environment key", func(t *testing.T) {
-		golden.RequireEqual(t, noColor(t, Logout(true, 80)))
-	})
-}
-
-func TestUpdate(t *testing.T) {
-	golden.RequireEqual(t, noColor(t, Update("1.2.3", "v1.3.0", 80)))
+	golden.RequireEqual(t, noColor(t, Logout(true, 80)))
 }
 
 func TestProjects(t *testing.T) {

@@ -39,8 +39,8 @@ func testDelivery() ws.Delivery {
 	}
 }
 
-func forwarded(number int, d ws.Delivery, status int, latency time.Duration) Request {
-	return Request{
+func forwarded(number int, d ws.Delivery, status int, latency time.Duration) session.Entry {
+	return session.Entry{
 		Number:   number,
 		Delivery: d,
 		Received: received,
@@ -55,10 +55,11 @@ func joinCards(list ...string) string {
 }
 
 func TestBanner(t *testing.T) {
+	// A route's name shows even when its destination ends with it.
 	ciHook := []BannerRoute{
-		{SourceUID: "src_stripe", Source: "stripe", PublicURL: "https://in.hookspot.test/src_stripe", Destination: "http://localhost:3000/webhooks/stripe", Label: "/webhooks/stripe"},
-		{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", Destination: "http://localhost:3000/webhooks/github", Label: "/webhooks/github"},
-		{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", Destination: "http://localhost:3000/ci/github", Label: "ci-hook"},
+		{SourceUID: "src_stripe", Source: "stripe", PublicURL: "https://in.hookspot.test/src_stripe", Path: "/webhooks/stripe", Destination: "http://localhost:3000/webhooks/stripe", Label: "/webhooks/stripe"},
+		{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", Path: "/webhooks/github", Destination: "http://localhost:3000/webhooks/github", Label: "/webhooks/github"},
+		{SourceUID: "src_github", Source: "github", PublicURL: "https://in.hookspot.test/src_github", Path: "/ci/github", Destination: "http://localhost:3000/ci/github", Label: "github"},
 	}
 	hints := []string{"↵ replay last", "ctrl-c quit"}
 	t.Run("forward", func(t *testing.T) {
@@ -69,8 +70,8 @@ func TestBanner(t *testing.T) {
 	})
 	t.Run("inspect", func(t *testing.T) {
 		routes := []BannerRoute{
-			{SourceUID: "src_billing", Source: "billing", PublicURL: "https://in.hookspot.test/src_billing", Label: "/hooks/invoices"},
-			{SourceUID: "src_billing", Source: "billing", PublicURL: "https://in.hookspot.test/src_billing", Label: "refunds"},
+			{SourceUID: "src_billing", Source: "billing", PublicURL: "https://in.hookspot.test/src_billing", Path: "/hooks/invoices", Label: "/hooks/invoices"},
+			{SourceUID: "src_billing", Source: "billing", PublicURL: "https://in.hookspot.test/src_billing", Path: "/hooks/refunds", Label: "refunds"},
 		}
 		golden.RequireEqual(t, noColor(t, Banner("Acme Inc. | Billing", routes, []string{"ctrl-c quit"}, 80)))
 	})
@@ -86,47 +87,18 @@ func TestBanner(t *testing.T) {
 	})
 }
 
-// The plain stream has always printed these lines; harnesses wait for Ready's.
-func TestConnectionStatesAndNoticesKeepPlainWording(t *testing.T) {
-	tests := []struct {
-		name string
-		got  string
-		want string
+// cmd's tests pin the notices' wording; these pin escaping and rounding.
+func TestNoticesEscapeServerTextAndRoundTheOutage(t *testing.T) {
+	for _, test := range []struct {
+		got, want string
 	}{
-		{name: "connecting", got: Connecting(), want: "Connecting…"},
-		{name: "ready", got: Ready(), want: "Ready. Waiting for requests (Ctrl-C to quit)"},
-		{
-			name: "connection lost",
-			got:  ConnectionLost(errors.New("websocket: close 1006\x1b[2J"), 2*time.Second),
-			want: `connection lost: websocket: close 1006\x1b[2J; reconnecting in 2s...`,
-		},
-		{
-			name: "reconnected",
-			got:  Reconnected(91400*time.Millisecond, "https://hookspot.test/acme/payments/requests"),
-			want: "Reconnected after 1m31s offline. Requests that arrived meanwhile were not delivered; retry them from https://hookspot.test/acme/payments/requests",
-		},
-		{
-			name: "disabled source",
-			got:  DisabledSource("stripe\x1b[31m"),
-			want: `⚠ stripe\x1b[31m is disabled: requests to it are rejected. Enable it in the dashboard.`,
-		},
-		{
-			name: "skipped source",
-			got:  SkippedSource("github\n"),
-			want: `⚠ github\n has no route and is skipped. Add one in the dashboard.`,
-		},
-		{
-			name: "root not found",
-			got:  RootNotFound("http://localhost:3000/", http.StatusNotFound),
-			want: "http://localhost:3000/ returned 404. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to http://localhost:3000/webhooks",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := noColor(t, test.got); got != test.want+"\n" {
-				t.Errorf("got %q, want %q", got, test.want)
-			}
-		})
+		{got: DisabledSource("stripe\x1b[31m"), want: `⚠ stripe\x1b[31m is disabled`},
+		{got: SkippedSource("github\n"), want: `⚠ github\n has no route`},
+		{got: Reconnected(91400*time.Millisecond, "https://hookspot.test/requests"), want: "Reconnected after 1m31s offline."},
+	} {
+		if got := noColor(t, test.got); !strings.HasPrefix(got, test.want) {
+			t.Errorf("got %q, want it to start with %q", got, test.want)
+		}
 	}
 }
 
@@ -142,22 +114,20 @@ func TestTestEvent(t *testing.T) {
 		)))
 	})
 	t.Run("entries", func(t *testing.T) {
-		entry := func(r Request) session.Entry {
-			return session.Entry{Number: r.Number, Delivery: r.Delivery, Received: r.Received, Target: r.Target, Response: r.Response, Latency: r.Latency, Failure: r.Failure, Test: true}
-		}
 		d := testDelivery()
 		d.Body = []byte(`{"type":"hookspot.test","sent_at":"2026-07-12T12:34:56Z"}`)
+		ok := forwarded(1, d, http.StatusOK, 12*time.Millisecond)
 		failed := forwarded(2, d, http.StatusInternalServerError, 3*time.Millisecond)
 		failed.Response.Body = []byte("boom")
 		refused := forwarded(3, d, 0, time.Millisecond)
 		refused.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
-		l := testListen()
-		golden.RequireEqual(t, noColor(t, joinCards(
-			l.Entry(entry(forwarded(1, d, http.StatusOK, 12*time.Millisecond)), 80),
-			l.Entry(entry(failed), 80),
-			l.Entry(entry(refused), 80),
-			l.Entry(entry(Request{Number: 4, Delivery: d, Received: received}), 80),
-		)))
+		inspected := session.Entry{Number: 4, Delivery: d, Received: received}
+		var entries []string
+		for _, e := range []session.Entry{ok, failed, refused, inspected} {
+			e.Test = true
+			entries = append(entries, testListen().Entry(e, 80))
+		}
+		golden.RequireEqual(t, noColor(t, joinCards(entries...)))
 	})
 }
 
@@ -201,7 +171,7 @@ func TestRequest(t *testing.T) {
 
 		testEvent := forwarded(7, eventType, http.StatusAccepted, 12400*time.Millisecond)
 		testEvent.Test = true
-		rows := []Request{
+		rows := []session.Entry{
 			forwarded(1, priority, http.StatusOK, 38*time.Millisecond),
 			forwarded(2, event, http.StatusOK, 112*time.Millisecond),
 			forwarded(3, eventType, http.StatusOK, 999*time.Millisecond),
@@ -214,10 +184,10 @@ func TestRequest(t *testing.T) {
 		for _, width := range []int{80, 120} {
 			var out []string
 			for _, row := range rows {
-				out = append(out, l.Request(row, width))
+				out = append(out, l.Entry(row, width))
 			}
 			limited := Listen{Sources: l.Sources, Limits: Limits{MaxValueChars: 5}}
-			out = append(out, limited.Request(forwarded(9, testDelivery(), http.StatusOK, time.Millisecond), width))
+			out = append(out, limited.Entry(forwarded(9, testDelivery(), http.StatusOK, time.Millisecond), width))
 			t.Run(strconv.Itoa(width), func(t *testing.T) {
 				golden.RequireEqual(t, noColor(t, strings.Join(out, "\n")))
 			})
@@ -234,7 +204,7 @@ func TestRequest(t *testing.T) {
 		long := forwarded(46, d, http.StatusInternalServerError, 1500*time.Millisecond)
 		long.Delivery.Path = "/" + strings.Repeat("deep/", 20)
 		long.Response.Body = []byte("panic: boom\n\tat handler.go:12\n")
-		golden.RequireEqual(t, noColor(t, joinCards(testListen().Request(r, 80), testListen().Request(long, 80))))
+		golden.RequireEqual(t, noColor(t, joinCards(testListen().Entry(r, 80), testListen().Entry(long, 80))))
 	})
 
 	t.Run("redirect", func(t *testing.T) {
@@ -242,7 +212,7 @@ func TestRequest(t *testing.T) {
 		r.Response.Headers = http.Header{"Location": []string{"http://localhost:3000/webhooks/\x1b[31m"}, "Content-Type": []string{"text/html"}}
 		r.Response.Body = []byte("<a href=\"/webhooks/\">Permanent Redirect</a>.")
 		without := forwarded(4, testDelivery(), http.StatusTemporaryRedirect, 2*time.Millisecond)
-		golden.RequireEqual(t, noColor(t, joinCards(testListen().Request(r, 80), testListen().Request(without, 80))))
+		golden.RequireEqual(t, noColor(t, joinCards(testListen().Entry(r, 80), testListen().Entry(without, 80))))
 	})
 
 	t.Run("body limits", func(t *testing.T) {
@@ -253,11 +223,11 @@ func TestRequest(t *testing.T) {
 		d.Body = []byte("123456\nsecond\nthird")
 		r := forwarded(8, d, http.StatusBadRequest, 3*time.Millisecond)
 		r.Response.Body = []byte(`{"error":"missing customer_id","code":42}`)
-		golden.RequireEqual(t, noColor(t, l.Request(r, 80)))
+		golden.RequireEqual(t, noColor(t, l.Entry(r, 80)))
 	})
 
 	t.Run("transport failures", func(t *testing.T) {
-		failure := func(number int, kind proxy.TransportErrorKind, target string) Request {
+		failure := func(number int, kind proxy.TransportErrorKind, target string) session.Entry {
 			r := forwarded(number, testDelivery(), 0, 4*time.Millisecond)
 			r.Target = target + "/api/webhooks"
 			r.Failure = &proxy.TransportFailure{Kind: kind, Err: errors.New("dial tcp 10.0.0.1:443: i/o \x1b[2Jfailure")}
@@ -268,15 +238,15 @@ func TestRequest(t *testing.T) {
 		limited := testListen()
 		limited.Limits.MaxValueChars = 12
 		golden.RequireEqual(t, noColor(t, joinCards(
-			host.Request(failure(1, proxy.TransportConnectionRefused, "http://localhost:3000"), 80),
-			host.Request(failure(2, proxy.TransportTimeout, "http://localhost:3000"), 80),
-			host.Request(failure(3, proxy.TransportDNS, "http://app.invalid:3000"), 80),
-			host.Request(failure(4, proxy.TransportTLS, "https://localhost:3443"), 80),
-			host.Request(failure(5, proxy.TransportOther, "http://localhost:3000"), 80),
-			limited.Request(failure(6, proxy.TransportOther, "http://localhost:3000"), 80),
-			container.Request(failure(7, proxy.TransportConnectionRefused, "http://localhost:3000"), 80),
-			container.Request(failure(8, proxy.TransportConnectionRefused, "http://[::1]:3000"), 80),
-			container.Request(failure(9, proxy.TransportConnectionRefused, "http://app:3000"), 80),
+			host.Entry(failure(1, proxy.TransportConnectionRefused, "http://localhost:3000"), 80),
+			host.Entry(failure(2, proxy.TransportTimeout, "http://localhost:3000"), 80),
+			host.Entry(failure(3, proxy.TransportDNS, "http://app.invalid:3000"), 80),
+			host.Entry(failure(4, proxy.TransportTLS, "https://localhost:3443"), 80),
+			host.Entry(failure(5, proxy.TransportOther, "http://localhost:3000"), 80),
+			limited.Entry(failure(6, proxy.TransportOther, "http://localhost:3000"), 80),
+			container.Entry(failure(7, proxy.TransportConnectionRefused, "http://localhost:3000"), 80),
+			container.Entry(failure(8, proxy.TransportConnectionRefused, "http://[::1]:3000"), 80),
+			container.Entry(failure(9, proxy.TransportConnectionRefused, "http://app:3000"), 80),
 		)))
 	})
 
@@ -296,11 +266,14 @@ func TestRequest(t *testing.T) {
 			e.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
 			return e
 		}
+		// Inside a container, a refused localhost gets its hint here too.
+		container := testListen()
+		container.Container = true
 		replay := func(original, replay session.Entry) string {
 			replay.ReplayOf = original.Number
 			comparison := session.Compare(original, replay)
 			replay.Replay = &comparison
-			return testListen().Entry(replay, 80)
+			return container.Entry(replay, 80)
 		}
 		failed := entry(45, http.StatusUnprocessableEntity, `{"error":"missing customer_id"}`, 9*time.Millisecond)
 		fixed := entry(46, http.StatusOK, `{"received":true}`, 41*time.Millisecond)
@@ -327,8 +300,8 @@ func TestRequest(t *testing.T) {
 	t.Run("inspect", func(t *testing.T) {
 		d := testDelivery()
 		d.Headers["X-Long"] = []string{strings.Repeat("unlimited ", 20)}
-		r := Request{Number: 12, Delivery: d, Received: received, Test: true}
-		golden.RequireEqual(t, noColor(t, testListen().Request(r, 80)))
+		r := session.Entry{Number: 12, Delivery: d, Received: received, Test: true}
+		golden.RequireEqual(t, noColor(t, testListen().Entry(r, 80)))
 	})
 
 	t.Run("inspect redaction list", func(t *testing.T) {
@@ -339,14 +312,14 @@ func TestRequest(t *testing.T) {
 		for _, name := range []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", "X-CLI-Key", "X-API-Key", "Api-Key", "X-Hookspot-CLI-Key"} {
 			d.Headers[name] = []string{"sentinel-" + name}
 		}
-		r := Request{Number: 1, Delivery: d, Received: received}
-		hidden := noColor(t, testListen().Request(r, 80))
+		r := session.Entry{Number: 1, Delivery: d, Received: received}
+		hidden := noColor(t, testListen().Entry(r, 80))
 		if strings.Contains(hidden, "sentinel") {
 			t.Fatalf("a sensitive header value was shown:\n%s", hidden)
 		}
 		shown := testListen()
 		shown.ShowSensitiveHeaders = true
-		golden.RequireEqual(t, joinCards(hidden, noColor(t, shown.Request(r, 80))))
+		golden.RequireEqual(t, joinCards(hidden, noColor(t, shown.Entry(r, 80))))
 	})
 
 	t.Run("inspect limits", func(t *testing.T) {
@@ -356,7 +329,7 @@ func TestRequest(t *testing.T) {
 		d.Query = "token=abcdefgh&ok=yes&flag"
 		d.Headers = http.Header{"A-First": []string{"abcdefgh", "second"}, "B-Next": []string{"second"}, "C-Last": []string{"third"}}
 		d.Body = []byte("123456\nsecond\nthird")
-		golden.RequireEqual(t, noColor(t, l.Request(Request{Number: 2, Delivery: d, Received: received}, 80)))
+		golden.RequireEqual(t, noColor(t, l.Entry(session.Entry{Number: 2, Delivery: d, Received: received}, 80)))
 	})
 
 	t.Run("inspect binary and empty", func(t *testing.T) {
@@ -370,9 +343,9 @@ func TestRequest(t *testing.T) {
 		sniffed.Headers = nil
 		sniffed.Body = []byte("plain text body")
 		golden.RequireEqual(t, noColor(t, joinCards(
-			testListen().Request(Request{Number: 3, Delivery: binary, Received: received}, 80),
-			testListen().Request(Request{Number: 4, Delivery: empty, Received: received}, 80),
-			testListen().Request(Request{Number: 5, Delivery: sniffed, Received: received}, 80),
+			testListen().Entry(session.Entry{Number: 3, Delivery: binary, Received: received}, 80),
+			testListen().Entry(session.Entry{Number: 4, Delivery: empty, Received: received}, 80),
+			testListen().Entry(session.Entry{Number: 5, Delivery: sniffed, Received: received}, 80),
 		)))
 	})
 
@@ -394,16 +367,16 @@ func TestRequest(t *testing.T) {
 		jsonDelivery := d
 		jsonDelivery.Headers = http.Header{"Content-Type": []string{"application/json"}}
 		jsonDelivery.Body = []byte("{\"type\":\"evil\u009b31m\x7f\",\"key\xff\":\"\\u001b[2J \\\"quoted\\\"\"}")
-		failed := Request{Number: 2, Delivery: jsonDelivery, Received: received, Target: "http://localhost:3000/\x1b[2J", Response: ws.Response{Status: http.StatusBadRequest, Headers: d.Headers, Body: d.Body}}
+		failed := session.Entry{Number: 2, Delivery: jsonDelivery, Received: received, Target: "http://localhost:3000/\x1b[2J", Response: ws.Response{Status: http.StatusBadRequest, Headers: d.Headers, Body: d.Body}}
 		// A long method and source name can't push a row past the width.
 		long := Listen{Sources: map[string]string{"src_evil": strings.Repeat("evil\x1b", 20)}}
 		longMethod := jsonDelivery
 		longMethod.Method = strings.Repeat("PROPFIND", 20)
 		golden.RequireEqual(t, noColor(t, joinCards(
-			l.Request(Request{Number: 1, Delivery: d, Received: received}, 80),
-			l.Request(failed, 80),
-			l.Request(forwarded(3, jsonDelivery, http.StatusOK, time.Millisecond), 80),
-			long.Request(forwarded(4, longMethod, http.StatusOK, time.Millisecond), 80),
+			l.Entry(session.Entry{Number: 1, Delivery: d, Received: received}, 80),
+			l.Entry(failed, 80),
+			l.Entry(forwarded(3, jsonDelivery, http.StatusOK, time.Millisecond), 80),
+			long.Entry(forwarded(4, longMethod, http.StatusOK, time.Millisecond), 80),
 		)))
 	})
 }
@@ -413,7 +386,7 @@ func TestNarrowWidthsKeepRendering(t *testing.T) {
 	refused := forwarded(1, testDelivery(), 0, time.Millisecond)
 	refused.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
 	refused.Replay = &session.Comparison{Original: 2, Status: http.StatusOK, Removed: []string{"{"}, Added: []string{"}"}, More: 1, Binary: true}
-	requests := []Request{
+	requests := []session.Entry{
 		forwarded(1, testDelivery(), http.StatusOK, time.Millisecond),
 		forwarded(2, testDelivery(), http.StatusBadGateway, time.Millisecond),
 		refused,
@@ -423,7 +396,7 @@ func TestNarrowWidthsKeepRendering(t *testing.T) {
 	for width := range 24 {
 		Banner("Acme | Payments", routes, []string{"ctrl-c quit"}, width)
 		for _, r := range requests {
-			l.Request(r, width)
+			l.Entry(r, width)
 		}
 	}
 }

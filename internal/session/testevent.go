@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,9 +18,6 @@ import (
 
 // testHeader carries a test event's id through Hookspot to its deliveries.
 const testHeader = "X-Hookspot-Test"
-
-// ErrNotListening refuses a test event to a source this run doesn't listen to.
-var ErrNotListening = errors.New("not a source this run listens to")
 
 var testClient = &http.Client{
 	Timeout: 10 * time.Second,
@@ -100,7 +96,7 @@ func (s *Session) testSource(name string) (api.Source, error) {
 			return source, nil
 		}
 	}
-	return api.Source{}, fmt.Errorf("%s: %w", name, ErrNotListening)
+	return api.Source{}, fmt.Errorf("%s: not a source this run listens to", name)
 }
 
 // sentTest reports whether delivery carries the id of a test event this run
@@ -119,5 +115,5 @@ func (s *Session) sentTest(delivery ws.Delivery) bool {
 // TestCurl is a POSIX shell command that sends a test event to publicURL from
 // anywhere. It carries no test id, so its deliveries aren't marked Test.
 func TestCurl(publicURL string) string {
-	return "curl -X POST '" + strings.ReplaceAll(publicURL, "'", `'\''`) + `' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'`
+	return "curl -X POST " + quote(publicURL) + ` -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'`
 }

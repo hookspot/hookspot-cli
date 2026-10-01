@@ -194,8 +194,8 @@ clipboard through OSC 52, which needs a terminal that supports it (Terminal.app
 does not). The command shown on screen hides sensitive header values unless
 `--show-sensitive-headers` is set.
 
-A body that isn't printable text is written to
-`hookspot-fixtures/<name>.body` and passed as `--data-binary @<path>`. Headers
+A body over 64 KiB, or with control characters other than newlines, is written
+to `hookspot-fixtures/<name>.body` and passed as `--data-binary @<path>`. Headers
 with control characters are written to `hookspot-fixtures/<name>.headers` and
 passed as `-H @<path>` (curl 7.55 or newer); that file holds unredacted values.
 Both paths are absolute, so the command works from any directory.
@@ -204,9 +204,10 @@ Both paths are absolute, so the command works from any directory.
 
 `e` writes two files under `hookspot-fixtures/` in the current directory:
 `<name>.json` with the method, path, query, and headers, and `<name>.body` with
-the raw body. `<name>` is the request UID, or `entry-<N>` when the UID isn't a
-plain file name (letters, digits, `_`, and `-`). Exporting the same request
-again overwrites its files. Sensitive header values are written as
+the raw body. `<name>` is the request UID, followed by `_<route ID>` when a
+route matched, or `entry-<N>` when that isn't a plain file name (letters,
+digits, `_`, and `-`). Exporting the same request or its replay again
+overwrites its files. Sensitive header values are written as
 `[redacted]` unless `--show-sensitive-headers` is set, and the confirmation
 says when they were. Fixture files are readable only by their owner.
 
