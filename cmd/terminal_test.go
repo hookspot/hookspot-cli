@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"github.com/gorilla/websocket"
@@ -85,17 +85,23 @@ func TestTerminalFullscreenError(t *testing.T) {
 func TestTerminalModes(t *testing.T) {
 	status := regexp.MustCompile(`(?m)^● live · Acme \| Payments · \d+ requests?`)
 	prompt := regexp.MustCompile(`(?m)^› .*ctrl-c quit$`)
-	// The banner prints before the stream starts, which may scroll it away.
-	banner := func(run *terminalRun) bool {
-		return strings.Contains(ansi.Strip(run.written()), "╭─ Listening in Acme | Payments ")
-	}
+	banner := "╭─ Listening in Acme | Payments "
 
 	t.Run("stream", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
-		run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
-		run.waitFor("the banner, status line and prompt", func(screen string) bool {
-			return banner(run) && status.MatchString(screen) && prompt.MatchString(screen)
+		var earlier strings.Builder
+		for i := 1; i <= 25; i++ {
+			fmt.Fprintf(&earlier, "earlier output %d\r\n", i)
+		}
+		// The local join is instant, so the test hint is ready before the
+		// stream's first frame.
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, before: earlier.String()}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
+		screen := run.waitFor("the test hint, status line and prompt", func(screen string) bool {
+			return strings.Contains(screen, "No requests yet.") && status.MatchString(screen) && prompt.MatchString(screen)
 		})
+		if !strings.Contains(screen, "earlier output 25\n"+banner) {
+			t.Errorf("the banner or the output before it is gone:\n%s", screen)
+		}
 		if run.altScreen() {
 			t.Error("the stream is on the alt screen")
 		}
@@ -147,7 +153,7 @@ func TestTerminalModes(t *testing.T) {
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"NO_COLOR": "1"}}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, terminalDelivery)
 		run.waitFor("the banner, card #1 and the status line", func(screen string) bool {
-			return banner(run) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
+			return strings.Contains(screen, banner) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
 				strings.Contains(screen, "● live · Acme | Payments · 1 request")
 		})
 		if color := terminalColor.FindString(run.written()); color != "" {
@@ -181,7 +187,10 @@ type terminalRun struct {
 
 type terminalOptions struct {
 	width, height int
-	environment   map[string]string
+	// before is on the screen when the command starts, as earlier shell
+	// output.
+	before      string
+	environment map[string]string
 	// stdin takes the terminal's place when set.
 	stdin io.Reader
 	// pipeStdout pipes stdout, read with piped, instead of the terminal.
@@ -228,6 +237,7 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	if options.pipeStdout {
 		command.Stdout = pipedStdout{r}
 	}
+	_, _ = r.screen.Write([]byte(options.before))
 	if err := pty.Start(command); err != nil {
 		t.Fatal(err)
 	}
