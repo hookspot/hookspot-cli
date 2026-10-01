@@ -759,7 +759,7 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 	}
 	requireFreshListen := func(folder, uid string) {
 		result, paths := run(folder, "listen")
-		if result.err == nil || !strings.Contains(result.stderr, "no matching routes found") {
+		if result.err == nil || !strings.Contains(result.stderr, "no sources with routes in asd1 | Project ") {
 			t.Fatalf("fresh listen in %s = %v, stderr %q", folder, result.err, result.stderr)
 		}
 		wantPaths := "/cli/projects/" + uid + ",/cli/projects/" + uid + "/sources"

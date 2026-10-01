@@ -153,6 +153,10 @@ type deliveryResponse struct {
 
 // Client connects to a hookspot Phoenix Channel and streams events.
 type Client struct {
+	// OnJoined runs after each accepted channel join, before that session's
+	// deliveries. An error ends the session as a fatal handler failure.
+	OnJoined func() error
+
 	url     string
 	cliKey  string
 	topic   string
@@ -338,6 +342,11 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 			return err
 		}
 		return sessionError(SessionConnect, false, err)
+	}
+	if c.OnJoined != nil {
+		if err := c.OnJoined(); err != nil {
+			return sessionError(SessionHandler, true, err)
+		}
 	}
 	if err := c.rearmReceiveIdle(conn); err != nil {
 		if ctx.Err() != nil {

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"hookspot/internal/api"
+	"hookspot/internal/endpoint"
 	"hookspot/internal/printer"
 	"hookspot/internal/proxy"
 	"hookspot/internal/ws"
@@ -48,7 +50,7 @@ func TestFormatProjectLabelEscapesBackendControls(t *testing.T) {
 	if got := formatProjectLabel(project); got != want {
 		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
 	}
-	_, _, err := resolveSources(project, nil, []string{"missing"})
+	_, _, err := resolveSources(io.Discard, endpoint.Base{}, project, nil, []string{"missing"})
 	if err == nil || !strings.Contains(err.Error(), want) || strings.ContainsRune(err.Error(), '\x1b') {
 		t.Fatalf("missing-source error = %q", err)
 	}
@@ -64,7 +66,7 @@ func TestResolveSources_SelectsNamesInArgumentOrder(t *testing.T) {
 		{Name: "stripe", UID: "src_stripe", Routes: []api.Route{{UID: "rte_stripe"}}},
 	}
 
-	sources, uids, err := resolveSources(project, available, []string{"stripe", "shopify"})
+	sources, uids, err := resolveSources(io.Discard, endpoint.Base{}, project, available, []string{"stripe", "shopify"})
 	if err != nil {
 		t.Fatalf("resolveSources() error = %v", err)
 	}
@@ -83,7 +85,7 @@ func TestResolveSources_SelectsOnlySourcesWithRoutesWithoutFilter(t *testing.T) 
 		{Name: "stripe", UID: "src_stripe"},
 	}
 
-	sources, uids, err := resolveSources(project, available, nil)
+	sources, uids, err := resolveSources(io.Discard, endpoint.Base{}, project, available, nil)
 	if err != nil {
 		t.Fatalf("resolveSources() error = %v", err)
 	}
@@ -98,34 +100,36 @@ func TestResolveSources_SelectsOnlySourcesWithRoutesWithoutFilter(t *testing.T) 
 	}
 }
 
-func TestResolveSources_ReturnsErrorWithoutMatchingRoutes(t *testing.T) {
-	project := &api.Project{Slug: "payments", Organization: api.Organization{Slug: "acme"}}
-	available := []api.Source{{Name: "shopify", UID: "src_shopify"}}
-
-	_, _, err := resolveSources(project, available, []string{"shopify"})
-	if err == nil {
-		t.Fatal("resolveSources() returned nil error")
-	}
-	if got, want := err.Error(), "no matching routes found"; got != want {
-		t.Fatalf("error = %q, want %q", got, want)
-	}
-}
-
-func TestResolveSources_RejectsNameMissingFromProject(t *testing.T) {
+func TestResolveSources_SuggestsOnlyAnUnambiguousCaseMatch(t *testing.T) {
 	project := &api.Project{
 		Slug:         "payments",
 		Organization: api.Organization{Slug: "acme"},
 	}
-	available := []api.Source{{Name: "shopify", UID: "src_shopify"}}
-
-	_, _, err := resolveSources(project, available, []string{"missing"})
-	if err == nil {
-		t.Fatal("resolveSources() returned nil error")
+	missing := `source "Stripe" is not present in project acme/payments`
+	tests := []struct {
+		name      string
+		available []string
+		want      string
+	}{
+		{"one case match", []string{"stripe", "shopify"}, missing + `; did you mean "stripe"?`},
+		{"two case matches", []string{"stripe", "STRIPE"}, missing},
+		{"no case match", []string{"shopify"}, missing},
 	}
-	if got, want := err.Error(), `source "missing" is not present in project acme/payments`; got != want {
-		t.Fatalf("error = %q, want %q", got, want)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var available []api.Source
+			for _, name := range test.available {
+				available = append(available, api.Source{Name: name, Routes: []api.Route{{UID: "rte_" + name}}})
+			}
+			_, _, err := resolveSources(io.Discard, endpoint.Base{}, project, available, []string{"Stripe"})
+			if err == nil || err.Error() != test.want {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
+
+var listenTestProject = &api.Project{Name: "Payments", Organization: api.Organization{Name: "Acme"}}
 
 func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 	var buf bytes.Buffer
@@ -148,11 +152,11 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := printListenInfoWithReplay(&buf, sources, forwarder, false); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, forwarder); err != nil {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 route\n" +
+	want := "Listening in Acme | Payments on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"│  Requests to → https://events.example.com/shopify\n" +
@@ -160,7 +164,7 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 		"\n" +
 		"Requests ──────────────────────────────────────\n" +
 		"\n" +
-		"Waiting for requests...\n"
+		"Connecting…\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
 	}
@@ -176,11 +180,11 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		},
 	}
 
-	if err := printListenInfoWithReplay(&buf, sources, nil, false); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	want := "Listening on 1 source • 1 route\n" +
+	want := "Listening in Acme | Payments on 1 source • 1 route\n" +
 		"\n" +
 		"shopify\n" +
 		"├ Requests to → https://events.example.com/shopify\n" +
@@ -188,7 +192,7 @@ func TestPrintListenInfo_ShowsTerminalOutput(t *testing.T) {
 		"\n" +
 		"Requests ──────────────────────────────────────\n" +
 		"\n" +
-		"Waiting for requests...\n"
+		"Connecting…\n"
 	if got := buf.String(); got != want {
 		t.Fatalf("listen info output:\n%q\nwant:\n%q", got, want)
 	}
@@ -201,11 +205,11 @@ func TestPrintListenInfo_CountsRoutesAcrossSources(t *testing.T) {
 		{Name: "stripe", Routes: []api.Route{{UID: "rte_3"}}},
 	}
 
-	if err := printListenInfoWithReplay(&buf, sources, nil, false); err != nil {
+	if err := printListenInfo(&buf, listenTestProject, sources, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if got, want := strings.SplitN(buf.String(), "\n", 2)[0], "Listening on 2 sources • 3 routes"; got != want {
+	if got, want := strings.SplitN(buf.String(), "\n", 2)[0], "Listening in Acme | Payments on 2 sources • 3 routes"; got != want {
 		t.Fatalf("banner = %q, want %q", got, want)
 	}
 }
@@ -213,10 +217,10 @@ func TestPrintListenInfo_CountsRoutesAcrossSources(t *testing.T) {
 func TestPrintListenInfoReturnsWriterAndShortWriteFailures(t *testing.T) {
 	sources := []api.Source{{Name: "shopify", URL: "https://events.example.invalid", Routes: []api.Route{{UID: "rte_1"}}}}
 	wantErr := errors.New("stdout unavailable")
-	if err := printListenInfoWithReplay(failingWriter{err: wantErr}, sources, nil, false); !errors.Is(err, wantErr) {
+	if err := printListenInfo(failingWriter{err: wantErr}, listenTestProject, sources, nil); !errors.Is(err, wantErr) {
 		t.Fatalf("writer error = %v, want output failure", err)
 	}
-	if err := printListenInfoWithReplay(shortWriter{}, sources, nil, false); !errors.Is(err, io.ErrShortWrite) {
+	if err := printListenInfo(shortWriter{}, listenTestProject, sources, nil); !errors.Is(err, io.ErrShortWrite) {
 		t.Fatalf("short write error = %v, want io.ErrShortWrite", err)
 	}
 }
@@ -235,7 +239,7 @@ func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
 	}
 	for _, selectedForwarder := range []*proxy.Forwarder{nil, forwarder} {
 		var output bytes.Buffer
-		if err := printListenInfoWithReplay(&output, sources, selectedForwarder, false); err != nil {
+		if err := printListenInfo(&output, listenTestProject, sources, selectedForwarder); err != nil {
 			t.Fatal(err)
 		}
 		text := output.String()
@@ -278,39 +282,6 @@ func TestSourceNamesByUID(t *testing.T) {
 	want := map[string]string{"src_1": "stripe", "src_2": "shopify"}
 	if got := sourceNamesByUID(sources); !reflect.DeepEqual(got, want) {
 		t.Fatalf("sourceNamesByUID() = %#v, want %#v", got, want)
-	}
-}
-
-func TestPrintListenInfo_ShowsReplayHintOnlyWhenEnabled(t *testing.T) {
-	var output bytes.Buffer
-	sources := []api.Source{{
-		Name: "stripe",
-		URL:  "https://events.example.com/stripe",
-		Routes: []api.Route{{
-			Destination: api.Destination{Path: "/api/webhooks"},
-		}},
-	}}
-
-	forwarder, err := proxy.New("http://localhost:3000")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := printListenInfoWithReplay(&output, sources, forwarder, true); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "└─ Forwards to → http://localhost:3000/api/webhooks") {
-		t.Fatalf("exact forwarding URL missing:\n%s", output.String())
-	}
-	if !strings.Contains(output.String(), "↵ replay last request") {
-		t.Fatalf("replay hint missing:\n%s", output.String())
-	}
-
-	output.Reset()
-	if err := printListenInfoWithReplay(&output, sources, forwarder, false); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(output.String(), "replay last request") {
-		t.Fatalf("replay hint shown for non-interactive input:\n%s", output.String())
 	}
 }
 
@@ -404,14 +375,17 @@ func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
 		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline 2")},
 		&ws.SessionError{Kind: ws.SessionConnect, Err: finalCause},
 	}}
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), newConnectionNotices(&stdout, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 3,
 	})
 	if err == nil {
 		t.Fatal("superviseListen error = nil")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout without a join = %q", stdout.String())
 	}
 	if !errors.Is(err, finalCause) {
 		t.Fatalf("error = %#v, want final connection cause", err)
@@ -448,7 +422,7 @@ func TestSuperviseListenStopsWhenReconnectNoticeFails(t *testing.T) {
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")},
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not retry")},
 			}}
-			err := superviseListen(context.Background(), test.writer, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+			err := superviseListen(context.Background(), newConnectionNotices(io.Discard, test.writer, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("superviseListen error = %v, want %v", err, test.want)
 			}
@@ -467,7 +441,7 @@ func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 1,
 	})
@@ -490,7 +464,7 @@ func TestSuperviseListenEscapesReconnectErrorControls(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
 	if err == nil {
 		t.Fatal("superviseListen returned nil")
 	}
@@ -509,7 +483,7 @@ func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{
+	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{
 		Delay:              0,
 		MaxInitialAttempts: 10,
 	})
@@ -533,7 +507,7 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionNotFound {
 		t.Fatalf("error = %#v, want not-found session error", err)
@@ -543,6 +517,138 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	}
 	if got := strings.Count(stderr.String(), "reconnecting"); got != 1 {
 		t.Fatalf("reconnect notices = %d, want 1:\n%s", got, stderr.String())
+	}
+}
+
+// scriptedSessions runs one function per Listen call in place of a
+// WebSocket session.
+type scriptedSessions []func() error
+
+func (s *scriptedSessions) Listen(context.Context, ws.Handler) error {
+	session := (*s)[0]
+	*s = (*s)[1:]
+	return session()
+}
+
+func TestSuperviseListenPrintsReadyOnceAndTimesEachOutage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	notices := newConnectionNotices(&stdout, &stderr, true, "https://app.example.invalid/acme/payments/requests")
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	notices.now = func() time.Time { return now }
+	offline := &ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")}
+	dropped := &ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped")}
+	stop := &ws.SessionError{Kind: ws.SessionHandler, Connected: true, Err: errors.New("stop")}
+	joinThen := func(elapsed time.Duration, err error) func() error {
+		return func() error {
+			now = now.Add(elapsed)
+			if joinErr := notices.joined(); joinErr != nil {
+				return joinErr
+			}
+			now = now.Add(time.Minute)
+			return err
+		}
+	}
+	sessions := scriptedSessions{
+		func() error {
+			now = now.Add(time.Second)
+			return offline
+		},
+		func() error {
+			if stdout.Len() != 0 {
+				t.Errorf("stdout before the first join = %q", stdout.String())
+			}
+			return joinThen(0, dropped)()
+		},
+		func() error {
+			now = now.Add(5 * time.Second)
+			return offline
+		},
+		joinThen(9*time.Second, dropped),
+		joinThen(3*time.Second, stop),
+	}
+
+	err := superviseListen(context.Background(), notices, &sessions, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+	if !errors.Is(err, stop) {
+		t.Fatalf("superviseListen error = %v, want the fatal session error", err)
+	}
+	if want := "Ready. Waiting for requests (Ctrl-C to quit)\n↵ replay last request\n"; stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+	reconnected := "offline. Requests that arrived meanwhile were not delivered; retry them from https://app.example.invalid/acme/payments/requests\n"
+	want := "connection lost: offline; reconnecting in 0s...\n" +
+		"connection lost: dropped; reconnecting in 0s...\n" +
+		"connection lost: offline; reconnecting in 0s...\n" +
+		"Reconnected after 14s " + reconnected +
+		"connection lost: dropped; reconnecting in 0s...\n" +
+		"Reconnected after 3s " + reconnected
+	if stderr.String() != want {
+		t.Fatalf("stderr:\n%s\nwant:\n%s", stderr.String(), want)
+	}
+}
+
+func TestDashboardRequestsURLUsesOnlySafeSlugs(t *testing.T) {
+	base, err := endpoint.Parse("https://app.example.invalid/prefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := &api.Project{Slug: "payments", Organization: api.Organization{Slug: "acme"}}
+	if got, want := dashboardRequestsURL(base, project), "https://app.example.invalid/prefix/acme/payments/requests"; got != want {
+		t.Fatalf("dashboardRequestsURL() = %q, want %q", got, want)
+	}
+	for _, slug := range []string{"pay/../ments", "payments\n\x1b", "pay ments", ""} {
+		project.Slug = slug
+		if got := dashboardRequestsURL(base, project); got != "the dashboard" {
+			t.Fatalf("dashboardRequestsURL() with slug %q = %q, want the fallback", slug, got)
+		}
+	}
+}
+
+func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
+	var sessions atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cli/projects/proj_payments":
+			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
+		case "/cli/projects/proj_payments/sources":
+			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","url":"https://in.example.invalid/src_stripe","routes":[{"uid":"rte_stripe","destination":{"uid":"dst_local","path":"/"}}]}]`))
+		case "/cli/websocket":
+			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			var join []json.RawMessage
+			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
+				return
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
+			if sessions.Add(1) == 1 {
+				return
+			}
+			// An invalid delivery is fatal, which ends the command after the reconnect.
+			_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]any{}})
+			_, _, _ = conn.ReadMessage()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", configPath, "listen", "stripe")
+	if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
+		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+	}
+	if !strings.HasSuffix(result.stdout, "\nConnecting…\nReady. Waiting for requests (Ctrl-C to quit)\n") {
+		t.Fatalf("stdout = %q, want one Ready after Connecting…", result.stdout)
+	}
+	reconnected := regexp.MustCompile(`(?m)^Reconnected after \d+s offline\. Requests that arrived meanwhile were not delivered; retry them from ` +
+		regexp.QuoteMeta(server.URL+"/acme/payments/requests") + `$`)
+	if !strings.Contains(result.stderr, "connection lost: ") || !reconnected.MatchString(result.stderr) {
+		t.Fatalf("stderr = %q, want the connection-lost and reconnect notices", result.stderr)
 	}
 }
 
@@ -586,6 +692,9 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
+	if !strings.HasSuffix(result.stdout, "Connecting…\n") {
+		t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
+	}
 	select {
 	case join := <-joins:
 		if got := string(join[2]) + " " + string(join[3]) + " " + string(join[4]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
@@ -596,6 +705,90 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 	}
 }
 
+// runListenAgainst runs listen against a fake server for the Acme | Payments
+// project with the given sources JSON. The channel join is rejected, so a
+// listen that gets past the banner ends right after it.
+func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, string) {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cli/projects/proj_payments":
+			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
+		case "/cli/projects/proj_payments/sources":
+			_, _ = w.Write([]byte(sources))
+		case "/cli/websocket":
+			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			var join []json.RawMessage
+			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
+				return
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{
+				"status":   "error",
+				"response": map[string]string{"reason": "not_found"},
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+	return runCommandProcess(t, "", developmentMetadata(server.URL), append([]string{"--config", configPath, "listen"}, args...)...), server.URL
+}
+
+func TestListenBannerNamesProjectAndWarnsAboutSources(t *testing.T) {
+	sources := `[
+		{"uid":"src_stripe","name":"stripe","active":true,"routes":[{"uid":"rte_stripe","destination":{"path":"/"}}]},
+		{"uid":"src_github","name":"github","active":false,"routes":[{"uid":"rte_github","destination":{"path":"/"}}]},
+		{"uid":"src_shopify","name":"shopify","active":true,"routes":[]}
+	]`
+	result, _ := runListenAgainst(t, sources, "stripe", "github", "shopify")
+
+	if !strings.HasPrefix(result.stdout, "Listening in Acme | Payments on 2 sources • 2 routes\n") {
+		t.Fatalf("stdout = %q, want the banner naming the project", result.stdout)
+	}
+	if strings.Contains(result.stdout, "⚠") {
+		t.Fatalf("stdout = %q, want warnings on stderr only", result.stdout)
+	}
+	wantWarnings := "⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +
+		"⚠ github is disabled: requests to it are rejected. Enable it in the dashboard.\n"
+	if !strings.HasPrefix(result.stderr, wantWarnings) {
+		t.Fatalf("stderr = %q, want the source warnings first", result.stderr)
+	}
+}
+
+func TestListenRequiresASourceWithRoutes(t *testing.T) {
+	sources := `[{"uid":"src_shopify","name":"shopify","active":true,"routes":[]}]`
+	tests := []struct {
+		name       string
+		args       []string
+		wantStderr string
+	}{
+		{name: "no names", wantStderr: "no sources with routes in Acme | Payments\n"},
+		{
+			name: "every named source skipped",
+			args: []string{"shopify"},
+			wantStderr: "⚠ shopify has no route and is skipped. Add one in the dashboard.\n" +
+				"none of the named sources has a route\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, serverURL := runListenAgainst(t, sources, test.args...)
+			want := test.wantStderr + "\nAdd a route in the dashboard: " + serverURL + "/acme/payments/routes/new\n"
+			if result.err == nil || result.stdout != "" || result.stderr != want {
+				t.Fatalf("listen = %v, stdout %q, stderr:\n%q\nwant:\n%q", result.err, result.stdout, result.stderr, want)
+			}
+		})
+	}
+}
+
 func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 	listener := &scriptedWebSocketListener{errors: []error{
 		&ws.SessionError{Kind: ws.SessionProtocol, Connected: true, Err: errors.New("invalid delivery payload")},
@@ -603,7 +796,7 @@ func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), &stderr, listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
+	err := superviseListen(context.Background(), newConnectionNotices(io.Discard, &stderr, false, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
 		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
