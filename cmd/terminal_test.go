@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -145,6 +146,9 @@ type terminalOptions struct {
 // terminal.
 func startTerminal(t *testing.T, options terminalOptions, metadata map[string]string, args ...string) *terminalRun {
 	t.Helper()
+	if runtime.GOOS == "windows" && (options.stdin != nil || options.stdout != nil) {
+		t.Skip("ConPTY makes its console the command's stdin, stdout and stderr, so neither can be replaced")
+	}
 	pty, err := xpty.NewPty(options.width, options.height)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +187,11 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	}
 	go func() {
 		r.exitErr = xpty.WaitProcess(context.Background(), command)
+		// ConPTY keeps its console, and so the output, open after the
+		// command exits.
+		if runtime.GOOS == "windows" {
+			_ = pty.Close()
+		}
 		close(r.exited)
 	}()
 	go r.read()
