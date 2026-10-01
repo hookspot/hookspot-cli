@@ -1,0 +1,12 @@
+╭─ Select a project ────────── 21/30 ─╮
+│   Acme    Project 14                │
+│   Globex  Project 15                │
+│   Acme    Project 16                │
+│   Acme    Project 17                │
+│   Globex  Project 18                │
+│   Acme    Project 19                │
+│   Acme    Project 20                │
+│ › Globex  Project 21  current       │
+├─────────────────────────────────────┤
+│  ↑↓  move   ↵  select   esc  cancel │
+╰─────────────────────────────────────╯

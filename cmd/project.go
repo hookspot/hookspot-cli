@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -15,6 +16,7 @@ import (
 	"hookspot/internal/cards"
 	"hookspot/internal/config"
 	"hookspot/internal/endpoint"
+	"hookspot/internal/tui"
 )
 
 var projectUseLocal bool
@@ -98,7 +100,9 @@ type projectAPI interface {
 	ListProjects(context.Context) ([]api.Project, error)
 }
 
-type projectPrompt func(context.Context, io.Reader, io.Writer, []string, int) (int, error)
+// projectPrompt returns the index of the project chosen from projects; current
+// is the saved project's index, or -1.
+type projectPrompt func(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, current int) (int, error)
 
 func resolveProjectSelection(ctx context.Context, client projectAPI, args []string, currentUID string, in io.Reader, out io.Writer, prompt projectPrompt) (*api.Project, error) {
 	if len(args) == 1 {
@@ -166,16 +170,8 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 		return &projects[0], nil
 	}
 
-	options := make([]string, len(projects))
-	defaultIndex := 0
-	for index, project := range projects {
-		options[index] = projectDisplayName(project)
-		if project.UID == currentUID {
-			defaultIndex = index
-			options[index] += " (current)"
-		}
-	}
-	selectedIndex, err := prompt(ctx, in, out, options, defaultIndex)
+	current := slices.IndexFunc(projects, func(project api.Project) bool { return project.UID == currentUID })
+	selectedIndex, err := prompt(ctx, in, out, projects, current)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +182,13 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 		return nil, err
 	}
 	return &projects[selectedIndex], nil
+}
+
+func promptProject(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, current int) (int, error) {
+	if !isTerminalReader(in) || !cards.Terminal(out) {
+		return 0, errors.New("project selection requires an interactive terminal; pass ORGANIZATION PROJECT or PROJECT_UID")
+	}
+	return tui.PickProject(ctx, in, out, projects, current)
 }
 
 func persistProjectSelection(ctx context.Context, store *config.Store, project api.Project, out io.Writer) error {
