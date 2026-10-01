@@ -271,11 +271,14 @@
 - Create: `internal/cards/sanitize.go`
 - Create: `internal/cards/sanitize_test.go`
 
-- [ ] add `charm.land/lipgloss/v2` and `github.com/charmbracelet/x/exp/golden`, pinned (check the module paths). Each later Charm module is added in the task that first imports it (bubbletea and teatest in Task 8, bubbles in Task 12), so `make tidy` never drops one
-- [ ] `cards` palette: source colors by UID hash as today, status colors, badges; the width rule
-- [ ] move `escapeText`/`singleLine` from `internal/printer` into `cards.Sanitize`/`cards.Line`; `cards.Line` escapes `\t`
-- [ ] write tests: control characters (C0, C1, `\r`, `\t`), invalid UTF-8; port the escaping cases from `printer_test.go` and `errors_test.go`
-- [ ] run `make test` and `make vet` - must pass before next task
+- [x] add `charm.land/lipgloss/v2` and `github.com/charmbracelet/x/exp/golden`, pinned (check the module paths). Each later Charm module is added in the task that first imports it (bubbletea and teatest in Task 8, bubbles in Task 12), so `make tidy` never drops one
+- [x] `cards` palette: source colors by UID hash as today, status colors, badges; the width rule
+- [x] move `escapeText`/`singleLine` from `internal/printer` into `cards.Sanitize`/`cards.Line`; `cards.Line` escapes `\t`
+- [x] write tests: control characters (C0, C1, `\r`, `\t`), invalid UTF-8; port the escaping cases from `printer_test.go` and `errors_test.go`
+- [x] run `make test` and `make vet` - must pass before next task
+- ➕ `internal/cards/style_test.go` with `testdata/TestPalette.golden`: the color golden that pins the palette (it also keeps `golden` imported, so `make tidy` keeps it) and the width fallback
+- ⚠️ the palette uses the 16 ANSI colors (source colors keep today's codes and hash), not the canvas's hex values, so cards follow light and dark terminal themes
+- ⚠️ `printer` single-line fields now escape `\t` through `cards.Line`; any `singleLine`/`escapeText` call added to `printer` on another branch becomes `cards.Line`/`cards.Sanitize` at merge
 
 ### Task 5: Cards components for `listen`
 
@@ -325,6 +328,7 @@
 - [ ] write command-level tests (masked times, run ended by an invalid delivery payload): piped `listen` in inspect and forward modes matches the golden stream; interleaved deliveries stay ordered; write errors surface through the handler as today
 - [ ] update the `cmd/listen_test.go` assertions on the old text
 - [ ] run tests - must pass before next task
+- ➕ Task 15 already moved `cmd/version.go`'s `SupportsColor` use to `cards`, so that item is done. It also left `safeDisplayText` in `cmd/errors.go` as a `cards.Line` wrapper used only by `cmd/listen.go`: replace those calls and delete it
 
 ### Task 8: Terminal stream: status line and prompt
 
@@ -455,11 +459,16 @@
 - Modify: `cmd/login.go`, `cmd/login_browser.go`, `cmd/logout.go`, `cmd/version.go`, `cmd/project.go`, `cmd/errors.go`
 - Modify: `cmd/login_test.go`, `cmd/version_test.go`, `cmd/project_test.go`, `cmd/errors_test.go`
 
-- [ ] login: the browser box with the code, a static "waiting for approval" line and the ✓ lines; the `-i` prompt; logout with the environment-key warning; version with the update box; the project list table with an active badge
-- [ ] `version --json` output stays byte-identical (the release smoke test and the Homebrew test read it)
-- [ ] `HandleError` renders a red-bordered box with the hint, or plain text when stderr isn't a terminal; replace `safeErrorText`/`safeDisplayText` with `cards.Sanitize`/`cards.Line`
-- [ ] write golden and command-level tests for each command, including no-color and piped output
-- [ ] run tests - must pass before next task
+- [x] login: the browser box with the code, a static "waiting for approval" line and the ✓ lines; the `-i` prompt; logout with the environment-key warning; version with the update box; the project list table with an active badge
+- [x] `version --json` output stays byte-identical (the release smoke test and the Homebrew test read it)
+- [x] `HandleError` renders a red-bordered box with the hint, or plain text when stderr isn't a terminal; replace `safeErrorText`/`safeDisplayText` with `cards.Sanitize`/`cards.Line`
+- [x] write golden and command-level tests for each command, including no-color and piped output
+- [x] run tests - must pass before next task
+- ➕ `cmd/password.go` writes the `-i` prompt (`cards.KeyPrompt`); the logout command test lives in `cmd/config_test.go`; `cards.Terminal` picks the error box or plain text
+- ⚠️ the login URL and the waiting line sit below the box, unwrapped, so the URL can be copied where no browser opens; the update box shows `1.2.3 → 1.3.0` without an upgrade command, since the install channel (npm, Homebrew, archive) is unknown
+- ⚠️ the error box is titled `✗ Error` with the whole message in its body, because messages carry no separate summary; the version line stays `hookspot version X`, matching `--version`
+- ⚠️ `project list` badges the saved project (`store.SavedProject()`), the one `project use` marks current
+- ⚠️ `safeDisplayText` remains as a `cards.Line` wrapper for `cmd/listen.go` only, which the prerequisite's Tasks 6–8 edit concurrently; Task 7 removes it
 
 ### Task 16: Project picker on bubbletea
 

@@ -126,18 +126,17 @@ func TestRunBrowserLoginApprovesWithProject(t *testing.T) {
 		t.Fatalf("saved key = %q, project = %q", store.key, store.projectUID)
 	}
 	for _, want := range []string{
-		"Confirmation code: ABCD-1234\n",
-		"Opening https://hookspot.invalid/cli/login/browser-token in your browser.\n",
-		"Waiting for approval… (Ctrl+C to cancel)\n",
-		"Logged in as dev@example.com\n",
-		"Active project set to Acme | Payments\n",
+		"│   ABCD-1234 ",
+		"╯\nhttps://hookspot.invalid/cli/login/browser-token\n○ Waiting for approval… (Ctrl+C to cancel)\n",
+		"✓ Logged in as dev@example.com\n",
+		"✓ Active project set to Acme | Payments\n",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output missing %q:\n%s", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), "If it doesn't open") {
-		t.Fatalf("unexpected open-failure notice:\n%s", out.String())
+	if strings.Contains(out.String(), "Couldn't open a browser") || strings.Contains(out.String(), "\x1b") {
+		t.Fatalf("unexpected open-failure notice or color:\n%s", out.String())
 	}
 }
 
@@ -218,7 +217,7 @@ func TestRunBrowserLoginOpenFailureStillSucceeds(t *testing.T) {
 	if !opened || store.key != "new-key" {
 		t.Fatalf("opened = %v, saved key = %q", opened, store.key)
 	}
-	if !strings.Contains(out.String(), "If it doesn't open, visit the URL manually.\n") {
+	if !strings.Contains(out.String(), "browser-token\nCouldn't open a browser; visit the URL above.\n") {
 		t.Fatalf("missing manual-open notice:\n%s", out.String())
 	}
 }
@@ -569,11 +568,8 @@ func TestLoginWithExplicitKeySkipsBrowserFlow(t *testing.T) {
 			if result.err != nil {
 				t.Fatalf("login failed: %v\n%s", result.err, result.stderr)
 			}
-			if !strings.Contains(result.stdout, "Logged in as dev@example.com") {
+			if result.stdout != "✓ Logged in as dev@example.com\n" {
 				t.Fatalf("unexpected output:\n%s", result.stdout)
-			}
-			if strings.Contains(result.stdout, "Confirmation code") || strings.Contains(result.stdout, "Opening") {
-				t.Fatalf("key login started the browser flow:\n%s", result.stdout)
 			}
 			contents, err := os.ReadFile(path)
 			if err != nil {
@@ -600,14 +596,8 @@ func TestLoginInteractivePromptsForKey(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("login failed: %v\n%s", result.err, result.stderr)
 	}
-	if !strings.Contains(result.stdout, "Enter your hookspot CLI key") {
-		t.Fatalf("missing prompt:\n%s", result.stdout)
-	}
-	if !strings.Contains(result.stdout, "Logged in as dev@example.com") {
+	if result.stdout != "Enter your hookspot CLI key (Account settings > CLI key): \n✓ Logged in as dev@example.com\n" {
 		t.Fatalf("unexpected output:\n%s", result.stdout)
-	}
-	if strings.Contains(result.stdout, "Confirmation code") {
-		t.Fatalf("interactive login started the browser flow:\n%s", result.stdout)
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {

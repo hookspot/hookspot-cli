@@ -1,0 +1,7 @@
+╭─ Projects ──────────────────────────────────────────── 3 ─╮
+│ UID              ORGANIZATION  PROJECT                    │
+├───────────────────────────────────────────────────────────┤
+│ proj_storefront  Acme Inc.     Storefront                 │
+│ proj_payments    Acme Inc.     Payments           active  │
+│ proj_evil        Other\tOrg    Bill\x1b[31ming\n          │
+╰───────────────────────────────────────────────────────────╯

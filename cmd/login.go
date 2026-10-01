@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/api"
 	"hookspot/internal/browser"
+	"hookspot/internal/cards"
 )
 
 var loginInteractive bool
@@ -82,7 +84,7 @@ func runKeyLogin(ctx context.Context, cliKey string, in io.Reader, out io.Writer
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Fprintf(out, "Logged in as %s\n", safeDisplayText(user.Email))
+	lipgloss.Fprintln(out, cards.Done("Logged in as", user.Email))
 	return nil
 }
 
