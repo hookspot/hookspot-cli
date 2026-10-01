@@ -270,7 +270,9 @@ func (s streamSink) Emit(event session.Event) error {
 	var text string
 	switch e := event.(type) {
 	case session.Recorded:
-		text = s.listen.Entry(e.Entry, cards.Width(s.program.output))
+		// tea's Println erases right after each line, which in a terminal
+		// clears the last column of a line that fills it.
+		text = s.listen.Entry(e.Entry, cards.Width(s.program.output)-1)
 	case session.Reconnected:
 		text = cards.Reconnected(e.Offline, s.requestsURL)
 	case session.RootNotFound:
