@@ -25,7 +25,7 @@ func TestDarwinInheritedReadACLIsRejectedBeforeSecretWrite(t *testing.T) {
 	}
 	addDarwinACL(t, parent, "everyone allow read,readattr,readextattr,readsecurity,file_inherit,directory_inherit")
 	path := filepath.Join(parent, "config.toml")
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestDarwinDenyOnlyACLIsAccepted(t *testing.T) {
 	addDarwinACL(t, parent, "everyone deny delete")
 	t.Cleanup(func() { _ = exec.Command("/bin/chmod", "-N", parent).Run() })
 	path := filepath.Join(parent, "config.toml")
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,16 +67,16 @@ func TestDarwinMutationACLAndExistingReadACLAreRejected(t *testing.T) {
 	}
 	addDarwinACL(t, mutationParent, "everyone allow add_file,delete_child")
 	if _, err := New(Options{
-		Environment: "dev", ExplicitPath: filepath.Join(mutationParent, "config.toml"),
+		ExplicitPath:    filepath.Join(mutationParent, "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
 	}); err == nil {
 		t.Fatal("directory mutation ACL was accepted")
 	}
 
 	existing := filepath.Join(root, "existing.toml")
-	writeConfigFixture(t, existing, "schema_version = 1\nenvironment = 'dev'\n")
+	writeConfigFixture(t, existing, "schema_version = 1\n")
 	addDarwinACL(t, existing, "everyone allow read")
-	if _, err := New(Options{Environment: "dev", ExplicitPath: existing, ExplicitPathSet: true}); err == nil {
+	if _, err := New(Options{ExplicitPath: existing, ExplicitPathSet: true}); err == nil {
 		t.Fatal("existing file read ACL was accepted")
 	}
 }

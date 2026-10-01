@@ -27,7 +27,7 @@ func TestRunMetadataWritesReleaseBuildInfoToRelativeOutput(t *testing.T) {
 	}
 
 	metadata := readBuildMetadata(t, filepath.Join(dir, "out", "build-info.json"))
-	if metadata.Version != "1.2.3" || metadata.Environment != "prod" || metadata.ServerURL != "https://prod.example.invalid/gateway" {
+	if metadata.Version != "1.2.3" || metadata.ServerURL != "https://prod.example.invalid/gateway" {
 		t.Fatalf("metadata release identity = %#v", metadata)
 	}
 	if metadata.Commit != fixtureCommit || metadata.SourceDate != fixtureSourceDate || metadata.BuildKind != "release" {
@@ -61,7 +61,7 @@ func TestRunMetadataWritesSnapshotBuildInfoToAbsoluteOutput(t *testing.T) {
 	}
 
 	metadata := readBuildMetadata(t, outputPath)
-	if metadata.Version != "0.0.0-snapshot.0123456" || metadata.BuildKind != "snapshot" || metadata.Environment != "prod" {
+	if metadata.Version != "0.0.0-snapshot.0123456" || metadata.BuildKind != "snapshot" {
 		t.Fatalf("metadata snapshot identity = %#v", metadata)
 	}
 	info, err := os.Stat(outputPath)
@@ -136,7 +136,6 @@ func TestRunMetadataRejectsInvalidInputs(t *testing.T) {
 		{"two-component release version", "1.2", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
 		{"release version with build metadata", "1.2.3+build", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
 		{"release version with empty pre-release", "1.2.3-", fixtureCommit, fixtureSourceDate, "release", fixtureServerURL},
-		{"http server URL", "1.2.3", fixtureCommit, fixtureSourceDate, "release", "http://prod.example.invalid/gateway"},
 		{"empty server URL", "1.2.3", fixtureCommit, fixtureSourceDate, "release", ""},
 		{"unknown build kind", "1.2.3", fixtureCommit, fixtureSourceDate, "development", fixtureServerURL},
 		{"short commit", "1.2.3", "0123456", fixtureSourceDate, "release", fixtureServerURL},

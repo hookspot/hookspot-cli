@@ -17,7 +17,7 @@ failures=0
 stub() {
   cat >"$1" <<EOS
 #!/bin/sh
-printf '%s\n' '{"version":"$2","build_kind":"$3","environment":"$4"}'
+printf '%s\n' '{"version":"$2","build_kind":"$3"}'
 EOS
   chmod 0755 "$1"
 }
@@ -35,7 +35,7 @@ sha256() {
 # picks this machine's archive the way it does from a real release.
 assets() {
   mkdir -p "$1/pack"
-  stub "$1/pack/hookspot" "$2" release prod
+  stub "$1/pack/hookspot" "$2" release
   for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
     tar -C "$1/pack" -czf "$1/hookspot_${version}_${target}.tar.gz" hookspot
   done
@@ -70,10 +70,10 @@ cp -R "$work/good" "$work/unlisted"
 : >"$work/unlisted/$checksums"
 expect "archive missing from the checksum file fails" 1 env SMOKE_ASSETS_DIR="$work/unlisted" "$smoke" "$version"
 
-stub "$work/installed" "$version" release prod
+stub "$work/installed" "$version" release
 expect "installed command passes" 0 "$smoke" "$version" "$work/installed"
 
-stub "$work/snapshot" 0.0.0-snapshot.0123456 snapshot prod
+stub "$work/snapshot" 0.0.0-snapshot.0123456 snapshot
 expect "installed snapshot build fails" 1 "$smoke" "$version" "$work/snapshot"
 
 printf '#!/bin/sh\nexit 3\n' >"$work/crashing" && chmod 0755 "$work/crashing"

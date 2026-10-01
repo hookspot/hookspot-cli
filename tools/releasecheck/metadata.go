@@ -15,8 +15,6 @@ import (
 	"hookspot/internal/endpoint"
 )
 
-const buildEnvironment = "prod"
-
 var (
 	commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	// releaseVersionPattern is semver without build metadata; the pre-release
@@ -26,13 +24,12 @@ var (
 )
 
 type buildMetadata struct {
-	Version     string `json:"version"`
-	Environment string `json:"environment"`
-	ServerURL   string `json:"server_url"`
-	Commit      string `json:"commit"`
-	SourceDate  string `json:"source_date"`
-	BuildKind   string `json:"build_kind"`
-	GoVersion   string `json:"go_version"`
+	Version    string `json:"version"`
+	ServerURL  string `json:"server_url"`
+	Commit     string `json:"commit"`
+	SourceDate string `json:"source_date"`
+	BuildKind  string `json:"build_kind"`
+	GoVersion  string `json:"go_version"`
 }
 
 func runMetadata(args []string) error {
@@ -48,7 +45,7 @@ func runMetadata(args []string) error {
 		return errors.New("invalid metadata arguments")
 	}
 
-	base, err := endpoint.Parse(*serverURL, buildEnvironment)
+	base, err := endpoint.Parse(*serverURL)
 	if err != nil {
 		return fmt.Errorf("metadata server URL: %w", err)
 	}
@@ -60,13 +57,12 @@ func runMetadata(args []string) error {
 	}
 
 	metadata := buildMetadata{
-		Version:     *version,
-		Environment: buildEnvironment,
-		ServerURL:   base.String(),
-		Commit:      *commit,
-		SourceDate:  *sourceDate,
-		BuildKind:   *kind,
-		GoVersion:   runtime.Version(),
+		Version:    *version,
+		ServerURL:  base.String(),
+		Commit:     *commit,
+		SourceDate: *sourceDate,
+		BuildKind:  *kind,
+		GoVersion:  runtime.Version(),
 	}
 	contents, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {

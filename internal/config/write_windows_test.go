@@ -16,7 +16,7 @@ func TestWindowsStoreRejectsReparseTarget(t *testing.T) {
 	clearConfigEnvironment(t)
 	dir := t.TempDir()
 	realPath := filepath.Join(dir, "real.toml")
-	writeConfigFixture(t, realPath, "schema_version = 1\nenvironment = 'dev'\n")
+	writeConfigFixture(t, realPath, "schema_version = 1\n")
 	symlinkPath := filepath.Join(dir, "link.toml")
 	if err := os.Symlink(realPath, symlinkPath); err != nil {
 		if errors.Is(err, windows.ERROR_PRIVILEGE_NOT_HELD) {
@@ -24,7 +24,7 @@ func TestWindowsStoreRejectsReparseTarget(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	if _, err := New(Options{Environment: "dev", ExplicitPath: symlinkPath, ExplicitPathSet: true}); err == nil {
+	if _, err := New(Options{ExplicitPath: symlinkPath, ExplicitPathSet: true}); err == nil {
 		t.Fatal("reparse-point config target was accepted")
 	}
 }
@@ -41,7 +41,7 @@ func TestWindowsStoreCreatesPrivateFileAndPreservesParentAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(parent, "config.toml")
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,7 +17,7 @@ import (
 
 func testEndpoint(t *testing.T, raw string) endpoint.Base {
 	t.Helper()
-	base, err := endpoint.Parse(raw, "dev")
+	base, err := endpoint.Parse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}

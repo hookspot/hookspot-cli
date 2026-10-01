@@ -3,7 +3,9 @@ version: 2
 project_name: hookspot
 
 env:
-  - PROD_SERVER_URL=https://app.hookspot.dev/
+  # `make local-build` overrides these for local binaries.
+  - SERVER_URL={{ envOrDefault "SERVER_URL" "https://app.hookspot.dev/" }}
+  - CONFIG_PREFIX={{ envOrDefault "CONFIG_PREFIX" "" }}
   - GOTOOLCHAIN=local
   - GOFLAGS=-mod=readonly
 
@@ -13,7 +15,7 @@ before:
   hooks:
     - rm -rf npm/binaries
     - go mod download
-    - go run ./tools/releasecheck metadata --version={{ .Version }} --commit={{ .FullCommit }} --source-date={{ .CommitDate }} --kind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }} --server-url={{ .Env.PROD_SERVER_URL }} --output=build-info.json
+    - go run ./tools/releasecheck metadata --version={{ .Version }} --commit={{ .FullCommit }} --source-date={{ .CommitDate }} --kind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }} --server-url={{ .Env.SERVER_URL }} --output=build-info.json
 
 builds:
   - id: hookspot
@@ -28,8 +30,8 @@ builds:
       - >-
         -s -w
         -X hookspot/cmd.version={{ .Version }}
-        -X hookspot/cmd.serverURL={{ .Env.PROD_SERVER_URL }}
-        -X hookspot/cmd.buildEnvironment=prod
+        -X hookspot/cmd.serverURL={{ .Env.SERVER_URL }}
+        -X hookspot/cmd.configPrefix={{ .Env.CONFIG_PREFIX }}
         -X hookspot/cmd.commit={{ .FullCommit }}
         -X hookspot/cmd.sourceDate={{ .CommitDate }}
         -X hookspot/cmd.buildKind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}

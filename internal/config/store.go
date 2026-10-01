@@ -15,12 +15,11 @@ const currentSchemaVersion = 1
 
 type persistedRecord struct {
 	SchemaVersion int    `toml:"schema_version"`
-	Environment   string `toml:"environment"`
 	CLIKey        string `toml:"cli_key,omitempty"`
 	Project       string `toml:"project,omitempty"`
 }
 
-// Store owns the persisted record for one immutable environment.
+// Store owns one persisted configuration record.
 type Store struct {
 	path       string
 	managedDir bool
@@ -29,11 +28,8 @@ type Store struct {
 	write      func(string, []byte, bool) error
 }
 
-// New selects and reads the environment-specific configuration record.
+// New selects and reads the configuration record.
 func New(opts Options) (*Store, error) {
-	if !validEnvironment(opts.Environment) {
-		return nil, fmt.Errorf("unknown configuration environment %q", opts.Environment)
-	}
 	if opts.Local {
 		return newLocalStore(opts)
 	}
@@ -41,10 +37,10 @@ func New(opts Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newStoreAt(opts.Environment, path, managed, opts.Intent)
+	return newStoreAt(path, managed, opts.Intent)
 }
 
-func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, error) {
+func newStoreAt(path string, managed bool, intent Intent) (*Store, error) {
 	if strings.ContainsRune(path, '\x00') {
 		return nil, errors.New("config path contains a NUL byte")
 	}
@@ -55,11 +51,8 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 	store := &Store{
 		path:       path,
 		managedDir: managed,
-		record: persistedRecord{
-			SchemaVersion: currentSchemaVersion,
-			Environment:   environment,
-		},
-		write: writeFileAtomic,
+		record:     persistedRecord{SchemaVersion: currentSchemaVersion},
+		write:      writeFileAtomic,
 	}
 
 	info, err := os.Lstat(path)
@@ -72,9 +65,6 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 	if err != nil {
 		return nil, fmt.Errorf("inspect config file: %w", err)
 	}
-	if intent == MigrationCreate {
-		return nil, errors.New("migration destination already exists")
-	}
 	if err := validateConfigFileType(path, info); err != nil {
 		return nil, err
 	}
@@ -86,14 +76,12 @@ func newStoreAt(environment, path string, managed bool, intent Intent) (*Store, 
 	if err := toml.Unmarshal(contents, &record); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
-	if record.SchemaVersion != currentSchemaVersion {
-		if record.SchemaVersion == 0 {
-			return nil, errors.New("config file has no schema marker; explicit migration is required")
-		}
-		return nil, fmt.Errorf("unsupported config schema %d", record.SchemaVersion)
+	// Files written before the schema marker hold the same fields.
+	if record.SchemaVersion == 0 {
+		record.SchemaVersion = currentSchemaVersion
 	}
-	if record.Environment != environment {
-		return nil, fmt.Errorf("config environment is %q, binary environment is %q", record.Environment, environment)
+	if record.SchemaVersion != currentSchemaVersion {
+		return nil, fmt.Errorf("unsupported config schema %d", record.SchemaVersion)
 	}
 	store.record = record
 	store.exists = true
@@ -105,7 +93,7 @@ func newLocalStore(opts Options) (*Store, error) {
 		return nil, errors.New("--local cannot be combined with --config or HOOKSPOT_CONFIG_FILE")
 	}
 
-	localPath, err := localConfigPath(opts.Environment)
+	localPath, err := localConfigPath(opts.Prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -114,16 +102,16 @@ func newLocalStore(opts Options) (*Store, error) {
 		return nil, err
 	}
 	if _, err := os.Lstat(localPath); err == nil {
-		return newStoreAt(opts.Environment, localPath, true, opts.Intent)
+		return newStoreAt(localPath, true, opts.Intent)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("inspect local config file: %w", err)
 	}
 
-	globalPath, err := globalConfigPath(opts.Environment)
+	globalPath, err := globalConfigPath(opts.Prefix)
 	if err != nil {
 		return nil, err
 	}
-	global, err := newStoreAt(opts.Environment, globalPath, true, Read)
+	global, err := newStoreAt(globalPath, true, Read)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +120,6 @@ func newLocalStore(opts Options) (*Store, error) {
 		managedDir: true,
 		record: persistedRecord{
 			SchemaVersion: currentSchemaVersion,
-			Environment:   opts.Environment,
 			CLIKey:        global.record.CLIKey,
 			Project:       global.record.Project,
 		},
@@ -246,18 +233,6 @@ func (s *Store) EnvironmentCLIKeyActive() bool {
 	return set && value != ""
 }
 
-// Import publishes a legacy key and project together without overwriting a
-// destination that already exists.
-func (s *Store) Import(key, project string) error {
-	if s.exists {
-		return errors.New("destination config already exists")
-	}
-	record := s.record
-	record.CLIKey = key
-	record.Project = project
-	return s.persist(record, true)
-}
-
 func (s *Store) persist(record persistedRecord, noOverwrite bool) error {
 	contents, err := toml.Marshal(record)
 	if err != nil {
@@ -287,7 +262,7 @@ func selectPath(opts Options) (string, bool, error) {
 		}
 		return path, false, nil
 	}
-	localPath, err := localConfigPath(opts.Environment)
+	localPath, err := localConfigPath(opts.Prefix)
 	if err != nil {
 		return "", false, err
 	}
@@ -296,7 +271,7 @@ func selectPath(opts Options) (string, bool, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", false, fmt.Errorf("inspect local config file: %w", err)
 	}
-	globalPath, err := globalConfigPath(opts.Environment)
+	globalPath, err := globalConfigPath(opts.Prefix)
 	return globalPath, true, err
 }
 
@@ -305,22 +280,18 @@ func configPathEnvironmentSet() bool {
 	return set
 }
 
-func localConfigPath(environment string) (string, error) {
+func localConfigPath(prefix string) (string, error) {
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("find current directory: %w", err)
 	}
-	return filepath.Join(workingDirectory, ".hookspot", environment, "config.toml"), nil
+	return filepath.Join(workingDirectory, ".hookspot", prefix, "config.toml"), nil
 }
 
-func globalConfigPath(environment string) (string, error) {
+func globalConfigPath(prefix string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("find home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "hookspot", environment, "config.toml"), nil
-}
-
-func validEnvironment(environment string) bool {
-	return environment == "dev" || environment == "prod"
+	return filepath.Join(home, ".config", "hookspot", prefix, "config.toml"), nil
 }

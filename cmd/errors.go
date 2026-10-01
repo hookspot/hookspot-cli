@@ -80,7 +80,7 @@ func fatalErrorMessage(err error) (string, string) {
 		switch {
 		case apiErr.StatusCode >= 300 && apiErr.StatusCode < 400:
 			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
-				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release for this environment."
+				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release."
 		case apiErr.StatusCode == http.StatusUnauthorized:
 			return "authentication failed: the Hookspot CLI key was rejected", "Check the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY."
 		case apiErr.StatusCode == http.StatusForbidden:

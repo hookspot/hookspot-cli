@@ -27,11 +27,11 @@ func TestConfigRejectsFIFOAndSymlinkWithoutOpeningThem(t *testing.T) {
 		open func(string) error
 	}{
 		{"read FIFO", fifo, func(path string) error {
-			_, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
+			_, err := New(Options{ExplicitPath: path, ExplicitPathSet: true})
 			return err
 		}},
 		{"read symlink", symlink, func(path string) error {
-			_, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
+			_, err := New(Options{ExplicitPath: path, ExplicitPathSet: true})
 			return err
 		}},
 		{"replace FIFO", fifo, func(path string) error {
@@ -66,7 +66,7 @@ func TestConfigValidatesEffectiveDirectoryAncestry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := New(Options{
-		Environment: "dev", ExplicitPath: filepath.Join(unsafe, "private", "config.toml"),
+		ExplicitPath:    filepath.Join(unsafe, "private", "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
 	}); err == nil {
 		t.Fatal("world-writable ancestor was accepted")
@@ -81,7 +81,7 @@ func TestConfigValidatesEffectiveDirectoryAncestry(t *testing.T) {
 		t.Fatal(err)
 	}
 	store, err := New(Options{
-		Environment: "dev", ExplicitPath: filepath.Join(alias, "private", "config.toml"),
+		ExplicitPath:    filepath.Join(alias, "private", "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func TestConfigRejectsForeignOwnedAncestorWhenPrivileged(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := New(Options{
-		Environment: "dev", ExplicitPath: filepath.Join(foreign, "private", "config.toml"),
+		ExplicitPath:    filepath.Join(foreign, "private", "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
 	}); err == nil {
 		t.Fatal("foreign-owned ancestor was accepted")

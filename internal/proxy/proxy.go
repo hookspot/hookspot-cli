@@ -120,7 +120,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	if !strings.Contains(targetBaseURL, "://") {
 		targetBaseURL = "http://" + targetBaseURL
 	}
-	base, err := endpoint.Parse(targetBaseURL, "dev")
+	base, err := endpoint.Parse(targetBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid forward target: %w", err)
 	}

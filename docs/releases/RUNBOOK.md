@@ -54,8 +54,8 @@ gh run watch
 3. `make release-publish` runs `goreleaser release --clean` in that image. The
    before hooks clear `npm/binaries/`, run `go mod download`, and run
    `releasecheck metadata`, which writes `build-info.json`. GoReleaser builds
-   the six binaries (`serverURL` and `buildEnvironment=prod` from
-   `.goreleaser.yaml`), copies each into `npm/binaries/<os>-<arch>/`, packs
+   the six binaries (`serverURL` from `.goreleaser.yaml`), copies each into
+   `npm/binaries/<os>-<arch>/`, packs
    `hookspot_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) plus
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
    seven assets, and pushes `Formula/hookspot.rb` to
@@ -66,7 +66,7 @@ gh run watch
 `smoke` (needs `release`; ubuntu, macOS, and Windows; `contents: read`):
 `scripts/smoke.sh <version>` downloads the runner's archive from the release,
 verifies its checksum, and asserts `hookspot version --json` reports the
-version as a prod release build; then `npm install -g hookspot@<version>`
+version as a release build; then `npm install -g hookspot@<version>`
 (retried for registry propagation) and the same assertion; on macOS also
 `brew install hookspot/hookspot/hookspot` and the same assertion, skipped for
 pre-release tags. This matrix is the acceptance test for the release.
@@ -101,15 +101,8 @@ workflow change means a new patch version; never move a tag.
   (`replace_existing_artifacts: true`, `mode: keep-existing`), and the formula
   is written again with the same content.
 - `release` failed at the npm step: re-running repeats the GoReleaser step as
-  above, then publishes. If the version had already reached the registry, npm
-  refuses to publish it again (403) and the job stays red, so `smoke` never
-  runs. Confirm with `npm view hookspot@<version>`, then run the acceptance
-  test by hand before treating the release as published: on a macOS, Linux,
-  and Windows machine each, `scripts/smoke.sh <version>` (needs `gh` and
-  `jq`), `npm install -g hookspot@<version>` and
-  `scripts/smoke.sh <version> hookspot`, and on macOS
-  `brew install hookspot/hookspot/hookspot` and
-  `scripts/smoke.sh <version> "$(brew --prefix)/bin/hookspot"`.
+  above, then publishes, skipping npm when the version already reached the
+  registry, so `smoke` runs afterwards.
 - `smoke` failed: re-running repeats only the smoke matrix. A transient
   failure (registry propagation, a runner outage) passes on re-run. A
   reproducible failure means the release is broken; yank it.

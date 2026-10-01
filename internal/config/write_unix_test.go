@@ -34,9 +34,9 @@ func TestUnixAtomicWriterFaultsPreserveStoreAndRemoveTemp(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "config.toml")
-			original := "schema_version = 1\nenvironment = 'dev'\ncli_key = 'old-key'\nproject = 'old-project'\n"
+			original := "schema_version = 1\ncli_key = 'old-key'\nproject = 'old-project'\n"
 			writeConfigFixture(t, path, original)
-			store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
+			store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,7 +76,7 @@ func TestUnixAtomicWriterCreatesPrivateFileUnderPermissiveUmask(t *testing.T) {
 	oldUmask := syscall.Umask(0)
 	defer syscall.Umask(oldUmask)
 	path := filepath.Join(dir, "config.toml")
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,12 +96,12 @@ func TestUnixStoreRejectsSymlinkTargetAndPreservesParentMode(t *testing.T) {
 	clearConfigEnvironment(t)
 	dir := t.TempDir()
 	realPath := filepath.Join(dir, "real.toml")
-	writeConfigFixture(t, realPath, "schema_version = 1\nenvironment = 'dev'\n")
+	writeConfigFixture(t, realPath, "schema_version = 1\n")
 	symlinkPath := filepath.Join(dir, "link.toml")
 	if err := os.Symlink(realPath, symlinkPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(Options{Environment: "dev", ExplicitPath: symlinkPath, ExplicitPathSet: true}); err == nil {
+	if _, err := New(Options{ExplicitPath: symlinkPath, ExplicitPathSet: true}); err == nil {
 		t.Fatal("symlink config target was accepted")
 	}
 
@@ -109,7 +109,7 @@ func TestUnixStoreRejectsSymlinkTargetAndPreservesParentMode(t *testing.T) {
 	if err := os.Mkdir(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
+	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestAbsentLocalConfigFallsBackFromGroupWritableWorkingDirectory(t *testing.
 	clearConfigEnvironment(t)
 	home := setIsolatedHome(t)
 	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
-	writeConfigFixture(t, globalPath, "schema_version = 1\nenvironment = 'dev'\nproject = 'global-project'\n")
+	writeConfigFixture(t, globalPath, "schema_version = 1\nproject = 'global-project'\n")
 
 	working := filepath.Join(t.TempDir(), "shared")
 	if err := os.Mkdir(working, 0o770); err != nil {
@@ -147,7 +147,7 @@ func TestAbsentLocalConfigFallsBackFromGroupWritableWorkingDirectory(t *testing.
 	}
 	setWorkingDirectory(t, working)
 
-	store, err := New(Options{Environment: "dev"})
+	store, err := New(Options{Prefix: "dev"})
 	if err != nil {
 		t.Fatalf("global fallback failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestExistingLocalConfigRejectsGroupWritableDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	localPath := filepath.Join(localDirectory, "config.toml")
-	if err := writePrivateTestFile(localPath, []byte("schema_version = 1\nenvironment = 'dev'\nproject = 'local-project'\n")); err != nil {
+	if err := writePrivateTestFile(localPath, []byte("schema_version = 1\nproject = 'local-project'\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(localDirectory, 0o770); err != nil {
@@ -174,7 +174,7 @@ func TestExistingLocalConfigRejectsGroupWritableDirectory(t *testing.T) {
 	}
 	setWorkingDirectory(t, working)
 
-	if _, err := New(Options{Environment: "dev"}); err == nil {
+	if _, err := New(Options{Prefix: "dev"}); err == nil {
 		t.Fatal("local config in a group-writable directory was accepted")
 	}
 }

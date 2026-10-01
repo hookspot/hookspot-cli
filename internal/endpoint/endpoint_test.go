@@ -9,20 +9,19 @@ func TestParseBuildsCanonicalRoutes(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
-		env  string
 		api  string
 		ws   string
 	}{
-		{"root", "https://prod.example.invalid", "prod", "https://prod.example.invalid/cli/me", "wss://prod.example.invalid/cli/websocket?vsn=2.0.0"},
-		{"root trailing slash", "https://prod.example.invalid/", "prod", "https://prod.example.invalid/cli/me", "wss://prod.example.invalid/cli/websocket?vsn=2.0.0"},
-		{"prefix", "https://prod.example.invalid/gateway/hookspot", "prod", "https://prod.example.invalid/gateway/hookspot/cli/me", "wss://prod.example.invalid/gateway/hookspot/cli/websocket?vsn=2.0.0"},
-		{"prefix trailing slash", "https://prod.example.invalid/gateway/hookspot/", "prod", "https://prod.example.invalid/gateway/hookspot/cli/me", "wss://prod.example.invalid/gateway/hookspot/cli/websocket?vsn=2.0.0"},
-		{"development HTTP", "http://127.0.0.1:4000", "dev", "http://127.0.0.1:4000/cli/me", "ws://127.0.0.1:4000/cli/websocket?vsn=2.0.0"},
+		{"root", "https://prod.example.invalid", "https://prod.example.invalid/cli/me", "wss://prod.example.invalid/cli/websocket?vsn=2.0.0"},
+		{"root trailing slash", "https://prod.example.invalid/", "https://prod.example.invalid/cli/me", "wss://prod.example.invalid/cli/websocket?vsn=2.0.0"},
+		{"prefix", "https://prod.example.invalid/gateway/hookspot", "https://prod.example.invalid/gateway/hookspot/cli/me", "wss://prod.example.invalid/gateway/hookspot/cli/websocket?vsn=2.0.0"},
+		{"prefix trailing slash", "https://prod.example.invalid/gateway/hookspot/", "https://prod.example.invalid/gateway/hookspot/cli/me", "wss://prod.example.invalid/gateway/hookspot/cli/websocket?vsn=2.0.0"},
+		{"HTTP", "http://127.0.0.1:4000", "http://127.0.0.1:4000/cli/me", "ws://127.0.0.1:4000/cli/websocket?vsn=2.0.0"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			base, err := Parse(test.raw, test.env)
+			base, err := Parse(test.raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -37,7 +36,7 @@ func TestParseBuildsCanonicalRoutes(t *testing.T) {
 }
 
 func TestBaseReturnsIndependentURLs(t *testing.T) {
-	base, err := Parse("https://prod.example.invalid/prefix", "prod")
+	base, err := Parse("https://prod.example.invalid/prefix")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +60,7 @@ func TestParseCanonicalizesEquivalentHostsAndDefaultPorts(t *testing.T) {
 		{"https://[2001:0db8:0:0:0:0:0:1]:443", "https://[2001:db8::1]"},
 	}
 	for _, test := range tests {
-		base, err := Parse(test.raw, "dev")
+		base, err := Parse(test.raw)
 		if err != nil {
 			t.Fatalf("Parse(%q): %v", test.raw, err)
 		}
@@ -75,34 +74,30 @@ func TestParseRejectsUnsafeInputsWithoutEchoingThem(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
-		env  string
 	}{
-		{"unknown environment", "https://example.invalid", "qa"},
-		{"stage environment", "https://example.invalid", "stage"},
-		{"empty", "", "dev"},
-		{"release HTTP", "http://prod.example.invalid", "prod"},
-		{"unsupported scheme", "ftp://example.invalid", "dev"},
-		{"missing host", "https:///prefix", "prod"},
-		{"invalid port", "https://example.invalid:99999", "prod"},
-		{"userinfo", "https://credential-sentinel@example.invalid", "prod"},
-		{"query", "https://example.invalid?key=credential-sentinel", "prod"},
-		{"fragment", "https://example.invalid/#credential-sentinel", "prod"},
-		{"empty fragment", "https://example.invalid#", "prod"},
-		{"empty port", "https://example.invalid:", "prod"},
-		{"whitespace", "https://example.invalid/a b", "prod"},
-		{"control", "https://example.invalid/a\nb", "prod"},
-		{"encoded separator", "https://example.invalid/a%2fb", "prod"},
-		{"encoded dot", "https://example.invalid/%2e%2e", "prod"},
-		{"empty path segment", "https://example.invalid/a//b", "prod"},
-		{"repeated root separator", "https://example.invalid//", "prod"},
-		{"dot segment", "https://example.invalid/a/../b", "prod"},
-		{"unsafe path segment", "https://example.invalid/a;b", "prod"},
-		{"bracketed DNS name", "https://[example.invalid]", "prod"},
+		{"empty", ""},
+		{"unsupported scheme", "ftp://example.invalid"},
+		{"missing host", "https:///prefix"},
+		{"invalid port", "https://example.invalid:99999"},
+		{"userinfo", "https://credential-sentinel@example.invalid"},
+		{"query", "https://example.invalid?key=credential-sentinel"},
+		{"fragment", "https://example.invalid/#credential-sentinel"},
+		{"empty fragment", "https://example.invalid#"},
+		{"empty port", "https://example.invalid:"},
+		{"whitespace", "https://example.invalid/a b"},
+		{"control", "https://example.invalid/a\nb"},
+		{"encoded separator", "https://example.invalid/a%2fb"},
+		{"encoded dot", "https://example.invalid/%2e%2e"},
+		{"empty path segment", "https://example.invalid/a//b"},
+		{"repeated root separator", "https://example.invalid//"},
+		{"dot segment", "https://example.invalid/a/../b"},
+		{"unsafe path segment", "https://example.invalid/a;b"},
+		{"bracketed DNS name", "https://[example.invalid]"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Parse(test.raw, test.env)
+			_, err := Parse(test.raw)
 			if err == nil {
 				t.Fatal("Parse unexpectedly succeeded")
 			}

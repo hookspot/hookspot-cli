@@ -15,63 +15,57 @@ type Base struct {
 	url url.URL
 }
 
-// Parse validates a build-time deployment URL for environment.
-func Parse(raw, environment string) (Base, error) {
-	if environment != "dev" && environment != "prod" {
-		return Base{}, fmt.Errorf("unknown build environment %q", environment)
-	}
+// Parse validates a build-time deployment URL.
+func Parse(raw string) (Base, error) {
 	if raw == "" {
-		return Base{}, fmt.Errorf("%s server URL is empty", environment)
+		return Base{}, fmt.Errorf("server URL is empty")
 	}
 	if strings.Contains(raw, "#") {
-		return Base{}, fmt.Errorf("invalid %s server URL: fragments are not allowed", environment)
+		return Base{}, fmt.Errorf("invalid server URL: fragments are not allowed")
 	}
 	for _, r := range raw {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			return Base{}, fmt.Errorf("invalid %s server URL: whitespace and control characters are not allowed", environment)
+			return Base{}, fmt.Errorf("invalid server URL: whitespace and control characters are not allowed")
 		}
 	}
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return Base{}, fmt.Errorf("invalid %s server URL", environment)
+		return Base{}, fmt.Errorf("invalid server URL")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return Base{}, fmt.Errorf("invalid %s server URL: scheme must be HTTP or HTTPS", environment)
-	}
-	if environment != "dev" && u.Scheme != "https" {
-		return Base{}, fmt.Errorf("invalid %s server URL: HTTPS is required", environment)
+		return Base{}, fmt.Errorf("invalid server URL: scheme must be HTTP or HTTPS")
 	}
 	if u.Opaque != "" || u.Host == "" || u.Hostname() == "" {
-		return Base{}, fmt.Errorf("invalid %s server URL: host is required", environment)
+		return Base{}, fmt.Errorf("invalid server URL: host is required")
 	}
 	host, ok := canonicalHostname(u.Hostname(), strings.HasPrefix(u.Host, "["))
 	if !ok {
-		return Base{}, fmt.Errorf("invalid %s server URL: invalid host", environment)
+		return Base{}, fmt.Errorf("invalid server URL: invalid host")
 	}
 	if u.User != nil {
-		return Base{}, fmt.Errorf("invalid %s server URL: user information is not allowed", environment)
+		return Base{}, fmt.Errorf("invalid server URL: user information is not allowed")
 	}
 	if u.RawQuery != "" || u.ForceQuery {
-		return Base{}, fmt.Errorf("invalid %s server URL: query parameters are not allowed", environment)
+		return Base{}, fmt.Errorf("invalid server URL: query parameters are not allowed")
 	}
 	if u.Fragment != "" {
-		return Base{}, fmt.Errorf("invalid %s server URL: fragments are not allowed", environment)
+		return Base{}, fmt.Errorf("invalid server URL: fragments are not allowed")
 	}
 	if strings.Contains(u.EscapedPath(), "%") || u.RawPath != "" {
-		return Base{}, fmt.Errorf("invalid %s server URL: encoded path segments are not allowed", environment)
+		return Base{}, fmt.Errorf("invalid server URL: encoded path segments are not allowed")
 	}
 	if !validPath(u.Path) {
-		return Base{}, fmt.Errorf("invalid %s server URL: unsafe path", environment)
+		return Base{}, fmt.Errorf("invalid server URL: unsafe path")
 	}
 	if strings.HasSuffix(u.Host, ":") {
-		return Base{}, fmt.Errorf("invalid %s server URL: invalid port", environment)
+		return Base{}, fmt.Errorf("invalid server URL: invalid port")
 	}
 	port := u.Port()
 	if port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
-			return Base{}, fmt.Errorf("invalid %s server URL: invalid port", environment)
+			return Base{}, fmt.Errorf("invalid server URL: invalid port")
 		}
 		port = strconv.Itoa(value)
 		if (u.Scheme == "https" && value == 443) || (u.Scheme == "http" && value == 80) {

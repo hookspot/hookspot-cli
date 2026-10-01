@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Post-release smoke test, run by release.yml on ubuntu, macOS, and Windows
-# (Git Bash). Downloads this machine's archive from the GitHub Release,
+# Post-release smoke test, run only by release.yml on ubuntu, macOS, and
+# Windows (Git Bash). Downloads this machine's archive from the GitHub Release,
 # verifies its SHA-256, and asserts the extracted binary reports VERSION as a
-# prod release build. With COMMAND, only asserts that an already installed
-# command (npm, Homebrew) reports the same.
+# release build. With COMMAND, only asserts that an already installed command
+# (npm, Homebrew) reports the same.
 set -euo pipefail
 
 usage() {
@@ -21,8 +21,8 @@ assert_version() {
   output=$("$1" version --json) || fail "$1 version --json failed"
   echo "$output"
   jq -e --arg version "$version" \
-    '.version == $version and .build_kind == "release" and .environment == "prod"' \
-    <<<"$output" >/dev/null || fail "$1 does not report $version as a prod release build"
+    '.version == $version and .build_kind == "release"' \
+    <<<"$output" >/dev/null || fail "$1 does not report $version as a release build"
 }
 
 [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage

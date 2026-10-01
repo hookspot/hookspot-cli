@@ -180,7 +180,7 @@ func TestHandleErrorExplainsBlockedAPIClientRedirect(t *testing.T) {
 			}))
 			defer origin.Close()
 
-			base, err := endpoint.Parse(origin.URL, "dev")
+			base, err := endpoint.Parse(origin.URL)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +195,7 @@ func TestHandleErrorExplainsBlockedAPIClientRedirect(t *testing.T) {
 			}
 			want := fmt.Sprintf(
 				"Hookspot API redirect blocked: GET %s/cli/me returned %d %s\n\n"+
-					"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release for this environment.\n",
+					"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release.\n",
 				origin.URL,
 				status,
 				http.StatusText(status),

@@ -6,7 +6,6 @@ ARG RUNTIME_IMAGE=alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67d
 FROM ${GO_IMAGE} AS builder
 ARG SERVER_URL
 ARG VERSION=dev
-ARG BUILD_ENVIRONMENT=dev
 ARG COMMIT=unknown
 ARG SOURCE_DATE=unknown
 ARG BUILD_KIND=dev
@@ -15,7 +14,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN test -n "$SERVER_URL" || (echo "SERVER_URL build arg is required, e.g. --build-arg SERVER_URL=https://api.example.invalid" >&2 && exit 1)
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X hookspot/cmd.version=${VERSION} -X hookspot/cmd.serverURL=${SERVER_URL} -X hookspot/cmd.buildEnvironment=${BUILD_ENVIRONMENT} -X hookspot/cmd.commit=${COMMIT} -X hookspot/cmd.sourceDate=${SOURCE_DATE} -X hookspot/cmd.buildKind=${BUILD_KIND}" -o /out/hookspot .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X hookspot/cmd.version=${VERSION} -X hookspot/cmd.serverURL=${SERVER_URL} -X hookspot/cmd.commit=${COMMIT} -X hookspot/cmd.sourceDate=${SOURCE_DATE} -X hookspot/cmd.buildKind=${BUILD_KIND}" -o /out/hookspot .
 
 FROM ${RUNTIME_IMAGE}
 RUN apk add --no-cache ca-certificates \

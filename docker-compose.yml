@@ -5,9 +5,8 @@ services:
       args:
         GO_IMAGE: ${GO_ALPINE_IMAGE}
         RUNTIME_IMAGE: ${RUNTIME_IMAGE}
-        SERVER_URL: ${SERVER_URL:-https://hookspot.localhost}
+        SERVER_URL: ${SERVER_URL:-https://hookspot.localhost:4443}
         VERSION: dev
-        BUILD_ENVIRONMENT: dev
         COMMIT: ${COMMIT:-unknown}
         SOURCE_DATE: ${SOURCE_DATE:-unknown}
         BUILD_KIND: dev
@@ -34,7 +33,7 @@ services:
       - hookspot-gocache:/root/.cache/go-build
       - hookspot-dev-config:/root/.config/hookspot
     environment:
-      - SERVER_URL=${SERVER_URL:-https://hookspot.localhost}
+      - SERVER_URL=${SERVER_URL:-https://hookspot.localhost:4443}
       - COMMIT=${COMMIT:-unknown}
       - SOURCE_DATE=${SOURCE_DATE:-unknown}
       - HOOKSPOT_CLI_KEY

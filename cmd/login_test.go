@@ -54,7 +54,7 @@ func (f *fakeLoginStore) SaveLogin(key, projectUID string) error {
 
 func loginTestEndpoint(t *testing.T) endpoint.Base {
 	t.Helper()
-	base, err := endpoint.Parse("https://hookspot.invalid", "dev")
+	base, err := endpoint.Parse("https://hookspot.invalid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,10 +143,10 @@ func TestRunBrowserLoginApprovesWithProject(t *testing.T) {
 
 func TestRunBrowserLoginWithoutProjectKeepsSavedProject(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(path, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'old-key'\nproject = 'kept-project'\n")); err != nil {
+	if err := writeCommandFixture(path, []byte("schema_version = 1\ncli_key = 'old-key'\nproject = 'kept-project'\n")); err != nil {
 		t.Fatal(err)
 	}
-	store, err := config.New(config.Options{Environment: "dev", ExplicitPath: path, ExplicitPathSet: true})
+	store, err := config.New(config.Options{ExplicitPath: path, ExplicitPathSet: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -604,7 +604,7 @@ func TestLoginInteractivePromptsDespiteSavedKey(t *testing.T) {
 	defer server.Close()
 
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(path, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'saved-key'\nproject = 'saved-project'\n")); err != nil {
+	if err := writeCommandFixture(path, []byte("schema_version = 1\ncli_key = 'saved-key'\nproject = 'saved-project'\n")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -641,7 +641,7 @@ func TestLoginWithSavedKeyStartsBrowserFlow(t *testing.T) {
 	defer server.Close()
 
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(path, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'saved-key'\nproject = 'saved-project'\n")); err != nil {
+	if err := writeCommandFixture(path, []byte("schema_version = 1\ncli_key = 'saved-key'\nproject = 'saved-project'\n")); err != nil {
 		t.Fatal(err)
 	}
 

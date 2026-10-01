@@ -180,26 +180,12 @@ single path-safe argument is resolved as a UID first; only a 404 falls back to
 an organization-name match.
 
 Commands choose one complete config file: explicit `--config`, then
-`HOOKSPOT_CONFIG_FILE`, then `.hookspot/<environment>/config.toml` in the
-current directory, then the global `~/.config/hookspot/<environment>/config.toml`
-(`prod` for released binaries). The CLI does not search parent directories, and
-an invalid local file blocks fallback. `project use --local` creates or updates
-the local record and cannot be combined with a custom config path. A new local
-record may copy the CLI key persisted in the global record, so treat it as
-plaintext credentials; flag and environment keys are never copied.
-
-A legacy shared `~/.config/hookspot/config.toml` is never imported
-automatically. Review `hookspot config migrate --help` first, then:
-
-```sh
-hookspot config migrate --from "$HOME/.config/hookspot/config.toml" \
-  --confirm-environment prod
-```
-
-Migration contacts the backend to validate both the stored key and the selected
-project. A legacy project UID without the `proj_` prefix fails that check; run
-`hookspot login` instead. Migration never substitutes an environment-variable
-key, refuses an existing destination, and leaves the legacy source unchanged.
+`HOOKSPOT_CONFIG_FILE`, then `.hookspot/config.toml` in the current directory,
+then the global `~/.config/hookspot/config.toml`. The CLI does not search parent
+directories, and an invalid local file blocks fallback. `project use --local`
+creates or updates the local record and cannot be combined with a custom config
+path. A new local record may copy the CLI key persisted in the global record, so
+treat it as plaintext credentials; flag and environment keys are never copied.
 
 The selected config is access-restricted plaintext, not encrypted. Logout
 removes only the saved key in that selected config; service-side revocation or

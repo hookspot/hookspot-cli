@@ -23,7 +23,6 @@ func TestCommandHelper(t *testing.T) {
 	}
 	version = os.Getenv("TEST_BUILD_VERSION")
 	serverURL = os.Getenv("TEST_BUILD_SERVER_URL")
-	buildEnvironment = os.Getenv("TEST_BUILD_ENVIRONMENT")
 	commit = os.Getenv("TEST_BUILD_COMMIT")
 	sourceDate = os.Getenv("TEST_BUILD_SOURCE_DATE")
 	buildKind = os.Getenv("TEST_BUILD_KIND")
@@ -88,7 +87,6 @@ func runCommandProcessDirectoryEnvironment(t *testing.T, directory, input string
 		commandHelperEnvironment + "=1",
 		"TEST_BUILD_VERSION=" + metadata["version"],
 		"TEST_BUILD_SERVER_URL=" + metadata["server_url"],
-		"TEST_BUILD_ENVIRONMENT=" + metadata["environment"],
 		"TEST_BUILD_COMMIT=" + metadata["commit"],
 		"TEST_BUILD_SOURCE_DATE=" + metadata["source_date"],
 		"TEST_BUILD_KIND=" + metadata["build_kind"],
@@ -115,8 +113,7 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 	}
 	metadata := map[string]string{
 		"version": "1.2.3-rc.4", "server_url": "https://PROD.example.invalid:0443/prefix/",
-		"environment": "prod", "commit": strings.Repeat("a", 40),
-		"source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
+		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
 	}
 	result := runCommandProcess(t, "", metadata, "--config", badConfig, "version", "--json")
 	if result.err != nil {
@@ -127,7 +124,7 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 		t.Fatalf("decode JSON: %v\n%s", err, result.stdout)
 	}
 	want := map[string]string{
-		"version": metadata["version"], "environment": "prod", "commit": metadata["commit"],
+		"version": metadata["version"], "commit": metadata["commit"],
 		"source_date": metadata["source_date"], "build_kind": "release", "go_version": runtime.Version(),
 		"os": runtime.GOOS, "arch": runtime.GOARCH, "server_url": "https://prod.example.invalid/prefix",
 	}
@@ -158,8 +155,7 @@ func TestVersionPrintsNameAndVersion(t *testing.T) {
 func TestVersionFlagPrintsVersionWithoutUpgradeCheck(t *testing.T) {
 	release := map[string]string{
 		"version": "9.9.9", "server_url": "https://prod.example.invalid",
-		"environment": "prod", "commit": strings.Repeat("a", 40),
-		"source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
+		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
 	}
 	for _, args := range [][]string{{"--version"}, {"-v"}} {
 		result := runCommandProcess(t, "", release, args...)
@@ -301,7 +297,7 @@ func TestHelpAndDevelopmentVersionStayOffline(t *testing.T) {
 	}
 	for _, serverURL := range []string{"", "http://127.0.0.1:1"} {
 		metadata := map[string]string{
-			"version": "dev", "server_url": serverURL, "environment": "dev",
+			"version": "dev", "server_url": serverURL,
 			"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
 		}
 		for _, args := range [][]string{{"--config", badConfig, "--help"}, {"--config", badConfig, "version"}} {
@@ -346,7 +342,7 @@ func TestDeprecatedLogLevelFlagRemainsAccepted(t *testing.T) {
 
 func TestVersionDoesNotPrintMalformedCredentialBearingEndpoint(t *testing.T) {
 	metadata := map[string]string{
-		"version": "dev", "server_url": "https://credential-sentinel@example.invalid", "environment": "dev",
+		"version": "dev", "server_url": "https://credential-sentinel@example.invalid",
 		"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
 	}
 	result := runCommandProcess(t, "", metadata, "version", "--json")
@@ -360,11 +356,11 @@ func TestVersionDoesNotPrintMalformedCredentialBearingEndpoint(t *testing.T) {
 
 func TestListenRejectsForwardTargetBeforeAPIRequest(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'key-sentinel'\nproject = 'proj_1'\n")); err != nil {
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key-sentinel'\nproject = 'proj_1'\n")); err != nil {
 		t.Fatal(err)
 	}
 	metadata := map[string]string{
-		"version": "dev", "server_url": "http://127.0.0.1:1", "environment": "dev",
+		"version": "dev", "server_url": "http://127.0.0.1:1",
 		"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
 	}
 	result := runCommandProcess(t, "", metadata, "--config", configPath, "listen", "--forward-to", "http://localhost:")
@@ -379,7 +375,7 @@ func TestListenRejectsForwardTargetBeforeAPIRequest(t *testing.T) {
 
 func TestListenRequiresAnActiveProject(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'key-sentinel'\n")); err != nil {
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key-sentinel'\n")); err != nil {
 		t.Fatal(err)
 	}
 	metadata := developmentMetadata("http://127.0.0.1:1")
@@ -392,107 +388,22 @@ func TestListenRequiresAnActiveProject(t *testing.T) {
 	}
 }
 
-func TestNetworkCommandRejectsReleaseMetadataBeforeConfigOrPrompt(t *testing.T) {
+func TestNetworkCommandRejectsMissingEndpointBeforeConfigOrPrompt(t *testing.T) {
 	badConfig := filepath.Join(t.TempDir(), "bad.toml")
 	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
 		t.Fatal(err)
 	}
-	metadata := map[string]string{
-		"version": "dev", "server_url": "", "environment": "prod",
-		"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
-	}
-	result := runCommandProcess(t, "credential-sentinel\n", metadata, "--config", badConfig, "login")
+	result := runCommandProcess(t, "credential-sentinel\n", developmentMetadata(""), "--config", badConfig, "login")
 	if result.err == nil {
-		t.Fatal("login succeeded with incomplete release metadata")
+		t.Fatal("login succeeded without a server URL")
 	}
 	combined := result.stdout + result.stderr
-	if !strings.Contains(combined, "install the correct prod release") {
-		t.Fatalf("missing release guidance:\n%s", combined)
+	if !strings.Contains(combined, "Rebuild with SERVER_URL") {
+		t.Fatalf("missing rebuild guidance:\n%s", combined)
 	}
 	for _, forbidden := range []string{"Enter your", "credential-sentinel", "TOML"} {
 		if strings.Contains(combined, forbidden) {
 			t.Fatalf("output contains %q:\n%s", forbidden, combined)
 		}
 	}
-}
-
-func TestCompleteSnapshotMetadataReachesCommandConfiguration(t *testing.T) {
-	badConfig := filepath.Join(t.TempDir(), "bad.toml")
-	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
-		t.Fatal(err)
-	}
-	metadata := map[string]string{
-		"version": "1.2.3-snapshot", "server_url": "https://prod.example.invalid",
-		"environment": "prod", "commit": strings.Repeat("b", 40),
-		"source_date": "2026-09-05T10:11:12Z", "build_kind": "snapshot",
-	}
-	result := runCommandProcess(t, "", metadata, "--config", badConfig, "login")
-	if result.err == nil {
-		t.Fatal("login accepted malformed config")
-	}
-	if !strings.Contains(result.stderr, "load configuration") {
-		t.Fatalf("snapshot did not reach config validation:\n%s", result.stderr)
-	}
-	if strings.Contains(result.stderr, "build metadata") {
-		t.Fatalf("snapshot was rejected as build metadata:\n%s", result.stderr)
-	}
-}
-
-func TestIncompleteSnapshotMetadataStopsBeforeConfiguration(t *testing.T) {
-	metadata := map[string]string{
-		"version": "1.2.3-snapshot", "server_url": "https://prod.example.invalid", "environment": "prod",
-		"commit": "unknown", "source_date": "unknown", "build_kind": "snapshot",
-	}
-	result := runCommandProcess(t, "", metadata, "--config", filepath.Join(t.TempDir(), "missing.toml"), "login")
-	if result.err == nil || !strings.Contains(result.stderr, "build metadata") {
-		t.Fatalf("incomplete snapshot was not rejected:\n%s", result.stderr)
-	}
-}
-
-func TestNetworkEndpointAcceptsOnlyDevAndProd(t *testing.T) {
-	release := BuildInfo{
-		Version: "1.2.3", Environment: "prod", Commit: strings.Repeat("c", 40), SourceDate: "2026-09-05T10:11:12Z",
-		BuildKind: "release", ServerURL: "https://prod.example.invalid",
-	}
-	tests := []struct {
-		name        string
-		info        BuildInfo
-		want        string
-		wantMessage string
-	}{
-		{name: "dev", info: BuildInfo{Environment: "dev", ServerURL: "http://127.0.0.1:4000"}, want: "http://127.0.0.1:4000"},
-		{name: "prod", info: release, want: "https://prod.example.invalid"},
-		{name: "prod without metadata", info: BuildInfo{Environment: "prod", Version: "dev", ServerURL: "https://prod.example.invalid"}, wantMessage: "invalid prod build metadata"},
-		{name: "prod with http endpoint", info: withServerURL(release, "http://prod.example.invalid"), wantMessage: "resolve server endpoint: invalid prod server URL: HTTPS is required"},
-		{name: "dev without endpoint", info: BuildInfo{Environment: "dev"}, wantMessage: "resolve server endpoint: dev server URL is empty"},
-		{name: "stage", info: withEnvironment(release, "stage"), wantMessage: `resolve server endpoint: unknown build environment "stage"`},
-		{name: "unknown", info: withEnvironment(release, "qa"), wantMessage: `resolve server endpoint: unknown build environment "qa"`},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			base, err := test.info.networkEndpoint()
-			if test.wantMessage != "" {
-				if err == nil || err.Error() != test.wantMessage {
-					t.Fatalf("networkEndpoint() error = %v, want %q", err, test.wantMessage)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if base.String() != test.want {
-				t.Fatalf("networkEndpoint() = %q, want %q", base.String(), test.want)
-			}
-		})
-	}
-}
-
-func withEnvironment(info BuildInfo, environment string) BuildInfo {
-	info.Environment = environment
-	return info
-}
-
-func withServerURL(info BuildInfo, serverURL string) BuildInfo {
-	info.ServerURL = serverURL
-	return info
 }

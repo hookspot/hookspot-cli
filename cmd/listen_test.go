@@ -578,7 +578,7 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 	}))
 	defer server.Close()
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
 		t.Fatal(err)
 	}
 

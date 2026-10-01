@@ -43,8 +43,13 @@ jobs:
       - run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
         working-directory: npm
 
-      # Pre-release tags (v1.2.3-rc.1) publish under `next`, never `latest`.
+      # Pre-release tags (v1.2.3-rc.1) publish under `next`, never `latest`. A
+      # re-run skips a version that already reached the registry, so the smoke
+      # job still runs.
       - run: |
+          if [ -n "$(npm view "hookspot@${GITHUB_REF_NAME#v}" version 2>/dev/null)" ]; then
+            exit 0
+          fi
           case "$GITHUB_REF_NAME" in
             *-*) npm_tag=next ;;
             *) npm_tag=latest ;;

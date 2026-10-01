@@ -366,7 +366,7 @@ func TestProjectUseSupportsInteractiveNameAndUIDForms(t *testing.T) {
 			defer server.Close()
 
 			configPath := filepath.Join(t.TempDir(), "config.toml")
-			if err := writeCommandFixture(configPath, []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'test-key'\nproject = 'old-project'\n")); err != nil {
+			if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'test-key'\nproject = 'old-project'\n")); err != nil {
 				t.Fatal(err)
 			}
 			args := append([]string{"--config", configPath, "project", "use"}, test.args...)
@@ -451,7 +451,7 @@ func TestProjectUseErrorsLeaveStoredSelectionUntouched(t *testing.T) {
 			defer server.Close()
 
 			configPath := filepath.Join(t.TempDir(), "config.toml")
-			original := "schema_version = 1\nenvironment = 'dev'\ncli_key = 'test-key'\nproject = 'old-project'\n"
+			original := "schema_version = 1\ncli_key = 'test-key'\nproject = 'old-project'\n"
 			if err := writeCommandFixture(configPath, []byte(original)); err != nil {
 				t.Fatal(err)
 			}
@@ -478,7 +478,7 @@ func TestProjectUseLocalFailureDoesNotCreateRecordOrChangeGlobal(t *testing.T) {
 	home := t.TempDir()
 	working := t.TempDir()
 	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
-	original := "schema_version = 1\nenvironment = 'dev'\ncli_key = 'global-key'\nproject = 'proj_storefront'\n"
+	original := "schema_version = 1\ncli_key = 'global-key'\nproject = 'proj_storefront'\n"
 	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -506,11 +506,11 @@ func TestProjectUseLocalFailureDoesNotCreateRecordOrChangeGlobal(t *testing.T) {
 
 func TestPersistProjectSelectionHonorsCanceledContext(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	original := "schema_version = 1\nenvironment = 'dev'\nproject = 'old-project'\n"
+	original := "schema_version = 1\nproject = 'old-project'\n"
 	if err := writeCommandFixture(configPath, []byte(original)); err != nil {
 		t.Fatal(err)
 	}
-	store, err := config.New(config.Options{Environment: "dev", ExplicitPath: configPath, ExplicitPathSet: true})
+	store, err := config.New(config.Options{ExplicitPath: configPath, ExplicitPathSet: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +541,7 @@ func TestProjectUseLocalCreatesRecordFromPersistedValuesOnly(t *testing.T) {
 	}{
 		{
 			name:         "copies persisted global key instead of environment key",
-			global:       "schema_version = 1\nenvironment = 'dev'\ncli_key = 'persisted-key'\nproject = 'old-project'\n",
+			global:       "schema_version = 1\ncli_key = 'persisted-key'\nproject = 'old-project'\n",
 			environment:  map[string]string{"HOOKSPOT_CLI_KEY": "environment-key"},
 			wantLocalKey: "persisted-key", forbiddenKey: "environment-key", globalExists: true,
 		},
@@ -621,9 +621,9 @@ func TestProjectUseUpdatesAutomaticLocalUnlessExplicitConfigWins(t *testing.T) {
 	localPath := filepath.Join(working, ".hookspot", "dev", "config.toml")
 	explicitPath := filepath.Join(t.TempDir(), "explicit.toml")
 	for path, contents := range map[string]string{
-		globalPath:   "schema_version = 1\nenvironment = 'dev'\ncli_key = 'global-key'\nproject = 'global-project'\n",
-		localPath:    "schema_version = 1\nenvironment = 'dev'\ncli_key = 'local-key'\nproject = 'local-project'\n",
-		explicitPath: "schema_version = 1\nenvironment = 'dev'\ncli_key = 'explicit-key'\nproject = 'explicit-project'\n",
+		globalPath:   "schema_version = 1\ncli_key = 'global-key'\nproject = 'global-project'\n",
+		localPath:    "schema_version = 1\ncli_key = 'local-key'\nproject = 'local-project'\n",
+		explicitPath: "schema_version = 1\ncli_key = 'explicit-key'\nproject = 'explicit-project'\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -679,7 +679,7 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 	}
 
 	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
-	globalBefore := []byte("schema_version = 1\nenvironment = 'dev'\ncli_key = 'fixture-key'\nproject = 'global_g'\n")
+	globalBefore := []byte("schema_version = 1\ncli_key = 'fixture-key'\nproject = 'global_g'\n")
 	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -837,7 +837,7 @@ func TestProjectUseLocalRejectsCustomConfigBeforeAPI(t *testing.T) {
 			home := t.TempDir()
 			working := t.TempDir()
 			configPath := filepath.Join(working, "config.toml")
-			original := "schema_version = 1\nenvironment = 'dev'\ncli_key = 'test-key'\nproject = 'old-project'\n"
+			original := "schema_version = 1\ncli_key = 'test-key'\nproject = 'old-project'\n"
 			if err := writeCommandFixture(configPath, []byte(original)); err != nil {
 				t.Fatal(err)
 			}

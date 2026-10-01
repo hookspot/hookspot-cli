@@ -9,11 +9,11 @@ DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
 # Only GoReleaser builds anything other than a dev binary.
-LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.buildEnvironment=dev -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
+LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 
-.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot release-publish
+.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot local-build release-publish
 
 tidy:
 	$(RUN) go mod tidy
@@ -69,6 +69,13 @@ endef
 release-snapshot:
 	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
+
+# Unpublished macOS binary for a non-prod server; see scripts/build-*.fish.
+# The tmpfs keeps release-snapshot's dist/, and the skipped hooks only stage the
+# prod npm package and build-info.json.
+local-build: release-tools
+	mkdir -p tmp/dist
+	$(DOCKER_RUN) --tmpfs /src/dist -e SERVER_URL="$(SERVER_URL)" -e CONFIG_PREFIX=$(CONFIG_PREFIX) -e GOOS=darwin -e GOARCH=$(shell uname -m | sed s/x86_64/amd64/) $(RELEASE_IMAGE) build --snapshot --single-target --skip=before,post-hooks --output tmp/dist/hookspot_$(CONFIG_PREFIX)
 
 # CI only: publishes the GitHub Release and the Homebrew formula.
 release-publish:

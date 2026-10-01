@@ -53,12 +53,9 @@ and proxies incoming webhook events to a local host and port.`,
 		if cmd == loginCmd {
 			intent = config.LoginCreate
 		}
-		if cmd == configMigrateCmd {
-			intent = config.MigrationCreate
-		}
 		var err error
 		store, err = config.New(config.Options{
-			Environment:     CurrentBuildInfo().Environment,
+			Prefix:          configPrefix,
 			ExplicitPath:    cfgFile,
 			ExplicitPathSet: cmd.Flags().Changed("config"),
 			Local:           cmd == projectUseCmd && projectUseLocal,
@@ -82,7 +79,7 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "environment-specific config file")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer HOOKSPOT_CLI_KEY)")
 	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
 	rootCmd.PersistentFlags().String("log-level", "", "deprecated; retained for compatibility")
@@ -111,5 +108,5 @@ func resolveCommandConfig(cmd *cobra.Command, needProject bool) (config.Config, 
 }
 
 func configRecoveryHint() string {
-	return "Check the selected config path and file. For a fresh login, use an unused path with 'hookspot --config PATH login'. For a legacy file, see 'hookspot config migrate --help'."
+	return "Check the selected config path and file. For a fresh login, use an unused path with 'hookspot --config PATH login'."
 }

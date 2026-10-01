@@ -91,7 +91,7 @@ export HOOKSPOT_PROJECT_SLUG='payments'
 ```
 
 Organization and project slug variables must be set together. A saved CLI key
-and selected project are stored separately for each environment. To listen on
+and selected project are stored separately for each config prefix. To listen on
 another project for one run, pass `--project PROJECT_UID`; it overrides the
 slug variables and the saved project.
 
@@ -125,28 +125,25 @@ standard Base64; responses sent back over Phoenix Channels use padded Base64.
 
 ## Configuration and logout
 
-Default configuration lives at:
-
-```text
-~/.config/hookspot/prod/config.toml
-~/.config/hookspot/dev/config.toml
-```
+Default configuration lives at `~/.config/hookspot/<prefix>/config.toml`. The
+prefix is set at build time: releases have none (`~/.config/hookspot/config.toml`),
+development builds use `dev`, and `scripts/build-stage.fish` uses `stage`.
 
 Every command selects one complete config file in this order:
 
 1. explicit `--config`;
 2. `HOOKSPOT_CONFIG_FILE`;
-3. `.hookspot/<environment>/config.toml` in the current directory;
-4. the matching global file listed above.
+3. `.hookspot/<prefix>/config.toml` in the current directory;
+4. the matching global file above.
 
 The CLI checks only the current directory and never searches parents. Only an
 absent local file falls back to the global file; a malformed, unreadable, or
 unsafe local file is an error. An explicit missing `--config` path remains an
 error for ordinary commands, while login may create a new file at an unused
-selected path. A legacy shared file is never imported implicitly.
+selected path.
 
 Use `project use --local` to create or update the current directory's complete
-environment-specific record. It stores the selected project and may copy the
+record. It stores the selected project and may copy the
 CLI key already persisted in the global record; flag and environment keys are
 never copied. The local file contains plaintext credentials when a persisted
 key is available and is ignored by this repository's `.gitignore`. `--local`
@@ -154,7 +151,7 @@ cannot be combined with `--config` or a `HOOKSPOT_CONFIG_FILE` environment overr
 
 “Current directory” is the CLI process directory, including inside Docker. Two
 development shells that mount the same host checkout at `/src` and run there
-therefore share the same host `.hookspot/<environment>/config.toml`. When
+therefore share the same host `.hookspot/<prefix>/config.toml`. When
 separate project directories are mounted in the container, enter each one
 before invoking the shared binary:
 
@@ -164,12 +161,6 @@ cd "/workspaces/project A"
 
 cd "/workspaces/project B"
 /src/tmp/hookspot project use --local "asd1" "Project 2"
-```
-
-Review the exact migration command first:
-
-```sh
-hookspot config migrate --help
 ```
 
 `hookspot logout` removes the saved key but does not unset an active
@@ -208,6 +199,10 @@ make run SERVER_URL=https://api.example.invalid ARGS='--help'
 `make npm-test` runs the npm launcher tests with the host `node` (18 or newer),
 and `scripts/smoke_test.sh` exercises the post-release smoke script against
 local fixtures; neither needs Docker.
+
+`scripts/build-dev.fish` and `scripts/build-stage.fish` build an unpublished
+macOS binary for that server with GoReleaser into `tmp/dist/hookspot_dev` or
+`tmp/dist/hookspot_stage`.
 
 `make run` keeps stdin open for interactive or piped login and allocates a TTY
 only when stdin and stdout are terminals. `make run` and `make dev` use the
