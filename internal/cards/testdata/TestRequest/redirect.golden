@@ -1,0 +1,34 @@
+╭─ #3 stripe · POST /api/webhooks ──────────────────── ↻ replay  12:34:56.789 ─╮
+│  308 Permanent Redirect  2ms  → http://localhost:3000/api/webhooks           │
+│ req_01JFULLREQUESTUID                                                        │
+├─ request · application/json · 96 B ──────────────────────────────────────────┤
+│ {                                                                            │
+│   "id": "evt_1",                                                             │
+│   "type": "payment_intent.succeeded",                                        │
+│   "data": {                                                                  │
+│     "amount": 2000,                                                          │
+│     "live": false,                                                           │
+│     "note": null                                                             │
+│   }                                                                          │
+│ }                                                                            │
+├─ response · text/html · 44 B ────────────────────────────────────────────────┤
+│ Location: http://localhost:3000/webhooks/\x1b[31m                            │
+│ webhook senders don't follow redirects; point --forward-to at the final URL  │
+│ <a href="/webhooks/">Permanent Redirect</a>.                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #4 stripe · POST /api/webhooks ────────────────────────────── 12:34:56.789 ─╮
+│  307 Temporary Redirect  2ms  → http://localhost:3000/api/webhooks           │
+│ req_01JFULLREQUESTUID                                                        │
+├─ request · application/json · 96 B ──────────────────────────────────────────┤
+│ {                                                                            │
+│   "id": "evt_1",                                                             │
+│   "type": "payment_intent.succeeded",                                        │
+│   "data": {                                                                  │
+│     "amount": 2000,                                                          │
+│     "live": false,                                                           │
+│     "note": null                                                             │
+│   }                                                                          │
+│ }                                                                            │
+├─ response · empty ───────────────────────────────────────────────────────────┤
+╰──────────────────────────────────────────────────────────────────────────────╯

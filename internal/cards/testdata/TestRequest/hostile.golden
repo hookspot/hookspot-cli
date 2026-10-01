@@ -1,0 +1,24 @@
+╭─ #1 evil\x1b]0;title\x07\n · PO\x1bST /hook\x1b[2J\r\n ─────── 12:34:56.789 ─╮
+│ query  a\x1b=b\tc                                                req\x07\x9b │
+├─ headers · 3 ────────────────────────────────────────────────────────────────┤
+│ content-type     text/plain                                                  │
+│ x-evil\x1b[31m   value\x00\r\n\x85                                           │
+│ x-trace\tprompt  \x1b]8;;http://evil.test\x07link                            │
+├─ body · text/plain · 28 B ───────────────────────────────────────────────────┤
+│ hello    world\x1b[31m                                                       │
+│ line\x7f\x9b2J\x00                                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #2 evil\x1b]0;title\x07\n · PO\x1bST /hook\x1b[2J\r\n ─────── 12:34:56.789 ─╮
+│  400 Bad Request  1ms  → http://localhost:3000/\x1b[2J           req\x07\x9b │
+├─ request · application/json · 51 B ──────────────────────────────────────────┤
+│ {                                                                            │
+│   "type": "evil\x9b31m\x7f",                                                 │
+│   "key�": "\u001b[2J \"quoted\""                                             │
+│ }                                                                            │
+├─ response · text/plain · 28 B ───────────────────────────────────────────────┤
+│ hello    world\x1b[31m                                                       │
+│ line\x7f\x9b2J\x00                                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+#3   PO\x1bST  evil\x1b]0;title\x07\n  /hook\x1b[2J\…   200    1ms  12:34:56.789

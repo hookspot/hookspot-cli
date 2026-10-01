@@ -1,0 +1,50 @@
+╭─ #45 stripe · POST /api/webhooks ───────────────────────────── 12:34:56.789 ─╮
+│  422 Unprocessable Entity  9ms  → http://localhost:3000/api/webhooks         │
+│ req_01JFULLREQUESTUID                                                        │
+├─ request · application/json · 140 B ─────────────────────────────────────────┤
+│ {                                                                            │
+│   "id": "evt_1Q2w3E4r",                                                      │
+│   "object": "event",                                                         │
+│   "type": "invoice.payment_failed",                                          │
+│   "data": {                                                                  │
+│     "object": {                                                              │
+│       "customer": null,                                                      │
+│       "lines": [                                                             │
+│         1,                                                                   │
+│         2.5,                                                                 │
+│         -3e2                                                                 │
+│       ],                                                                     │
+│       "paid": false                                                          │
+│     }                                                                        │
+│   }                                                                          │
+│ }                                                                            │
+├─ response · application/json · 31 B ─────────────────────────────────────────┤
+│ {                                                                            │
+│   "error": "missing customer_id"                                             │
+│ }                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ #46 stripe · POST /deep/deep/deep/deep/deep/deep/deep/deep… ─ 12:34:56.789 ─╮
+│  500 Internal Server Error  1.5s  → http://localhost:3000/api/webhooks       │
+│ req_01JFULLREQUESTUID                                                        │
+├─ request · application/json · 140 B ─────────────────────────────────────────┤
+│ {                                                                            │
+│   "id": "evt_1Q2w3E4r",                                                      │
+│   "object": "event",                                                         │
+│   "type": "invoice.payment_failed",                                          │
+│   "data": {                                                                  │
+│     "object": {                                                              │
+│       "customer": null,                                                      │
+│       "lines": [                                                             │
+│         1,                                                                   │
+│         2.5,                                                                 │
+│         -3e2                                                                 │
+│       ],                                                                     │
+│       "paid": false                                                          │
+│     }                                                                        │
+│   }                                                                          │
+│ }                                                                            │
+├─ response · text/plain · 30 B ───────────────────────────────────────────────┤
+│ panic: boom                                                                  │
+│     at handler.go:12                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
