@@ -1,0 +1,15 @@
+╭─ Listening in Acme | Payments ──────────────────────────────────────────── 2 sources • 2 routes ─╮
+│ stripe  https://in.hookspot.test/src_stripe  → terminal only  payments                           │
+│ github  https://in.hookspot.test/src_github  → terminal only  /webhooks/github                   │
+╰──────────────────────────────────────────────────────────────────────────────────── ctrl-c quit ─╯
+Connecting…
+Ready. Waiting for requests (Ctrl-C to quit)
+╭─ #1 stripe · POST /webhooks/stripe ─────────────────────────────────────────────── hh:mm:ss.mmm ─╮
+│                                                                                     req_stripe_1 │
+├─ headers · 2 ────────────────────────────────────────────────────────────────────────────────────┤
+│ authorization  Bearer sk_test_01234…                                                             │
+│ … 1 more header                                                                                  │
+├─ body · application/json · 49 B ─────────────────────────────────────────────────────────────────┤
+│ {                                                                                                │
+│ … 3 more lines                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

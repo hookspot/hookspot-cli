@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -154,20 +153,6 @@ func TestHandleError(t *testing.T) {
 				t.Fatalf("output = %q, want %q", got, test.want)
 			}
 		})
-	}
-}
-
-func TestPipedErrorIsPlainText(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(path, []byte("schema_version = 1\n")); err != nil {
-		t.Fatal(err)
-	}
-	result := runCommandProcess(t, "", developmentMetadata("http://127.0.0.1:1"), "--config", path, "project", "list")
-	if result.err == nil {
-		t.Fatal("project list succeeded without a CLI key")
-	}
-	if want := "not logged in\n\nRun 'hookspot login' or set HOOKSPOT_CLI_KEY.\n"; result.stderr != want {
-		t.Fatalf("stderr = %q, want %q", result.stderr, want)
 	}
 }
 

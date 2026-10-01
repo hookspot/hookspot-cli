@@ -149,8 +149,14 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	}, nil
 }
 
-// String returns the validated target base URL.
-func (f *Forwarder) String() string { return f.targetBaseURL }
+// String returns the validated target base URL, with the trailing slash kept
+// when typed, so a command built from it forwards the same way.
+func (f *Forwarder) String() string {
+	if f.trailingSlash {
+		return f.targetBaseURL + "/"
+	}
+	return f.targetBaseURL
+}
 
 // DestinationURL returns the exact URL used for a delivery.
 func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, error) {

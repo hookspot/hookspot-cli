@@ -336,7 +336,7 @@ func TestRunBrowserLoginRejectsExpiredAttempt(t *testing.T) {
 			if code := HandleError(&stderr, err); code != 1 {
 				t.Fatalf("exit code = %d, want 1", code)
 			}
-			want := "login attempt expired\n\nRun 'hookspot login' again. If you just created your account, run 'hookspot login' again.\n"
+			want := "login attempt expired\n\nRun 'hookspot login' again; this also works if you just created your account.\n"
 			if stderr.String() != want {
 				t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 			}

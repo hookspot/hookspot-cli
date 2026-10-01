@@ -129,7 +129,7 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 // loginExpiredError covers a sign-up whose email confirmation outlasted the
 // attempt: the account now exists, so a fresh login succeeds.
 func loginExpiredError() error {
-	return newCommandError("login attempt expired", "Run 'hookspot login' again. If you just created your account, run 'hookspot login' again.")
+	return newCommandError("login attempt expired", "Run 'hookspot login' again; this also works if you just created your account.")
 }
 
 // browserLoginTTL clamps the server-provided lifetime so a bad value can not

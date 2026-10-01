@@ -66,9 +66,9 @@ func ColorBadge(bg color.Color, text string) string {
 	return colorBadgeStyle.Background(bg).Render(text)
 }
 
-// Terminal reports whether out is a terminal.
-func Terminal(out io.Writer) bool {
-	file, ok := out.(interface{ Fd() uintptr })
+// Terminal reports whether f, a reader or a writer, is a terminal.
+func Terminal(f any) bool {
+	file, ok := f.(interface{ Fd() uintptr })
 	return ok && term.IsTerminal(int(file.Fd()))
 }
 

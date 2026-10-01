@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -154,40 +153,26 @@ func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // event, ? shows help, and anything else gets the command list.
 func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 	m.reply = ""
-	fields := strings.Fields(line)
-	switch {
-	case len(fields) == 0:
-		return m.replay(m.Replayer.ReplayLast)
-	case len(fields) == 2 && fields[0] == "r":
-		if n, err := strconv.Atoi(fields[1]); err == nil {
-			replayer := m.Replayer
-			return m.replay(func() error { return replayer.Replay(n) })
-		}
-	case len(fields) == 2 && fields[0] == "c":
-		if n, err := strconv.Atoi(fields[1]); err == nil {
-			return m, copyCurl(m.Exporter, n, !m.ShowSensitiveHeaders)
-		}
-	case len(fields) == 2 && fields[0] == "e":
-		if n, err := strconv.Atoi(fields[1]); err == nil {
-			return m, exportFixture(m.Exporter, n, !m.ShowSensitiveHeaders)
-		}
-	case len(fields) <= 2 && fields[0] == "t":
-		return m, sendTest(m.Tester, strings.Join(fields[1:], " "))
-	case len(fields) == 1 && fields[0] == "?":
-		m.reply = m.help()
+	command, ok := ParseCommand(line)
+	if !ok {
+		m.reply = CommandUsage(m.Forwarding)
 		return m, nil
 	}
-	m.reply = m.usage()
-	return m, nil
-}
-
-// usage is the one-line help, naming every command.
-func (m Stream) usage() string {
-	commands := []string{"c N copy as cURL", "e N export fixture", "t test event", "? help"}
-	if m.Forwarding {
-		commands = append([]string{"↵ replay last", "r N replay #N"}, commands...)
+	switch command.Key {
+	case "":
+		return m.replay(m.Replayer.ReplayLast)
+	case "r":
+		replayer := m.Replayer
+		return m.replay(func() error { return replayer.Replay(command.N) })
+	case "c":
+		return m, copyCurl(m.Exporter, command.N, !m.ShowSensitiveHeaders)
+	case "e":
+		return m, exportFixture(m.Exporter, command.N, !m.ShowSensitiveHeaders)
+	case "t":
+		return m, sendTest(m.Tester, command.Source)
 	}
-	return "commands: " + strings.Join(commands, " · ")
+	m.reply = CommandHelp(m.Forwarding)
+	return m, nil
 }
 
 // copyCurl builds request n's cURL command off the event loop: the full one
@@ -243,14 +228,6 @@ func sendTest(tester Tester, source string) tea.Cmd {
 		}
 		return replyMsg("test event sent to " + cards.Line(name))
 	}
-}
-
-func (m Stream) help() string {
-	requests := "c N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\n"
-	if !m.Forwarding {
-		return requests + "replays need --forward-to\nctrl-c  stop listening"
-	}
-	return "↵       replay the last request\nr N     replay request #N\n" + requests + "ctrl-c  stop listening"
 }
 
 // StreamSink prints each request's card, the reconnect notice, the root hint

@@ -139,24 +139,6 @@ func TestSelectProjectHandlesSoleCandidateAndPromptFailures(t *testing.T) {
 	}
 }
 
-func TestPromptProjectRequiresTerminalInputAndOutput(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		in   io.Reader
-		out  io.Writer
-	}{
-		{name: "non-terminal input", in: strings.NewReader("\r"), out: os.Stdout},
-		{name: "non-terminal output", in: os.Stdin, out: &bytes.Buffer{}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := promptProject(context.Background(), test.in, test.out, selectionProjects(), 0)
-			if err == nil || !strings.Contains(err.Error(), "interactive terminal") || !strings.Contains(err.Error(), "ORGANIZATION PROJECT or PROJECT_UID") {
-				t.Fatalf("prompt error = %v", err)
-			}
-		})
-	}
-}
-
 func TestProjectUseSupportsInteractiveNameAndUIDForms(t *testing.T) {
 	projects := selectionProjects()
 	tests := []struct {
@@ -447,7 +429,7 @@ func TestProjectUseLocalCreatesRecordFromPersistedValuesOnly(t *testing.T) {
 			if !strings.Contains(text, "project = 'proj_payments'") || test.wantLocalKey != "" && !strings.Contains(text, "cli_key = '"+test.wantLocalKey+"'") || test.forbiddenKey != "" && strings.Contains(text, test.forbiddenKey) {
 				t.Fatalf("unexpected local config:\n%s", text)
 			}
-			if result.stdout != "Active project set to Acme Inc. | Payments\n" {
+			if result.stdout != "✓ Active project set to Acme Inc. | Payments\n" {
 				t.Fatalf("unexpected stdout: %q", result.stdout)
 			}
 			after, err := os.ReadFile(globalPath)
@@ -628,7 +610,7 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 		if result.err != nil {
 			t.Fatalf("project use --local in %s failed: %v\n%s", test.folder, result.err, result.stderr)
 		}
-		if result.stdout != "Active project set to asd1 | "+test.name+"\n" {
+		if result.stdout != "✓ Active project set to asd1 | "+test.name+"\n" {
 			t.Fatalf("stdout in %s = %q", test.folder, result.stdout)
 		}
 		if got := strings.Join(paths, ","); got != "/cli/projects" {

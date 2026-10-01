@@ -436,11 +436,11 @@ func TestStreamCommands(t *testing.T) {
 		{name: "replay a number", replay: forwarding, line: " r  2 ", replays: true},
 		{name: "evicted", replay: forwarding, line: "r 1", want: "#1: request dropped from history"},
 		{name: "missing", replay: forwarding, line: "r 9", want: "#9: no such request"},
-		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · t test event · ? help"},
+		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · c N cURL · e N fixture · t test event · ? help"},
 		{name: "help", replay: forwarding, line: "?", want: "↵       replay the last request\nr N     replay request #N\nc N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\nctrl-c  stop listening"},
 		{name: "inspect replay last", replay: inspecting, line: "", want: "nothing to replay without --forward-to"},
 		{name: "inspect replay", replay: inspecting, line: "r 1", want: "nothing to replay without --forward-to"},
-		{name: "inspect typo", replay: inspecting, line: "c", want: "commands: c N copy as cURL · e N export fixture · t test event · ? help"},
+		{name: "inspect typo", replay: inspecting, line: "c", want: "commands: c N cURL · e N fixture · t test event · ? help"},
 		{name: "inspect help", replay: inspecting, line: "?", want: "c N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\nreplays need --forward-to\nctrl-c  stop listening"},
 	}
 	for _, test := range tests {

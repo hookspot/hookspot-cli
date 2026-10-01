@@ -11,7 +11,7 @@ SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
 # Only GoReleaser builds anything other than a dev binary.
 LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
 ARGS ?=
-DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen --stream)
+DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 
 .PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot local-build release-publish
 
@@ -41,7 +41,6 @@ get:
 	$(RUN) go get $(PKG)
 
 # Live-reload dev loop: rebuilds and restarts the command on every file change.
-# listen runs as a stream, since restarts would break the full-screen view.
 # Pass credentials inline, e.g.
 #   HOOKSPOT_ORGANIZATION_SLUG=acme HOOKSPOT_PROJECT_SLUG=payments HOOKSPOT_CLI_KEY=xxx make dev
 # Override the command run on reload with ARGS, e.g. make dev ARGS="listen --help".

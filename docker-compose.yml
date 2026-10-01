@@ -26,7 +26,7 @@ services:
     image: ${GO_IMAGE}
     working_dir: /src
     init: true
-    command: go run github.com/air-verse/air@${AIR_VERSION} -- listen --stream
+    command: go run github.com/air-verse/air@${AIR_VERSION} -- listen
     volumes:
       - .:/src
       - hookspot-gomod:/go/pkg/mod

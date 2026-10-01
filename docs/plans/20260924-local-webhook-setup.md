@@ -132,7 +132,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 ### Key design decisions
 1. **Readiness is a contract.**
    - `Ready. Waiting for requests (Ctrl-C to quit)` is printed only after the channel join reply, which is when presence starts and deliveries flow.
-   - CI harnesses and agents can wait for this line.
+   - CI harnesses and agents can wait for this line in plain mode (stdout piped). The terminal views show the same state in their status line instead.
    - Every rejoin prints the offline duration and the dashboard requests URL, because deliveries in the gap became `cli_offline`.
 2. **Filter deliveries on the server, not the client.** `ProjectChannel` intercepts `delivery` and pushes only to sockets that joined with `[]` or with that source. Older CLIs benefit without an upgrade.
 3. **Fix sign-up rather than add guest mode.** `hookspot login` → sign up in the browser → back to the approval page → create the first organization and project if none exist → approve. No guest mode, and no sign-up in the terminal (research §4c).
@@ -384,7 +384,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 
 ### Task 11: [Final] Update documentation
 - [ ] README "Listen and forward":
-  - the `Ready` line (wait for it in scripts) and the reconnect notice;
+  - the `Ready` line (wait for it in scripts, with stdout piped) and the reconnect notice;
   - bare port;
   - the trailing-slash rule;
   - redirect, Docker, and root-404 hints;
@@ -409,7 +409,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 
 **Manual verification**
 - **Docker Compose:**
-  - `listen` with `tty: true` and without it: the `Ready` line appears after the join.
+  - `listen` without `tty: true`: the `Ready` line appears after the join; with it, the status line turns live after the join.
   - A Docker-injected `HTTP_PROXY` doesn't break forwarding to `http://app:3000`.
   - Refusing `localhost` inside the container shows the Docker hint.
 - **WSL2:** `hookspot login` (including sign-up) and forwarding to an app inside WSL2 and to one on the Windows host.
