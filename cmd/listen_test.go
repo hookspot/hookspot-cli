@@ -145,6 +145,10 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 					DisplayName: "shopify -> cli-shopify",
 					Destination: api.Destination{Path: "/webhooks/shopify"},
 				},
+				{
+					DisplayName: "shopify -> /webhooks/orders",
+					Destination: api.Destination{Path: "/webhooks/orders"},
+				},
 			},
 		},
 	}
@@ -157,11 +161,12 @@ func TestPrintListenInfo_ShowsSourceURLsAndRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "Listening in Acme | Payments on 1 source • 1 route\n" +
+	want := "Listening in Acme | Payments on 1 source • 2 routes\n" +
 		"\n" +
 		"shopify\n" +
 		"│  Requests to → https://events.example.com/shopify\n" +
-		"└─ Forwards to → http://localhost:3000/webhooks/shopify (cli-shopify)\n" +
+		"├─ Forwards to → http://localhost:3000/webhooks/shopify (cli-shopify)\n" +
+		"└─ Forwards to → http://localhost:3000/webhooks/orders (/webhooks/orders)\n" +
 		"\n" +
 		"Requests ──────────────────────────────────────\n" +
 		"\n" +
@@ -252,26 +257,6 @@ func TestPrintListenInfoEscapesHostileSourceFieldsInBothModes(t *testing.T) {
 		if strings.ContainsRune(text, '\x1b') || strings.Contains(text, "source\nInjected") {
 			t.Fatalf("hostile field remained active in %q", text)
 		}
-	}
-}
-
-func TestRouteLabel(t *testing.T) {
-	name := "named-destination"
-	tests := []struct {
-		name  string
-		route api.Route
-		want  string
-	}{
-		{"name", api.Route{Name: &name, DisplayName: "shopify -> fallback"}, "named-destination"},
-		{"generated display name", api.Route{DisplayName: "shopify -> /webhooks/shopify"}, ""},
-		{"missing", api.Route{}, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := routeLabel(tt.route); got != tt.want {
-				t.Fatalf("routeLabel() = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }
 
