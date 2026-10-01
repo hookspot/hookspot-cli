@@ -383,7 +383,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - [ ] full suites: backend `mix precommit` and `bun run --cwd assets test`; CLI `make test`, `make vet`, `make npm-test`
 
 ### Task 11: [Final] Update documentation
-- [ ] README "Listen and forward":
+- [x] README "Listen and forward":
   - the `Ready` line (wait for it in scripts) and the reconnect notice;
   - bare port;
   - the trailing-slash rule;
@@ -398,6 +398,7 @@ delivered; retry them from https://app.hookspot.io/acme/payments/requests
 - [ ] README "Signatures": the body and provider headers are forwarded unchanged; verify with the secret the provider shows for the Hookspot URL; replays older than about 5 minutes fail timestamp checks; providers that need a URL handshake (Slack, Meta, Zoom, …) aren't supported yet.
 - [ ] README "Log in": sign-up works from `hookspot login`; new accounts create their first project on the approval page.
 - [ ] move this plan to `docs/plans/completed/`
+- ⚠️ terminal-redesign moved the redirect and Docker hints into the request's card (stdout) and the `↵` hint into the banner's command hints, and deleted `internal/printer`. In plain mode only `connection lost …`, `Reconnected …`, the source warnings and the root-404 hint stay on stderr (with the redesign's test hint); the stream and full-screen show them on screen. Its review wrote the "Listen and forward" item above
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
