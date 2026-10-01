@@ -554,10 +554,12 @@
 - Modify: `cmd/project_test.go`
 - Delete: `cmd/project_picker.go`, `cmd/project_picker_unix.go`, `cmd/project_picker_windows.go`
 
-- [ ] replace `promptProject` with a list model in the Cards picker box: `↑↓`, `↵`, `esc`, current project marked, scrolling. It uses only `tui.Program`'s options (`WithoutSignalHandler`, input, output), not the listen shutdown sequence: Ctrl-C or Esc returns `context.Canceled` and exits 0, as today
-- [ ] keep the non-terminal error and the selection forms
-- [ ] replace the deleted picker tests (arrow keys and cancel, escape parsing, row bounds) with teatest tests: move and select; esc cancels; a long list scrolls
-- [ ] run tests - must pass before next task
+- [x] replace `promptProject` with a list model in the Cards picker box: `↑↓`, `↵`, `esc`, current project marked, scrolling. It uses only `tui.Program`'s options (`WithoutSignalHandler`, input, output), not the listen shutdown sequence: Ctrl-C or Esc returns `context.Canceled` and exits 0, as today
+- [x] keep the non-terminal error and the selection forms
+- [x] replace the deleted picker tests (arrow keys and cancel, escape parsing, row bounds) with teatest tests: move and select; esc cancels; a long list scrolls
+- [x] run tests - must pass before next task
+- ➕ API: `tui.PickProject(ctx, input, output, projects, current)` returns the chosen index; `current` is the saved project's index or -1. `projectPrompt` now takes `[]api.Project` and that index, so the picker marks `current` itself instead of a ` (current)` suffix. `promptProject` keeps only the terminal check and calls it
+- ⚠️ the program also gets `tea.WithContext(ctx)`, so SIGTERM or a non-raw SIGINT ends the picker, as the old reader's context did. The box is drawn with the full-screen list's `panel` (no `cards` component, so no separate cards golden), with a rule above the keys. The selected row is reverse video with a `›`, as in the full-screen list; organization and project are columns, cut per column so `current` stays visible; a list that scrolls shows `N/total` in the top border; `↑↓` wrap, as before. The box clears on `↵`, `esc` and Ctrl-C, and `Active project set to …` is unchanged
 
 ### Task 17: Verify acceptance criteria
 

@@ -1,0 +1,6 @@
+╭─ Select a project ───────────────────╮
+│   Acme Incor…  Payments pl…  current │
+│ › Acme\tLabs   Ops\x1b[31m           │
+├──────────────────────────────────────┤
+│  ↑↓  move   ↵  select   esc  cancel  │
+╰──────────────────────────────────────╯

@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-	"unicode/utf8"
 
 	"hookspot/internal/api"
 	"hookspot/internal/config"
@@ -75,33 +73,30 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 	}
 }
 
-func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
-	marked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments (current)"}
-	unmarked := []string{"Acme Inc. | Storefront", "Acme Inc. | Payments"}
+func TestSelectProjectPassesSavedProjectAsCurrent(t *testing.T) {
 	tests := []struct {
-		name             string
-		savedUID         string
-		wantOptions      []string
-		wantDefaultIndex int
+		name        string
+		savedUID    string
+		wantCurrent int
 	}{
-		{name: "saved project listed", savedUID: "proj_payments", wantOptions: marked, wantDefaultIndex: 1},
-		{name: "no saved project", savedUID: "", wantOptions: unmarked, wantDefaultIndex: 0},
-		{name: "saved project not listed", savedUID: "proj_billing", wantOptions: unmarked, wantDefaultIndex: 0},
+		{name: "saved project listed", savedUID: "proj_payments", wantCurrent: 1},
+		{name: "no saved project", savedUID: "", wantCurrent: -1},
+		{name: "saved project not listed", savedUID: "proj_billing", wantCurrent: -1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			projects := selectionProjects()[:2]
 			promptCalled := false
-			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []string, defaultIndex int) (int, error) {
+			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []api.Project, current int) (int, error) {
 				promptCalled = true
 				if err := ctx.Err(); err != nil {
 					t.Fatal(err)
 				}
-				if strings.Join(options, "\n") != strings.Join(test.wantOptions, "\n") {
-					t.Fatalf("options = %q, want %q", options, test.wantOptions)
+				if len(options) != len(projects) || options[0].UID != projects[0].UID || options[1].UID != projects[1].UID {
+					t.Fatalf("options = %+v, want %+v", options, projects)
 				}
-				if defaultIndex != test.wantDefaultIndex {
-					t.Fatalf("default index = %d, want %d", defaultIndex, test.wantDefaultIndex)
+				if current != test.wantCurrent {
+					t.Fatalf("current = %d, want %d", current, test.wantCurrent)
 				}
 				return 0, nil
 			}
@@ -123,7 +118,7 @@ func TestSelectProjectMarksAndDefaultsSavedProject(t *testing.T) {
 func TestSelectProjectHandlesSoleCandidateAndPromptFailures(t *testing.T) {
 	projects := selectionProjects()
 	promptCalled := false
-	selected, err := selectProject(context.Background(), nil, nil, projects[:1], "", func(context.Context, io.Reader, io.Writer, []string, int) (int, error) {
+	selected, err := selectProject(context.Background(), nil, nil, projects[:1], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
 		promptCalled = true
 		return 0, nil
 	})
@@ -132,156 +127,17 @@ func TestSelectProjectHandlesSoleCandidateAndPromptFailures(t *testing.T) {
 	}
 
 	wantErr := errors.New("prompt failed")
-	if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []string, int) (int, error) {
+	if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
 		return 0, wantErr
 	}); !errors.Is(err, wantErr) {
 		t.Fatalf("prompt error = %v, want %v", err, wantErr)
 	}
 	for _, index := range []int{-1, 2} {
-		if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []string, int) (int, error) {
+		if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
 			return index, nil
 		}); err == nil || !strings.Contains(err.Error(), "invalid project selection") {
 			t.Fatalf("index %d error = %v", index, err)
 		}
-	}
-}
-
-func TestProjectPickerArrowKeysEnterAndCancellation(t *testing.T) {
-	tests := []struct {
-		name      string
-		current   int
-		key       []byte
-		wantIndex int
-		wantDone  bool
-		wantErr   error
-	}{
-		{name: "down", current: 0, key: []byte("\x1b[B"), wantIndex: 1},
-		{name: "down wraps", current: 2, key: []byte("\x1b[B"), wantIndex: 0},
-		{name: "up", current: 2, key: []byte("\x1b[A"), wantIndex: 1},
-		{name: "up wraps", current: 0, key: []byte("\x1b[A"), wantIndex: 2},
-		{name: "SS3 down", current: 0, key: []byte("\x1bOB"), wantIndex: 1},
-		{name: "SS3 up", current: 2, key: []byte("\x1bOA"), wantIndex: 1},
-		{name: "enter", current: 1, key: []byte("\r"), wantIndex: 1, wantDone: true},
-		{name: "escape", current: 1, key: []byte("\x1b"), wantIndex: 1, wantErr: context.Canceled},
-		{name: "control c", current: 1, key: []byte{3}, wantIndex: 1, wantErr: context.Canceled},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			index, done, err := applyProjectPickerKey(test.current, 3, test.key)
-			if index != test.wantIndex || done != test.wantDone || !errors.Is(err, test.wantErr) {
-				t.Fatalf("apply key = (%d, %v, %v), want (%d, %v, %v)", index, done, err, test.wantIndex, test.wantDone, test.wantErr)
-			}
-		})
-	}
-}
-
-func TestProjectPickerParserBoundsEscapeAndPrioritizesControlC(t *testing.T) {
-	tests := []struct {
-		name  string
-		input []byte
-		want  []byte
-	}{
-		{name: "CSI up", input: []byte("\x1b[A"), want: []byte("\x1b[A")},
-		{name: "SS3 down", input: []byte("\x1bOB"), want: []byte("\x1bOB")},
-		{name: "control c after escape", input: []byte{'\x1b', 3}, want: []byte{3}},
-		{name: "control c inside CSI", input: []byte{'\x1b', '[', 3}, want: []byte{3}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			index := 0
-			key, err := parseProjectPickerKey(context.Background(), func(context.Context) (byte, error) {
-				if index >= len(test.input) {
-					return 0, io.EOF
-				}
-				value := test.input[index]
-				index++
-				return value, nil
-			}, 5*time.Millisecond)
-			if err != nil || !bytes.Equal(key, test.want) {
-				t.Fatalf("parsed key = %q, error = %v, want %q", key, err, test.want)
-			}
-		})
-	}
-
-	started := time.Now()
-	reads := 0
-	key, err := parseProjectPickerKey(context.Background(), func(ctx context.Context) (byte, error) {
-		if reads == 0 {
-			reads++
-			return '\x1b', nil
-		}
-		<-ctx.Done()
-		return 0, ctx.Err()
-	}, 10*time.Millisecond)
-	if err != nil || !bytes.Equal(key, []byte{'\x1b'}) {
-		t.Fatalf("bare escape = %q, error = %v", key, err)
-	}
-	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
-		t.Fatalf("bare escape parser took %s", elapsed)
-	}
-}
-
-func TestProjectPickerViewBoundsRowsAndUnicodeWidth(t *testing.T) {
-	options := []string{
-		"Acme | Zero",
-		"Acme | One",
-		"Acme | Two",
-		"Acme | Three",
-		"Acme | Four",
-		"Acme | Five",
-		"Acme | Six",
-		"Acme | Seven",
-		"München 合作 | A project name that cannot fit",
-		"Acme | Nine",
-	}
-	view, err := newProjectPickerView(18, 4, len(options), 8)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.rows != 3 || view.start > 8 || view.start+view.rows <= 8 {
-		t.Fatalf("initial viewport = start %d, rows %d; selected project is not visible", view.start, view.rows)
-	}
-
-	var output bytes.Buffer
-	if err := view.render(&output, options, 8); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(output.String(), "cannot fit") || !strings.Contains(output.String(), "…") {
-		t.Fatalf("long option was not truncated: %q", output.String())
-	}
-	for _, line := range strings.Split(output.String(), "\r\n") {
-		line = strings.TrimPrefix(line, "\r\x1b[2K")
-		if terminalTextWidth(line) > 17 {
-			t.Fatalf("rendered line width = %d, want at most 17: %q", terminalTextWidth(line), line)
-		}
-		if !utf8.ValidString(line) {
-			t.Fatalf("rendered line is invalid UTF-8: %q", line)
-		}
-	}
-
-	output.Reset()
-	if err := view.render(&output, options, 9); err != nil {
-		t.Fatal(err)
-	}
-	if view.start+view.rows <= 9 {
-		t.Fatalf("updated viewport = start %d, rows %d; selected project is not visible", view.start, view.rows)
-	}
-	if strings.Contains(output.String(), "\x1b[10A") || !strings.Contains(output.String(), "\x1b[2A") {
-		t.Fatalf("redraw did not move by visible rows only: %q", output.String())
-	}
-
-	for _, value := range []string{strings.Repeat("\u231a", 8), strings.Repeat("\U0001f200", 8)} {
-		truncated := truncateTerminalText(value, 7)
-		if got := []rune(truncated); len(got) != 3 || got[len(got)-1] != '…' || terminalTextWidth(truncated) > 7 {
-			t.Fatalf("wide-symbol truncation = %q, runes = %U, width = %d", truncated, got, terminalTextWidth(truncated))
-		}
-	}
-	keycap := "1\ufe0f\u20e3"
-	if got := terminalTextWidth(keycap); got != 2 {
-		t.Fatalf("keycap width = %d, want 2", got)
-	}
-	if truncated := truncateTerminalText(strings.Repeat(keycap, 8), 6); terminalTextWidth(truncated) > 6 || !strings.HasSuffix(truncated, "…") {
-		t.Fatalf("keycap truncation = %q, width = %d", truncated, terminalTextWidth(truncated))
 	}
 }
 
@@ -295,17 +151,11 @@ func TestPromptProjectRequiresTerminalInputAndOutput(t *testing.T) {
 		{name: "non-terminal output", in: os.Stdin, out: &bytes.Buffer{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := promptProject(context.Background(), test.in, test.out, []string{"one", "two"}, 0)
+			_, err := promptProject(context.Background(), test.in, test.out, selectionProjects(), 0)
 			if err == nil || !strings.Contains(err.Error(), "interactive terminal") || !strings.Contains(err.Error(), "ORGANIZATION PROJECT or PROJECT_UID") {
 				t.Fatalf("prompt error = %v", err)
 			}
 		})
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := promptProject(ctx, strings.NewReader(""), io.Discard, []string{"one", "two"}, 0); !errors.Is(err, context.Canceled) {
-		t.Fatalf("pre-canceled prompt error = %v", err)
 	}
 }
 

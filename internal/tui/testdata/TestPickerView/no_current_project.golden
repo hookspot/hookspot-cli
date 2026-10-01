@@ -1,0 +1,7 @@
+╭─ Select a project ──────────────────╮
+│ › Acme    Project 1                 │
+│   Acme    Project 2                 │
+│   Globex  Project 3                 │
+├─────────────────────────────────────┤
+│  ↑↓  move   ↵  select   esc  cancel │
+╰─────────────────────────────────────╯
