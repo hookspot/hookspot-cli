@@ -345,6 +345,79 @@ func TestForwardTransportFailureGolden(t *testing.T) {
 	}
 }
 
+func TestForwardRedirectNoticeShowsLocation(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers http.Header
+		want    string
+	}{
+		{
+			name:    "with Location",
+			headers: http.Header{"Location": []string{"http://localhost:3000/webhooks/\x1b[31m"}},
+			want: "Location: http://localhost:3000/webhooks/\\x1b[31m\n" +
+				"webhook senders don't follow redirects; point --forward-to at the final URL\n",
+		},
+		{name: "without Location"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output, notices bytes.Buffer
+			p := New(&output, Options{Notices: &notices})
+			fixed(t, p)
+			if err := p.PrintForward(delivery(), ForwardOutcome{
+				Response: ws.Response{Status: http.StatusPermanentRedirect, Headers: test.headers},
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := notices.String(); got != test.want {
+				t.Fatalf("notices:\n%q\nwant:\n%q", got, test.want)
+			}
+			if !strings.Contains(output.String(), "→  308 Permanent Redirect") || strings.Contains(output.String(), "Location") {
+				t.Fatalf("redirect output:\n%s", output.String())
+			}
+		})
+	}
+}
+
+func TestForwardConnectionRefusedNoticeInsideContainer(t *testing.T) {
+	dockerHint := "inside a container, localhost is the container itself; use the service name (http://app:3000) or host.docker.internal\n"
+	tests := []struct {
+		name        string
+		inContainer bool
+		target      string
+		want        string
+	}{
+		{name: "container localhost", inContainer: true, target: "http://localhost:3000", want: dockerHint},
+		{name: "container IPv6 loopback", inContainer: true, target: "http://[::1]:3000", want: dockerHint},
+		{name: "container service name", inContainer: true, target: "http://app:3000"},
+		{name: "host localhost", target: "http://localhost:3000"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output, notices bytes.Buffer
+			p := New(&output, Options{Notices: &notices})
+			fixed(t, p)
+			p.container = test.inContainer
+			if err := p.PrintForward(delivery(), ForwardOutcome{
+				Failure:   &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused, Err: errors.New("connection refused")},
+				TargetURL: test.target,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := notices.String(); got != test.want {
+				t.Fatalf("notices = %q, want %q", got, test.want)
+			}
+			if !strings.Contains(output.String(), test.target+" is not reachable — is your server running?") {
+				t.Fatalf("refused output:\n%s", output.String())
+			}
+		})
+	}
+}
+
 func TestForwardReplayTagAndSummaryLimit(t *testing.T) {
 	var output bytes.Buffer
 	p := newTestPrinter(t, &output, Limits{MaxValueChars: 5})

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -631,6 +632,10 @@ func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, b
 	}, nil
 }
 
+func (f *fakeForwarder) DestinationURL(path, _ string) (*url.URL, error) {
+	return url.Parse("http://localhost:3000" + path)
+}
+
 func TestForwardSessionReplayIsLocalOnlyAndReusesRequestUID(t *testing.T) {
 	var output bytes.Buffer
 	p := printer.New(&output, printer.Options{
@@ -760,6 +765,109 @@ func TestForwardSessionRejectsOversizedResponseWithoutAcknowledgement(t *testing
 	}
 	if strings.Contains(output.String(), strings.Repeat("x", 64)) {
 		t.Fatal("oversized local response was printed")
+	}
+}
+
+func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
+	local := httptest.NewServer(http.NotFoundHandler())
+	defer local.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cli/projects/proj_payments":
+			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
+		case "/cli/projects/proj_payments/sources":
+			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","active":true,"routes":[{"uid":"rte_stripe","active":true,"destination":{"uid":"dst_local","path":"/"}}]}]`))
+		case "/cli/websocket":
+			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			var join []json.RawMessage
+			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
+				return
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
+			for _, attempt := range []string{"att_1", "att_2"} {
+				_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{
+					"attempt_uid": attempt, "request_uid": "req_1", "source_uid": "src_stripe", "method": "POST", "path": "/",
+				}})
+				var response []json.RawMessage
+				if err := conn.ReadJSON(&response); err != nil {
+					return
+				}
+			}
+			// A delivery without correlation fields ends the command after both deliveries were answered.
+			_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{}})
+			_, _, _ = conn.ReadMessage()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		t.Fatal(err)
+	}
+	hint := local.URL + "/ returned 404. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to " + local.URL + "/webhooks\n"
+
+	for _, test := range []struct {
+		name  string
+		args  []string
+		hints int
+	}{
+		{name: "forwarding", args: []string{"--forward-to", local.URL}, hints: 1},
+		{name: "print-only", hints: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			args := append([]string{"--config", configPath, "listen", "stripe"}, test.args...)
+			result := runCommandProcess(t, "", developmentMetadata(server.URL), args...)
+			if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
+				t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+			}
+			if got := strings.Count(result.stderr, hint); got != test.hints {
+				t.Fatalf("root hints on stderr = %d, want %d:\n%s", got, test.hints, result.stderr)
+			}
+			if strings.Contains(result.stdout, "returned 404") {
+				t.Fatalf("root hint printed on stdout:\n%s", result.stdout)
+			}
+		})
+	}
+}
+
+func TestForwardSessionRootHintOnlyForRootNotFoundOrNotAllowed(t *testing.T) {
+	tests := []struct {
+		name   string
+		base   string
+		path   string
+		status int
+		want   bool
+	}{
+		{name: "root 405", path: "/", status: http.StatusMethodNotAllowed, want: true},
+		{name: "root 500", path: "/", status: http.StatusInternalServerError},
+		{name: "non-root path", path: "/hooks", status: http.StatusNotFound},
+		{name: "root under base path", base: "/webhooks", path: "/", status: http.StatusNotFound},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+			}))
+			defer local.Close()
+			forwarder, err := proxy.New(local.URL + test.base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			session := newForwardSession(context.Background(), forwarder, forwarder.String(), printer.New(&stdout, printer.Options{Notices: &stderr}))
+
+			if _, err := session.Handle(ws.Delivery{RequestUID: "req_1", Method: http.MethodPost, Path: test.path}); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(stderr.String(), "include it in --forward-to"); got != test.want {
+				t.Fatalf("root hint = %v, want %v; stderr %q", got, test.want, stderr.String())
+			}
+		})
 	}
 }
 

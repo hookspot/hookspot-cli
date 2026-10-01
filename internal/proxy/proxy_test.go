@@ -9,11 +9,18 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"syscall"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	// Go reads proxy variables once per process, so every forward here runs behind a failing proxy.
+	_ = os.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	os.Exit(m.Run())
+}
 
 func mustForwarder(t *testing.T, target string) *Forwarder {
 	t.Helper()
@@ -124,21 +131,29 @@ func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
 
 func TestForwarderDestinationURL(t *testing.T) {
 	tests := []struct {
-		name string
-		base string
-		path string
-		want string
+		name  string
+		base  string
+		path  string
+		query string
+		want  string
 	}{
-		{"destination path", "http://localhost:4000", "/webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
-		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "http://localhost:4000/local/webhooks/shopify"},
-		{"path without slash", "http://localhost:4000", "webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
-		{"empty path", "http://localhost:4000", "", "http://localhost:4000/"},
+		{"destination path", "http://localhost:4000", "/webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
+		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "", "http://localhost:4000/local/webhooks/shopify"},
+		{"path without slash", "http://localhost:4000", "webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
+		{"empty path", "http://localhost:4000", "", "", "http://localhost:4000/"},
+		{"root at bare host", "localhost:3000", "/", "", "http://localhost:3000/"},
+		{"root at typed root slash", "localhost:3000/", "/", "", "http://localhost:3000/"},
+		{"root at base path", "localhost:3000/webhooks/stripe", "/", "", "http://localhost:3000/webhooks/stripe"},
+		{"empty path at base path", "localhost:3000/webhooks/stripe", "", "", "http://localhost:3000/webhooks/stripe"},
+		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "", "http://localhost:8000/webhooks/"},
+		{"root at base path keeps query", "localhost:3000/webhooks/stripe", "/", "a=1", "http://localhost:3000/webhooks/stripe?a=1"},
+		{"root at typed trailing slash keeps query", "localhost:8000/webhooks/", "/", "a=1", "http://localhost:8000/webhooks/?a=1"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustForwarder(t, tt.base)
-			got, err := f.DestinationURL(tt.path, "")
+			got, err := f.DestinationURL(tt.path, tt.query)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -172,10 +187,40 @@ func TestNewValidatesForwardTarget(t *testing.T) {
 		"", "ftp://example.invalid", "http:///missing", "http://user@example.invalid",
 		"http://example.invalid?query=1", "http://example.invalid/#fragment", "http://example.invalid#",
 		"http://example.invalid:", "http://example.invalid:99999", "http://example.invalid/a b",
+		"99999", "3000/webhooks?x=1", "3000/webhooks#top",
 	} {
 		if _, err := New(invalid); err == nil {
 			t.Fatalf("New(%q) unexpectedly succeeded", invalid)
 		}
+	}
+}
+
+func TestNewMapsBarePortToLocalhost(t *testing.T) {
+	for raw, want := range map[string]string{
+		"3000":          "http://localhost:3000",
+		"3000/webhooks": "http://localhost:3000/webhooks",
+	} {
+		if got := mustForwarder(t, raw).String(); got != want {
+			t.Fatalf("New(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestForwarderBypassesEnvironmentProxy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	// Go never proxies loopback hosts; 0.0.0.0 reaches the same server without that exemption.
+	target := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	resp, err := mustForwarder(t, target).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
+	if err != nil {
+		t.Fatalf("Forward through HTTP_PROXY=%s: %v", os.Getenv("HTTP_PROXY"), err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
 }
 
