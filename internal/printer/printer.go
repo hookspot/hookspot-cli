@@ -365,7 +365,7 @@ func (p *Printer) forwardNotice(outcome ForwardOutcome) string {
 	}
 	location := headerGet(outcome.Response.Headers, "Location")
 	if outcome.Response.Status >= 300 && outcome.Response.Status < 400 && location != "" {
-		return "Location: " + singleLine(location) + "\n" +
+		return "Location: " + cards.Line(location) + "\n" +
 			"webhook senders don't follow redirects; point --forward-to at the final URL\n"
 	}
 	return ""
