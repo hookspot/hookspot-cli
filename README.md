@@ -114,14 +114,135 @@ Inspect mode redacts authorization and cookie headers unless
 limit. The deprecated `--log-level` flag is accepted for compatibility but has
 no effect.
 
-When forwarding from an interactive terminal, press Enter to replay the last
-request. Replay requires a real terminal; piped input does not enable it. The
-first response from the local server is reported as-is, including a redirect,
-and redirects are not followed.
+The first response from the local server is reported as-is, including a
+redirect, and redirects are not followed. API redirects are also blocked so a
+Hookspot CLI key is never forwarded to a different endpoint. Incoming delivery
+bodies may use padded or unpadded standard Base64; responses sent back over
+Phoenix Channels use padded Base64.
 
-API redirects are also blocked so a Hookspot CLI key is never forwarded to a
-different endpoint. Incoming delivery bodies may use padded or unpadded
-standard Base64; responses sent back over Phoenix Channels use padded Base64.
+### Output modes
+
+`listen` picks its output from where it runs:
+
+- **Full-screen** (stdin and stdout are terminals): a request list with a
+  detail pane, a filter, and a Sources page.
+- **Stream** (`--stream`, or a terminal stdout with non-terminal stdin): each
+  request prints as it arrives, above a pinned status line. When stdin is a
+  terminal, a `›` prompt below it takes commands.
+- **Plain** (stdout is piped or redirected): text with no color or cursor
+  control, one block per request, for scripts. When stdin is still a terminal
+  (`hookspot listen | tee log`), the same commands work and their replies go
+  to stderr.
+
+`NO_COLOR` turns color off in every mode. A route shows as its name, or as its
+destination path when it has none.
+
+Requests are numbered from #1 in each run. The run keeps the newest 1000
+requests and 64 MiB of bodies; naming an older number says it was dropped.
+
+### Full-screen keys
+
+| Key | Action |
+|---|---|
+| `↑` `↓` | select a request; stops following |
+| `←` `→` | detail tabs: Overview, Request, Response, Timing |
+| `f` | follow the newest request |
+| `/` | filter; `↵` applies, `esc` clears |
+| `r` | replay the selected request |
+| `w` | wait until the local server accepts connections, then replay (transport failures only) |
+| `c` | copy as cURL |
+| `e` | export a fixture |
+| `t` | send a test event to the selected request's source |
+| `s` | Sources page |
+| `?` | full help |
+| `q`, `ctrl-c` | stop listening; a second `ctrl-c` forces exit |
+
+Filter terms must all match: `status:error`, `status:2xx` (also `3xx`, `4xx`,
+`5xx`, or a code such as `status:422`), `source:<name>`, `path:<prefix>`, and
+free text matched against the path and the event summary.
+
+### Stream commands
+
+Type at the `›` prompt, or in plain mode at the terminal, and press Enter:
+
+| Command | Action |
+|---|---|
+| `↵` | replay the last request |
+| `r N` | replay request #N |
+| `c N` | copy request #N as cURL |
+| `e N` | export request #N as a fixture |
+| `t [source]` | send a test event |
+| `?` | help |
+
+Anything else lists the commands. Plain mode prints the cURL command instead of
+copying it.
+
+### Replay
+
+A replay resends a request to the `--forward-to` server and records it as a new
+request, with a summary such as `#46 ↻ #45  422 → 200  9ms → 41ms` and up to 6
+lines of response diff. Replays are local: they never change the delivery's
+status in Hookspot. Without `--forward-to` there is nothing to replay; `c`,
+`e`, and `t` still work.
+
+### Copy as cURL
+
+`c` builds a `curl` command for a POSIX shell that sends the request to the URL
+it was forwarded to. Without `--forward-to` it targets the source's public URL,
+so it resends the request through Hookspot. The full command goes to the
+clipboard through OSC 52, which needs a terminal that supports it (Terminal.app
+does not). The command shown on screen hides sensitive header values unless
+`--show-sensitive-headers` is set.
+
+A body that isn't printable text is written to
+`hookspot-fixtures/<name>.body` and passed as `--data-binary @<path>`. Headers
+with control characters are written to `hookspot-fixtures/<name>.headers` and
+passed as `-H @<path>` (curl 7.55 or newer); that file holds unredacted values.
+Both paths are absolute, so the command works from any directory.
+
+### Fixtures
+
+`e` writes two files under `hookspot-fixtures/` in the current directory:
+`<name>.json` with the method, path, query, and headers, and `<name>.body` with
+the raw body. `<name>` is the request UID, or `entry-<N>` when the UID isn't a
+plain file name (letters, digits, `_`, and `-`). Exporting the same request
+again overwrites its files. Sensitive header values are written as
+`[redacted]` unless `--show-sensitive-headers` is set, and the confirmation
+says when they were. Fixture files are readable only by their owner.
+
+### Test event
+
+`t` checks the whole path: it posts `{"type":"hookspot.test","sent_at":…}` to
+a source's public URL with an `X-Hookspot-Test` header. The request goes
+through Hookspot and shows in the dashboard like any other. Each delivery it
+produces is marked `test` with a "path works" line; a source with several
+routes produces several. Only sources this run listens to are accepted. In the
+stream, `t` needs no name with one source; with several, name one
+(`t stripe`).
+
+Until the first request arrives, `listen` shows a `curl` command per source
+that sends a test request from anywhere.
+
+### Sources page
+
+`s` in full-screen lists every source and route this run listens to: public
+URL, route, destination, and live counts since `listen` started (requests, OK,
+failed, p50 latency, last request; without `--forward-to`, only requests and
+the last one). The totals row also counts requests no route matched.
+
+The selected route's detail has six numbered fields. Press `c`, then a number,
+to copy one:
+
+1. public URL
+2. source ID
+3. destination URL (the path alone without `--forward-to`)
+4. route ID
+5. the `hookspot listen` command for the source
+6. a test `curl` command
+
+An activity panel shows the status breakdown, latency, requests per minute over
+the last 15 minutes, and the last request. `t` sends a test event to the
+selected source; `esc` or `s` returns to the request list.
 
 ## Configuration and logout
 

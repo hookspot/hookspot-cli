@@ -577,8 +577,9 @@
 - ⚠️ the notices gain 16 modules, all MIT, plus `golang.org/x/mod` (`version`'s semver, missing since it was added); byte-identical licenses share a section. Charm's color math links new Go source notices: math `cbrt` (Sun), `atan` and `sin` (Cephes), `exp` amd64 (Sleef). go-colorful's `hsluv.go` (hsluv-go, MIT) and x/ansi's `Convert256` (ported from tmux `colour.c`, ISC) are linked too, so their upstream notices are included and the header's procedure now names module code. Unicode-derived tables get no notice, as Go's own never did; `x/sync` is listed because `go list` includes it, though none of its code is linked
 
 ### Task 18: [Final] Update documentation
-- [ ] README: `listen` modes (full-screen default, `--stream`, piped), keys and commands, fixtures (redaction, file names), test event, Sources page
-- [ ] move this plan to `docs/plans/completed/`
+- [x] README: `listen` modes (full-screen default, `--stream`, piped), keys and commands, fixtures (redaction, file names), test event, Sources page
+- [x] move this plan to `docs/plans/completed/`
+- ⚠️ the README also documents replay and copy as cURL, which the keys and commands rely on; the prerequisite's `listen` messages (`Ready`, reconnect, forwarding hints) stay with its own Task 11
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
