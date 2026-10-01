@@ -167,8 +167,6 @@ func TestRequest(t *testing.T) {
 		unknown.SourceUID = "src_gone"
 		unknown.Path = "/" + strings.Repeat("very-long-segment/", 8)
 
-		replay := forwarded(6, empty, http.StatusCreated, 100*time.Microsecond)
-		replay.Replay = true
 		testEvent := forwarded(7, eventType, http.StatusAccepted, 12400*time.Millisecond)
 		testEvent.Test = true
 		rows := []Request{
@@ -177,7 +175,7 @@ func TestRequest(t *testing.T) {
 			forwarded(3, eventType, http.StatusOK, 999*time.Millisecond),
 			forwarded(4, action, http.StatusOK, 9*time.Millisecond),
 			forwarded(5, mimeFallback, http.StatusNoContent, 1250*time.Millisecond),
-			replay,
+			forwarded(6, empty, http.StatusCreated, 100*time.Microsecond),
 			testEvent,
 			forwarded(1234, unknown, http.StatusOK, 4*time.Millisecond),
 		}
@@ -209,7 +207,6 @@ func TestRequest(t *testing.T) {
 
 	t.Run("redirect", func(t *testing.T) {
 		r := forwarded(3, testDelivery(), http.StatusPermanentRedirect, 2*time.Millisecond)
-		r.Replay = true
 		r.Response.Headers = http.Header{"Location": []string{"http://localhost:3000/webhooks/\x1b[31m"}, "Content-Type": []string{"text/html"}}
 		r.Response.Body = []byte("<a href=\"/webhooks/\">Permanent Redirect</a>.")
 		without := forwarded(4, testDelivery(), http.StatusTemporaryRedirect, 2*time.Millisecond)
@@ -249,6 +246,50 @@ func TestRequest(t *testing.T) {
 			container.Request(failure(8, proxy.TransportConnectionRefused, "http://[::1]:3000"), 80),
 			container.Request(failure(9, proxy.TransportConnectionRefused, "http://app:3000"), 80),
 		)))
+	})
+
+	t.Run("replays", func(t *testing.T) {
+		entry := func(number, status int, body string, latency time.Duration) session.Entry {
+			return session.Entry{
+				Number:   number,
+				Delivery: testDelivery(),
+				Received: received,
+				Target:   "http://localhost:3000/api/webhooks",
+				Response: ws.Response{Status: status, Body: []byte(body)},
+				Latency:  latency,
+			}
+		}
+		refused := func(number int) session.Entry {
+			e := entry(number, 0, "", time.Millisecond)
+			e.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
+			return e
+		}
+		replay := func(original, replay session.Entry) string {
+			replay.ReplayOf = original.Number
+			comparison := session.Compare(original, replay)
+			replay.Replay = &comparison
+			return testListen().Entry(replay, 80)
+		}
+		failed := entry(45, http.StatusUnprocessableEntity, `{"error":"missing customer_id"}`, 9*time.Millisecond)
+		fixed := entry(46, http.StatusOK, `{"received":true}`, 41*time.Millisecond)
+		lines := func(prefix string) string {
+			var lines []string
+			for i := range 10 {
+				lines = append(lines, prefix+strconv.Itoa(i))
+			}
+			return strings.Join(lines, "\n")
+		}
+		hostile := entry(57, http.StatusBadRequest, "ok\tfine\x1b[31m\u009b2J\r\n"+strings.Repeat("long ", 30), time.Millisecond)
+		golden.RequireEqual(t, noColor(t, strings.Join([]string{
+			replay(failed, fixed),
+			replay(failed, entry(47, http.StatusUnprocessableEntity, `{"error":"missing customer_id"}`, 8*time.Millisecond)),
+			replay(failed, entry(48, http.StatusUnprocessableEntity, `{"error":"missing invoice_id"}`, 12*time.Millisecond)),
+			replay(refused(49), entry(50, http.StatusOK, `{"received":true}`, 30*time.Millisecond)),
+			replay(fixed, refused(51)),
+			replay(entry(52, http.StatusOK, "\x89PNG\xff", time.Millisecond), entry(53, http.StatusOK, "\x89PNG\xfe\xff\x00", time.Millisecond)),
+			replay(entry(54, http.StatusInternalServerError, lines("before "), time.Millisecond), entry(55, http.StatusInternalServerError, lines("after "), time.Millisecond)),
+			replay(entry(56, http.StatusBadRequest, "ok", time.Millisecond), hostile),
+		}, "\n")))
 	})
 
 	t.Run("inspect", func(t *testing.T) {
@@ -334,7 +375,7 @@ func TestNarrowWidthsKeepRendering(t *testing.T) {
 	l := testListen()
 	refused := forwarded(1, testDelivery(), 0, time.Millisecond)
 	refused.Failure = &proxy.TransportFailure{Kind: proxy.TransportConnectionRefused}
-	refused.Replay = true
+	refused.Replay = &session.Comparison{Original: 2, Status: http.StatusOK, Removed: []string{"{"}, Added: []string{"}"}, More: 1, Binary: true}
 	requests := []Request{
 		forwarded(1, testDelivery(), http.StatusOK, time.Millisecond),
 		forwarded(2, testDelivery(), http.StatusBadGateway, time.Millisecond),

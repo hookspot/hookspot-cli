@@ -175,6 +175,8 @@ func (s *Session) Replay(n int) error {
 	if err != nil {
 		return err
 	}
+	comparison := Compare(original, entry)
+	entry.Replay = &comparison
 	return s.record(entry)
 }
 

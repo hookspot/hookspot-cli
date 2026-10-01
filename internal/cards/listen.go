@@ -233,15 +233,19 @@ type Request struct {
 	Response ws.Response
 	Latency  time.Duration
 	Failure  *proxy.TransportFailure
-	Replay   bool
-	Test     bool
+	// Replay compares a replay with the request it replays; nil otherwise.
+	Replay *session.Comparison
+	Test   bool
 }
 
-// Request renders r as a one-line row when forwarding answered 2xx, and as a
-// card otherwise and in inspect mode.
+// Request renders a replay as its summary and response diff, r as a one-line
+// row when forwarding answered 2xx, and as a card otherwise and in inspect
+// mode.
 func (l Listen) Request(r Request, width int) string {
 	inner := max(1, width-4)
 	switch {
+	case r.Replay != nil:
+		return l.replay(r, width)
 	case r.Target == "":
 		return l.inspect(r, inner)
 	case r.Failure != nil:
@@ -327,6 +331,48 @@ func (l Listen) inspect(r Request, inner int) string {
 	)
 }
 
+// replay sums up a replay as "#46 ↻ #45  422 → 200  9ms → 41ms", then shows
+// how its response differs from the original's.
+func (l Listen) replay(r Request, width int) string {
+	c := r.Replay
+	summary := faintStyle.Render("#"+strconv.Itoa(r.Number)) + " " + warnStyle.Render("↻") + " " + faintStyle.Render("#"+strconv.Itoa(c.Original)) + "  " +
+		result(c.Status, c.Failure) + faintStyle.Render(" → ") + result(r.Response.Status, r.Failure) + "  " +
+		faintStyle.Render(formatLatency(c.Latency)+" → "+formatLatency(r.Latency))
+	right := faintStyle.Render(timestamp(r))
+	const minTitle = 12
+	room := max(minTitle, width-lipgloss.Width(summary)-lipgloss.Width(right)-4)
+	// The title leaves out the number the summary opens with.
+	left := summary + "  " + truncate(l.title(Request{Delivery: r.Delivery}), room)
+	lines := []string{left + strings.Repeat(" ", max(2, width-lipgloss.Width(left)-lipgloss.Width(right))) + right}
+
+	for _, line := range c.Removed {
+		lines = append(lines, truncate("  "+errorStyle.Render("- "+l.bodyLine(line)), width))
+	}
+	for _, line := range c.Added {
+		lines = append(lines, truncate("  "+okStyle.Render("+ "+l.bodyLine(line)), width))
+	}
+	if c.More > 0 {
+		lines = append(lines, "  "+faintStyle.Render("… "+count(c.More, "more changed line")))
+	}
+	if c.Binary {
+		lines = append(lines, "  "+faintStyle.Render("binary body "+formatBytes(c.Size)+" → "+formatBytes(len(r.Response.Body))))
+	}
+	if r.Failure != nil {
+		for _, line := range strings.Split(lipgloss.Wrap(l.transportHint(r.Target, r.Failure), max(1, width-2), ""), "\n") {
+			lines = append(lines, "  "+line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// result is what forwarding got: a status, or the transport failure.
+func result(status int, failure *proxy.TransportFailure) string {
+	if failure != nil {
+		return errorStyle.Render(transportLabel(failure.Kind))
+	}
+	return lipgloss.NewStyle().Foreground(StatusColor(status)).Render(strconv.Itoa(status))
+}
+
 // title names a card's request: number, source, method and path.
 func (l Listen) title(r Request) string {
 	title := l.source(r.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(method(r.Delivery)) + " " + Line(r.Delivery.Path)
@@ -352,14 +398,10 @@ func cardLabel(r Request) string {
 }
 
 func marks(r Request) string {
-	var marks []string
-	if r.Replay {
-		marks = append(marks, warnStyle.Render("↻ replay"))
-	}
 	if r.Test {
-		marks = append(marks, Badge("test"))
+		return Badge("test")
 	}
-	return strings.Join(marks, " ")
+	return ""
 }
 
 func (l Listen) source(uid string) string {
@@ -444,7 +486,7 @@ func (l Listen) body(body []byte, headers http.Header) []string {
 	visible := limit(len(lines), l.Limits.MaxBodyLines)
 	out := make([]string, 0, visible+1)
 	for _, line := range lines[:visible] {
-		line = strings.ReplaceAll(l.value(Sanitize(line)), "\t", "    ")
+		line = l.bodyLine(line)
 		if isJSON {
 			line = highlightJSON(line)
 		}
@@ -454,6 +496,11 @@ func (l Listen) body(body []byte, headers http.Header) []string {
 		out = append(out, faintStyle.Render("… "+count(omitted, "more line")))
 	}
 	return out
+}
+
+// bodyLine escapes one body line, applies --max-value-chars and expands tabs.
+func (l Listen) bodyLine(line string) string {
+	return strings.ReplaceAll(l.value(Sanitize(line)), "\t", "    ")
 }
 
 func (l Listen) query(raw string) string {

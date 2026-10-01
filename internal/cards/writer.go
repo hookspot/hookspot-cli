@@ -99,6 +99,6 @@ func request(e session.Entry) Request {
 		Response: e.Response,
 		Latency:  e.Latency,
 		Failure:  e.Failure,
-		Replay:   e.ReplayOf > 0,
+		Replay:   e.Replay,
 	}
 }

@@ -1,0 +1,24 @@
+#46 ↻ #45  422 → 200  9ms → 41ms  stripe · POST /api/webhooks       12:34:56.789
+  -   "error": "missing customer_id"
+  +   "received": true
+#47 ↻ #45  422 → 422  9ms → 8ms  stripe · POST /api/webhooks        12:34:56.789
+#48 ↻ #45  422 → 422  9ms → 12ms  stripe · POST /api/webhooks       12:34:56.789
+  -   "error": "missing customer_id"
+  +   "error": "missing invoice_id"
+#50 ↻ #49  connection refused → 200  1ms → 30ms  stripe · POST /a…  12:34:56.789
+#51 ↻ #46  200 → connection refused  41ms → 1ms  stripe · POST /a…  12:34:56.789
+  http://localhost:3000/api/webhooks is not reachable — is your server running?
+#53 ↻ #52  200 → 200  1ms → 1ms  stripe · POST /api/webhooks        12:34:56.789
+  binary body 5 B → 7 B
+#55 ↻ #54  500 → 500  1ms → 1ms  stripe · POST /api/webhooks        12:34:56.789
+  - before 0
+  - before 1
+  - before 2
+  + after 0
+  + after 1
+  + after 2
+  … 14 more changed lines
+#57 ↻ #56  400 → 400  1ms → 1ms  stripe · POST /api/webhooks        12:34:56.789
+  - ok
+  + ok    fine\x1b[31m\x9b2J
+  + long long long long long long long long long long long long long long long …

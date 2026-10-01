@@ -241,7 +241,7 @@ func TestStreamPrintsWholeCardsInOrder(t *testing.T) {
 	if got := printed(t, all); !slices.Equal(got, want) {
 		t.Fatalf("printed cards = %v, want %v", got, want)
 	}
-	if replays := strings.Count(ansi.Strip(string(all)), "↻ replay"); replays != 3 {
+	if replays := strings.Count(ansi.Strip(string(all)), "↻ #"); replays != 3 {
 		t.Fatalf("replay marks = %d, want 3", replays)
 	}
 
