@@ -15,9 +15,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"github.com/gorilla/websocket"
@@ -53,17 +55,46 @@ func TestTerminalFullscreenJourney(t *testing.T) {
 	run.requireRestored()
 }
 
+// TestTerminalFullscreenError runs full screen until listen fails. The alt
+// screen shows the source warning its stderr copy hid and the --forward-to
+// URL as typed; the error prints once the alt screen is gone.
+func TestTerminalFullscreenError(t *testing.T) {
+	disabled := strings.Replace(listenStreamSources, `src_github","active":true`, `src_github","active":false`, 1)
+	hookspot := startFakeHookspot(t, disabled)
+	run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", "3000/hooks/")...)
+	header := regexp.MustCompile(`(?m)^● live · .*→ http://localhost:3000/hooks/ · \d\d:\d\d:\d\d$`)
+	run.waitFor("the target and the warning", func(screen string) bool {
+		return header.MatchString(screen) && strings.Contains(screen, "\n⚠ github is disabled: requests to it are rejected.")
+	})
+	hookspot.end(t)
+	if code := run.wait(); code != 1 {
+		t.Fatalf("exit code = %d, want 1 for the invalid delivery; screen:\n%s", code, run.text())
+	}
+	if run.altScreen() {
+		t.Error("still on the alt screen after the error")
+	}
+	errorBox := regexp.MustCompile(`(?m)^╭─ ✗ Error ─+╮\n│ .*delivery is missing correlation fields`)
+	if screen := run.text(); !errorBox.MatchString(screen) {
+		t.Errorf("no error box after the alt screen:\n%s", screen)
+	}
+	run.requireRestored()
+}
+
 // TestTerminalModes covers how listen picks its view in the other terminal
 // setups.
 func TestTerminalModes(t *testing.T) {
 	status := regexp.MustCompile(`(?m)^● live · Acme \| Payments · \d+ requests?`)
 	prompt := regexp.MustCompile(`(?m)^› .*ctrl-c quit$`)
+	// The banner prints before the stream starts, which may scroll it away.
+	banner := func(run *terminalRun) bool {
+		return strings.Contains(ansi.Strip(run.written()), "╭─ Listening in Acme | Payments ")
+	}
 
 	t.Run("stream", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
-		run.waitFor("the status line and prompt", func(screen string) bool {
-			return status.MatchString(screen) && prompt.MatchString(screen)
+		run.waitFor("the banner, status line and prompt", func(screen string) bool {
+			return banner(run) && status.MatchString(screen) && prompt.MatchString(screen)
 		})
 		if run.altScreen() {
 			t.Error("the stream is on the alt screen")
@@ -81,22 +112,33 @@ func TestTerminalModes(t *testing.T) {
 	})
 
 	t.Run("stdout piped", func(t *testing.T) {
+		local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		defer local.Close()
 		hookspot := startFakeHookspot(t, listenStreamSources)
-		var stdout bytes.Buffer
-		run := startTerminal(t, terminalOptions{width: 100, height: 30, stdout: &stdout}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 		hookspot.deliver(t, terminalDelivery)
+		row := regexp.MustCompile(`(?m)^#1 +POST +stripe +/webhooks/stripe `)
+		run.waitFor("#1 on stdout", func(string) bool { return row.MatchString(run.piped()) })
+
+		// stdin is a terminal, so it takes line commands; replies go to stderr.
+		run.send("\r")
+		run.waitFor("the replay on stdout", func(string) bool { return strings.Contains(run.piped(), "\n#2 ↻ #1 ") })
+		run.send("c 1\r")
+		run.waitForText("curl -X POST '" + local.URL + "/webhooks/stripe'")
+		run.send("?\r")
+		run.waitForText("↵       replay the last request")
 		hookspot.end(t)
 		if code := run.wait(); code != 1 {
 			t.Fatalf("exit code = %d, want 1 for the invalid delivery; screen:\n%s", code, run.text())
 		}
-		// stdin is a terminal, so the banner names the line commands.
-		for _, want := range []string{"t test event · ctrl-c quit ─╯\n", "\nReady. Waiting for requests (Ctrl-C to quit)\n", "\n╭─ #1 stripe · POST /webhooks/stripe "} {
-			if !strings.Contains(stdout.String(), want) {
-				t.Errorf("piped stdout has no %q:\n%s", want, stdout.String())
+		stdout := run.piped()
+		for _, want := range []string{"↵ replay last · r N replay #N · c N cURL · e N fixture · t test event · ctrl-c quit ─╯\n", "\nReady. Waiting for requests (Ctrl-C to quit)\n"} {
+			if !strings.Contains(stdout, want) {
+				t.Errorf("piped stdout has no %q:\n%s", want, stdout)
 			}
 		}
-		if strings.ContainsRune(stdout.String(), '\x1b') {
-			t.Errorf("piped stdout has escape sequences: %q", stdout.String())
+		if strings.Contains(stdout, "curl") || strings.ContainsRune(stdout, '\x1b') {
+			t.Errorf("piped stdout has a command reply or escape sequences: %q", stdout)
 		}
 	})
 
@@ -104,7 +146,10 @@ func TestTerminalModes(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"NO_COLOR": "1"}}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, terminalDelivery)
-		run.waitForText("● live · Acme | Payments · 1 request")
+		run.waitFor("the banner, card #1 and the status line", func(screen string) bool {
+			return banner(run) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
+				strings.Contains(screen, "● live · Acme | Payments · 1 request")
+		})
 		if color := terminalColor.FindString(run.written()); color != "" {
 			t.Errorf("NO_COLOR output has color %q", color)
 		}
@@ -126,6 +171,7 @@ type terminalRun struct {
 	mu     sync.Mutex
 	screen *vt.Emulator
 	output bytes.Buffer
+	stdout bytes.Buffer
 
 	changed chan struct{}
 	drained chan struct{}
@@ -136,9 +182,10 @@ type terminalRun struct {
 type terminalOptions struct {
 	width, height int
 	environment   map[string]string
-	// stdin and stdout take the terminal's place when set.
-	stdin  io.Reader
-	stdout io.Writer
+	// stdin takes the terminal's place when set.
+	stdin io.Reader
+	// pipeStdout pipes stdout, read with piped, instead of the terminal.
+	pipeStdout bool
 }
 
 // startTerminal runs the command on a pseudo-terminal of the given size, with
@@ -146,7 +193,7 @@ type terminalOptions struct {
 // terminal.
 func startTerminal(t *testing.T, options terminalOptions, metadata map[string]string, args ...string) *terminalRun {
 	t.Helper()
-	if runtime.GOOS == "windows" && (options.stdin != nil || options.stdout != nil) {
+	if runtime.GOOS == "windows" && (options.stdin != nil || options.pipeStdout) {
 		t.Skip("ConPTY makes its console the command's stdin, stdout and stderr, so neither can be replaced")
 	}
 	pty, err := xpty.NewPty(options.width, options.height)
@@ -157,12 +204,12 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	environment := map[string]string{"TERM": "xterm-256color", "TZ": "UTC"}
 	maps.Copy(environment, options.environment)
 	command := commandProcess(t, metadata, environment, args...)
-	command.Stdin, command.Stdout = options.stdin, options.stdout
+	command.Stdin = options.stdin
 	// The first standard file on the terminal makes it the controlling one.
 	controlling := 0
 	if options.stdin != nil {
 		controlling = 1
-		if options.stdout != nil {
+		if options.pipeStdout {
 			controlling = 2
 		}
 	}
@@ -177,6 +224,9 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 		changed: make(chan struct{}, 1),
 		drained: make(chan struct{}),
 		exited:  make(chan struct{}),
+	}
+	if options.pipeStdout {
+		command.Stdout = pipedStdout{r}
 	}
 	if err := pty.Start(command); err != nil {
 		t.Fatal(err)
@@ -234,6 +284,27 @@ func (r *terminalRun) read() {
 			return
 		}
 	}
+}
+
+// pipedStdout keeps the command's piped stdout and wakes waitFor.
+type pipedStdout struct{ r *terminalRun }
+
+func (p pipedStdout) Write(b []byte) (int, error) {
+	p.r.mu.Lock()
+	p.r.stdout.Write(b)
+	p.r.mu.Unlock()
+	select {
+	case p.r.changed <- struct{}{}:
+	default:
+	}
+	return len(b), nil
+}
+
+// piped is everything the command wrote to its piped stdout.
+func (r *terminalRun) piped() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.stdout.String()
 }
 
 // send types keys, as raw bytes: "\r" is enter, "\x1b[B" down.
@@ -349,11 +420,24 @@ type fakeHookspot struct {
 	url        string
 	config     string
 	deliveries chan any
+	// joins holds the first channel join: topic, event and payload.
+	joins chan []json.RawMessage
+	// rejectJoins answers joins as a project that isn't found.
+	rejectJoins atomic.Bool
+	done        chan struct{}
 }
+
+// hangUp, delivered, drops the websocket connection.
+type hangUp struct{}
 
 func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 	t.Helper()
-	hookspot := &fakeHookspot{config: filepath.Join(t.TempDir(), "config.toml"), deliveries: make(chan any)}
+	hookspot := &fakeHookspot{
+		config:     filepath.Join(t.TempDir(), "config.toml"),
+		deliveries: make(chan any),
+		joins:      make(chan []json.RawMessage, 1),
+		done:       make(chan struct{}),
+	}
 	if err := writeCommandFixture(hookspot.config, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -373,6 +457,14 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
 				return
 			}
+			select {
+			case hookspot.joins <- join[2:]:
+			default:
+			}
+			if hookspot.rejectJoins.Load() {
+				_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}})
+				return
+			}
 			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
 			// Responses and heartbeats are dropped until the command hangs up.
 			gone := make(chan struct{})
@@ -387,6 +479,9 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 			for {
 				select {
 				case payload := <-hookspot.deliveries:
+					if _, ok := payload.(hangUp); ok {
+						return
+					}
 					_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", payload})
 				case <-gone:
 					return
@@ -397,8 +492,23 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		}
 	}))
 	t.Cleanup(server.Close)
+	t.Cleanup(func() { close(hookspot.done) })
 	hookspot.url = server.URL
 	return hookspot
+}
+
+// play delivers payloads, then ends listen, alongside a run that blocks until
+// listen exits.
+func (h *fakeHookspot) play(payloads ...any) {
+	go func() {
+		for _, payload := range append(payloads, map[string]string{}) {
+			select {
+			case h.deliveries <- payload:
+			case <-h.done:
+				return
+			}
+		}
+	}()
 }
 
 // listen is the command line of listen against this server.
@@ -431,5 +541,6 @@ var terminalDelivery = ws.Delivery{
 	Body:    []byte(`{"type":"payment_intent.succeeded"}`),
 }
 
-// terminalColor is a styling sequence that sets a color.
-var terminalColor = regexp.MustCompile(`\x1b\[([0-9]+;)*(3[0-9]|4[0-9]|9[0-7]|10[0-7])(;[0-9]+)*m`)
+// terminalColor is a styling sequence that sets a color; 39 and 49 only
+// reset one.
+var terminalColor = regexp.MustCompile(`\x1b\[([0-9]+;)*(3[0-8]|4[0-8]|9[0-7]|10[0-7])(;[0-9]+)*m`)

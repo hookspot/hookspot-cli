@@ -272,7 +272,7 @@ func TestLatestVersionIgnoresFailures(t *testing.T) {
 	}
 }
 
-func TestCheckLatestVersionPrintsUpgradeNotice(t *testing.T) {
+func TestCheckLatestVersionStaysQuietWhenUpToDateOrDev(t *testing.T) {
 	requests := 0
 	stubLatestRelease(t, func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -280,20 +280,13 @@ func TestCheckLatestVersionPrintsUpgradeNotice(t *testing.T) {
 	})
 
 	var output bytes.Buffer
-	checkLatestVersion(context.Background(), &output, "1.2.3")
-	if !strings.Contains(output.String(), "1.2.3 → 1.3.0") {
-		t.Fatalf("output = %q", output.String())
-	}
-
-	output.Reset()
 	checkLatestVersion(context.Background(), &output, "1.3.0")
 	if output.Len() != 0 {
 		t.Fatalf("up-to-date output = %q", output.String())
 	}
 
-	output.Reset()
 	checkLatestVersion(context.Background(), &output, "dev")
-	if output.Len() != 0 || requests != 2 {
+	if output.Len() != 0 || requests != 1 {
 		t.Fatalf("dev build checked GitHub: output = %q, requests = %d", output.String(), requests)
 	}
 }

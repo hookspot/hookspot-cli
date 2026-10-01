@@ -185,7 +185,7 @@ func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []
 }
 
 func promptProject(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, current int) (int, error) {
-	if !isTerminalReader(in) || !cards.Terminal(out) {
+	if !cards.Terminal(in) || !cards.Terminal(out) {
 		return 0, errors.New("project selection requires an interactive terminal; pass ORGANIZATION PROJECT or PROJECT_UID")
 	}
 	return tui.PickProject(ctx, in, out, projects, current)
@@ -198,7 +198,7 @@ func persistProjectSelection(ctx context.Context, store *config.Store, project a
 	if err := store.SaveProject(project.UID); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	if _, err := fmt.Fprintf(out, "Active project set to %s\n", projectDisplayName(project)); err != nil {
+	if _, err := lipgloss.Fprintln(out, cards.Done("Active project set to", projectDisplayName(project))); err != nil {
 		return fmt.Errorf("write project selection: %w", err)
 	}
 	return nil

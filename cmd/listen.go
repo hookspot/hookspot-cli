@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"hookspot/internal/api"
 	"hookspot/internal/cards"
@@ -139,7 +137,7 @@ var listenCmd = &cobra.Command{
 
 		if cards.Terminal(cmd.OutOrStdout()) {
 			var input io.Reader
-			if isTerminalReader(cmd.InOrStdin()) {
+			if cards.Terminal(cmd.InOrStdin()) {
 				input = cmd.InOrStdin()
 			}
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
@@ -169,11 +167,11 @@ var listenCmd = &cobra.Command{
 		}
 
 		sess := session.New(listenContext, sources, local, writer)
-		commandsEnabled := isTerminalReader(cmd.InOrStdin())
+		commandsEnabled := cards.Terminal(cmd.InOrStdin())
 		writer.Commands = commandsEnabled
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
-			hints = append(lineCommandHints(forwarder != nil), hints...)
+			hints = append(tui.CommandHints(forwarder != nil), hints...)
 		}
 		if err := writer.Banner(projectName, routes, hints); err != nil {
 			return err
@@ -448,54 +446,41 @@ func runningInContainer() bool {
 	return docker == nil || podman == nil
 }
 
-// lineCommandHints name the stream's line commands; without --forward-to
-// nothing replays.
-func lineCommandHints(forwarding bool) []string {
-	hints := []string{"c N copy as cURL", "e N export fixture", "t test event"}
-	if forwarding {
-		hints = append([]string{"↵ replay last", "r N replay #N"}, hints...)
-	}
-	return hints
-}
-
 // runLineCommand runs one line typed into the stream: ↵ replays the last
 // request, r N replays #N, c N prints #N as a cURL command, e N exports it as
-// a fixture, t [source] sends a test event, and anything else gets the
-// command list.
+// a fixture, t [source] sends a test event, ? prints help, and anything else
+// gets the command list.
 func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+	command, ok := tui.ParseCommand(line)
+	if !ok {
+		return writer.Reply(tui.CommandUsage(forwarding))
+	}
+	switch command.Key {
+	case "":
 		return replyToReplay(writer, sess.ReplayLast())
-	}
-	if len(fields) == 2 {
-		if number, err := strconv.Atoi(fields[1]); err == nil {
-			switch fields[0] {
-			case "r":
-				return replyToReplay(writer, sess.Replay(number))
-			case "c":
-				curl, err := sess.Curl(number, !showSensitiveHeaders)
-				if err != nil {
-					return writer.Reply(err.Error())
-				}
-				return writer.Print(cards.CurlNotes(number, curl, false) + "\n" + curl.Shown)
-			case "e":
-				fixture, err := sess.ExportFixture(number, !showSensitiveHeaders)
-				if err != nil {
-					return writer.Reply(err.Error())
-				}
-				return writer.Reply(cards.Exported(number, fixture))
-			}
+	case "r":
+		return replyToReplay(writer, sess.Replay(command.N))
+	case "c":
+		curl, err := sess.Curl(command.N, !showSensitiveHeaders)
+		if err != nil {
+			return writer.Reply(err.Error())
 		}
-	}
-	if len(fields) <= 2 && fields[0] == "t" {
+		return writer.Print(cards.CurlNotes(command.N, curl, false) + "\n" + curl.Shown)
+	case "e":
+		fixture, err := sess.ExportFixture(command.N, !showSensitiveHeaders)
+		if err != nil {
+			return writer.Reply(err.Error())
+		}
+		return writer.Reply(cards.Exported(command.N, fixture))
+	case "t":
 		// A test event that fails to send leaves listening as it was.
-		source, err := sess.SendTest(strings.Join(fields[1:], " "))
+		source, err := sess.SendTest(command.Source)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
 		return writer.Reply("test event sent to " + source)
 	}
-	return writer.Reply("commands: " + strings.Join(lineCommandHints(forwarding), " · "))
+	return writer.Print(tui.CommandHelp(forwarding))
 }
 
 // replyToReplay answers a replay this run can't make: a number it never
@@ -620,11 +605,6 @@ func (r *lineCommandReader) Stop() error {
 		}
 	})
 	return r.err
-}
-
-func isTerminalReader(input io.Reader) bool {
-	fd, ok := input.(interface{ Fd() uintptr })
-	return ok && term.IsTerminal(int(fd.Fd()))
 }
 
 func init() {

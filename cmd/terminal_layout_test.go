@@ -83,10 +83,10 @@ func TestTerminalHostileDelivery(t *testing.T) {
 		Body:    []byte("body " + hostile + "\nline 2 " + hostile),
 	}
 	// requireNoneRaw fails if the terminal got any of hostile's controls as
-	// they came.
+	// they came. BS is left out: the renderer may move the cursor with it.
 	requireNoneRaw := func(t *testing.T, run *terminalRun) {
 		t.Helper()
-		for _, raw := range []string{"\x1b]0;pwned\x07", "\x1b[?1049l", "\u009b31m", "\x00\x7f\b"} {
+		for _, raw := range []string{"\x1b]0;pwned\x07", "\x1b[?1049l", "\u009b31m", "\x00", "\x7f"} {
 			if strings.Contains(run.written(), raw) {
 				t.Errorf("the delivery's %q reached the terminal", raw)
 			}

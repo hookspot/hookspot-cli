@@ -3,9 +3,9 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/exp/golden"
-	"github.com/gorilla/websocket"
 
 	"hookspot/internal/api"
 	"hookspot/internal/cards"
@@ -410,41 +409,9 @@ func TestDashboardRequestsURLUsesOnlySafeSlugs(t *testing.T) {
 }
 
 func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
-	var sessions atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/cli/projects/proj_payments":
-			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
-		case "/cli/projects/proj_payments/sources":
-			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","url":"https://in.example.invalid/src_stripe","routes":[{"uid":"rte_stripe","destination":{"uid":"dst_local","path":"/"}}]}]`))
-		case "/cli/websocket":
-			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			var join []json.RawMessage
-			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
-				return
-			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
-			if sessions.Add(1) == 1 {
-				return
-			}
-			// An invalid delivery is fatal, which ends the command after the reconnect.
-			_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]any{}})
-			_, _, _ = conn.ReadMessage()
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
-		t.Fatal(err)
-	}
-
-	result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", configPath, "listen", "stripe")
+	hookspot := startFakeHookspot(t, listenStreamSources)
+	hookspot.play(hangUp{})
+	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen("stripe")...)
 	if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
@@ -452,55 +419,20 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 		t.Fatalf("stdout = %q, want one Ready after Connecting…", result.stdout)
 	}
 	reconnected := regexp.MustCompile(`(?m)^Reconnected after \d+s offline\. Requests that arrived meanwhile were not delivered; retry them from ` +
-		regexp.QuoteMeta(server.URL+"/acme/payments/requests") + `$`)
+		regexp.QuoteMeta(hookspot.url+"/acme/payments/requests") + `$`)
 	if !strings.Contains(result.stderr, "connection lost: ") || !reconnected.MatchString(result.stderr) {
 		t.Fatalf("stderr = %q, want the connection-lost and reconnect notices", result.stderr)
 	}
 	// Without a terminal on stdin there's no t command to offer.
 	hint := "No requests yet. Check the whole path with a test event:\n\n" +
-		`  curl -X POST 'https://in.example.invalid/src_stripe' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'` + "\n"
+		`  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'` + "\n"
 	if strings.Count(result.stderr, hint) != 1 {
 		t.Fatalf("stderr = %q, want the test hint once, after Ready", result.stderr)
 	}
 }
 
 func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
-	joins := make(chan []json.RawMessage, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/cli/projects/proj_payments":
-			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
-		case "/cli/projects/proj_payments/sources":
-			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","routes":[{"uid":"rte_stripe","destination":{"uid":"dst_local","path":"/"}}]}]`))
-		case "/cli/websocket":
-			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			var join []json.RawMessage
-			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
-				return
-			}
-			select {
-			case joins <- join:
-			default:
-			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{
-				"status":   "error",
-				"response": map[string]string{"reason": "not_found"},
-			}})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
-		t.Fatal(err)
-	}
-
-	result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", configPath, "listen", "stripe")
+	result, hookspot := runListenAgainst(t, listenStreamSources, "stripe")
 	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
@@ -508,8 +440,8 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 		t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
 	}
 	select {
-	case join := <-joins:
-		if got := string(join[2]) + " " + string(join[3]) + " " + string(join[4]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
+	case join := <-hookspot.joins:
+		if got := string(join[0]) + " " + string(join[1]) + " " + string(join[2]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
 			t.Fatalf("join = %s", got)
 		}
 	default:
@@ -517,41 +449,14 @@ func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
 	}
 }
 
-// runListenAgainst runs listen against a fake server for the Acme | Payments
-// project with the given sources JSON. The channel join is rejected, so a
-// listen that gets past the banner ends right after it.
-func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, string) {
+// runListenAgainst runs listen against a fake Hookspot serving sources, which
+// rejects the channel join, so a listen that gets past the banner ends right
+// after it.
+func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, *fakeHookspot) {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/cli/projects/proj_payments":
-			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
-		case "/cli/projects/proj_payments/sources":
-			_, _ = w.Write([]byte(sources))
-		case "/cli/websocket":
-			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			var join []json.RawMessage
-			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
-				return
-			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{
-				"status":   "error",
-				"response": map[string]string{"reason": "not_found"},
-			}})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
-		t.Fatal(err)
-	}
-	return runCommandProcess(t, "", developmentMetadata(server.URL), append([]string{"--config", configPath, "listen"}, args...)...), server.URL
+	hookspot := startFakeHookspot(t, sources)
+	hookspot.rejectJoins.Store(true)
+	return runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(args...)...), hookspot
 }
 
 func TestListenBannerNamesProjectAndWarnsAboutSources(t *testing.T) {
@@ -592,8 +497,8 @@ func TestListenRequiresASourceWithRoutes(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result, serverURL := runListenAgainst(t, sources, test.args...)
-			want := test.wantStderr + "\nAdd a route in the dashboard: " + serverURL + "/acme/payments/routes/new\n"
+			result, hookspot := runListenAgainst(t, sources, test.args...)
+			want := test.wantStderr + "\nAdd a route in the dashboard: " + hookspot.url + "/acme/payments/routes/new\n"
 			if result.err == nil || result.stdout != "" || result.stderr != want {
 				t.Fatalf("listen = %v, stdout %q, stderr:\n%q\nwant:\n%q", result.err, result.stdout, result.stderr, want)
 			}
@@ -621,44 +526,7 @@ func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 	local := httptest.NewServer(http.NotFoundHandler())
 	defer local.Close()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/cli/projects/proj_payments":
-			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
-		case "/cli/projects/proj_payments/sources":
-			_, _ = w.Write([]byte(`[{"uid":"src_stripe","name":"stripe","active":true,"routes":[{"uid":"rte_stripe","active":true,"destination":{"uid":"dst_local","path":"/"}}]}]`))
-		case "/cli/websocket":
-			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			var join []json.RawMessage
-			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
-				return
-			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
-			for _, attempt := range []string{"att_1", "att_2"} {
-				_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{
-					"attempt_uid": attempt, "request_uid": "req_1", "source_uid": "src_stripe", "method": "POST", "path": "/",
-				}})
-				var response []json.RawMessage
-				if err := conn.ReadJSON(&response); err != nil {
-					return
-				}
-			}
-			// A delivery without correlation fields ends the command after both deliveries were answered.
-			_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{}})
-			_, _, _ = conn.ReadMessage()
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
-		t.Fatal(err)
-	}
+	sources := `[{"uid":"src_stripe","name":"stripe","active":true,"routes":[{"uid":"rte_stripe","active":true,"destination":{"uid":"dst_local","path":"/"}}]}]`
 	hint := local.URL + "/ returned 404. If your webhook route is elsewhere, include it in --forward-to, e.g. --forward-to " + local.URL + "/webhooks\n"
 
 	for _, test := range []struct {
@@ -670,12 +538,16 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 		{name: "print-only", hints: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"--config", configPath, "listen", "stripe"}, test.args...)
-			result := runCommandProcess(t, "", developmentMetadata(server.URL), args...)
+			hookspot := startFakeHookspot(t, sources)
+			root := map[string]string{"request_uid": "req_1", "source_uid": "src_stripe", "method": "POST", "path": "/"}
+			first, second := maps.Clone(root), maps.Clone(root)
+			first["attempt_uid"], second["attempt_uid"] = "att_1", "att_2"
+			hookspot.play(first, second)
+			result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(append([]string{"stripe"}, test.args...)...)...)
 			if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
 				t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 			}
-			if got := strings.Count(result.stderr, hint); got != test.hints {
+			if got := strings.Count(result.stderr, "If your webhook route is elsewhere"); got != test.hints || test.hints == 1 && !strings.Contains(result.stderr, hint) {
 				t.Fatalf("root hints on stderr = %d, want %d:\n%s", got, test.hints, result.stderr)
 			}
 			if strings.Contains(result.stdout, "returned 404") {
@@ -702,9 +574,6 @@ func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 	}
 	if want := []string{"r 1", "", "r 2"}; !reflect.DeepEqual(lines, want) {
 		t.Fatalf("lines run = %q, want %q", lines, want)
-	}
-	if isTerminalReader(strings.NewReader("")) {
-		t.Fatal("plain reader was treated as a terminal")
 	}
 }
 
@@ -830,23 +699,24 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"", "r 1", " r  2 ", "r 9", "r x", "?"} {
+	for _, line := range []string{"r 1", " r  2 ", "r 9", "r x"} {
 		if err := runLineCommand(sess, writer, true, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
 
 	rows := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
-	if len(rows) != 4 {
-		t.Fatalf("stdout = %q, want the request and three replays", stdout.String())
+	if len(rows) != 3 {
+		t.Fatalf("stdout = %q, want the request and two replays", stdout.String())
 	}
 	for i, row := range rows {
 		if !strings.HasPrefix(row, "#"+strconv.Itoa(i+1)+" ") || strings.Contains(row, "↻ #") != (i > 0) {
 			t.Fatalf("row %d = %q", i+1, row)
 		}
 	}
-	help := "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · t test event\n"
-	if want := "#9: no such request\n" + help + help; stderr.String() != want {
+	want := "#9: no such request\n" +
+		"commands: ↵ replay last · r N replay #N · c N cURL · e N fixture · t test event · ? help\n"
+	if stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
 }
@@ -882,7 +752,8 @@ func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
 		"  --data-binary '{\"type\":\"paid\"}'\n" +
 		"exported #1 to " + filepath.Join(dir, "req_1.json") + " and " + filepath.Join(dir, "req_1.body") + " · sensitive headers redacted\n" +
 		"#9: no such request\n" + refused + refused +
-		"commands: c N copy as cURL · e N export fixture · t test event\n"
+		"c N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\n" +
+		"replays need --forward-to\nctrl-c  stop listening\n"
 	if stderr.String() != want || stdout.Len() != 0 {
 		t.Fatalf("stderr:\n%s\nwant:\n%s\nstdout: %q", stderr.String(), want, stdout.String())
 	}
@@ -896,7 +767,12 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer ingest.Close()
-	sources := []api.Source{{UID: "src_stripe", Name: "stripe", URL: ingest.URL + "/in/src_stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
+	routes := []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}
+	// Source names may contain spaces.
+	sources := []api.Source{
+		{UID: "src_stripe", Name: "stripe", URL: ingest.URL + "/in/src_stripe", Routes: routes},
+		{UID: "src_prod", Name: "Stripe  prod", URL: ingest.URL + "/in/src_prod", Routes: routes},
+	}
 	var stdout, stderr bytes.Buffer
 	writer := cards.NewWriter(&stdout, &stderr, cards.Listen{Sources: sourceNamesByUID(sources)}, "")
 	sess := session.New(context.Background(), sources, nil, writer)
@@ -905,16 +781,17 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	}
 	stdout.Reset()
 
-	for _, line := range []string{"", "r 1", "t", "t github", "x"} {
+	for _, line := range []string{"", "r 1", "t", " t Stripe  prod ", "t github", "x"} {
 		if err := runLineCommand(sess, writer, false, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
 	want := "nothing to replay without --forward-to\n" +
 		"nothing to replay without --forward-to\n" +
-		"test event sent to stripe\n" +
+		"test which source? t stripe · t Stripe  prod\n" +
+		"test event sent to Stripe  prod\n" +
 		"github: not a source this run listens to\n" +
-		"commands: c N copy as cURL · e N export fixture · t test event\n"
+		"commands: c N cURL · e N fixture · t test event · ? help\n"
 	if stdout.Len() != 0 || stderr.String() != want {
 		t.Fatalf("stdout %q, stderr %q; want replies %q", stdout.String(), stderr.String(), want)
 	}
@@ -956,49 +833,17 @@ const listenStreamSources = `[
 	{"uid":"src_github","name":"github","url":"https://in.hookspot.test/src_github","active":true,"routes":[{"uid":"rte_github","destination":{"path":"/webhooks/github"}}]}
 ]`
 
-// runListenStream runs listen against a fake Hookspot whose session sends the
-// deliveries in one burst, waits for every response, then sends an invalid
-// delivery, which ends the command.
+// runListenStream runs listen against a fake Hookspot that sends the
+// deliveries in one burst, then an invalid delivery, which ends the command.
 func runListenStream(t *testing.T, deliveries []ws.Delivery, args ...string) commandResult {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/cli/projects/proj_payments":
-			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
-		case "/cli/projects/proj_payments/sources":
-			_, _ = w.Write([]byte(listenStreamSources))
-		case "/cli/websocket":
-			conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				return
-			}
-			defer conn.Close()
-			var join []json.RawMessage
-			if err := conn.ReadJSON(&join); err != nil || len(join) != 5 {
-				return
-			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
-			for _, delivery := range deliveries {
-				_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", delivery})
-			}
-			for range deliveries {
-				var response []json.RawMessage
-				if err := conn.ReadJSON(&response); err != nil {
-					return
-				}
-			}
-			_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{}})
-			_, _, _ = conn.ReadMessage()
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	if err := writeCommandFixture(configPath, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
-		t.Fatal(err)
+	hookspot := startFakeHookspot(t, listenStreamSources)
+	payloads := make([]any, len(deliveries))
+	for i, delivery := range deliveries {
+		payloads[i] = delivery
 	}
-	result := runCommandProcess(t, "", developmentMetadata(server.URL), append([]string{"--config", configPath, "listen"}, args...)...)
+	hookspot.play(payloads...)
+	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(args...)...)
 	if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
@@ -1048,6 +893,14 @@ func TestListenStream(t *testing.T) {
 		if strings.ContainsRune(result.stdout, '\x1b') {
 			t.Fatalf("piped stream has ANSI codes: %q", result.stdout)
 		}
+		golden.RequireEqual(t, maskStream(result.stdout))
+	})
+	t.Run("limits", func(t *testing.T) {
+		result := runListenStream(t, []ws.Delivery{{
+			AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe",
+			Headers: http.Header{"Content-Type": []string{"application/json"}, "Authorization": []string{"Bearer sk_test_0123456789abcdef"}},
+			Body:    []byte(`{"type":"payment_intent.succeeded","amount":2000}`),
+		}}, "--show-sensitive-headers", "--max-body-lines", "1", "--max-headers", "1", "--max-value-chars", "20")
 		golden.RequireEqual(t, maskStream(result.stdout))
 	})
 	t.Run("forward", func(t *testing.T) {
