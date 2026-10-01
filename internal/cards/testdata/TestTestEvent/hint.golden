@@ -1,0 +1,20 @@
+No requests yet. Check the whole path with a test event:
+
+   t   send a test event to stripe
+
+  or from anywhere:
+  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'
+
+No requests yet. Check the whole path with a test event:
+
+   t stripe         send a test event to stripe
+   t evil\x1b[31m   send a test event to evil\x1b[31m
+
+  or from anywhere:
+  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'  # stripe
+  curl -X POST 'https://in.hookspot.test/it'\''s\n\x1b[2J' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'  # evil\x1b[31m
+
+No requests yet. Check the whole path with a test event:
+
+  curl -X POST 'https://in.hookspot.test/src_stripe' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'  # stripe
+  curl -X POST 'https://in.hookspot.test/it'\''s\n\x1b[2J' -H 'Content-Type: application/json' -d '{"type":"hookspot.test"}'  # evil\x1b[31m

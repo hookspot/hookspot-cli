@@ -39,6 +39,8 @@ type Entry struct {
 	ReplayOf int
 	// Replay compares a replay with the entry it replays; nil for a delivery.
 	Replay *Comparison
+	// Test is set on a delivery of a test event this run sent.
+	Test bool
 }
 
 // forwarded reports whether the entry went to a local target.

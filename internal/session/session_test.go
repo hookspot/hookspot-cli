@@ -177,6 +177,9 @@ func TestInspectModeAnswers200(t *testing.T) {
 	if err := s.Replay(1); !errors.Is(err, ErrNoTarget) {
 		t.Fatalf("Replay in inspect mode = %v, want ErrNoTarget", err)
 	}
+	if err := s.ReplayLast(); !errors.Is(err, ErrNoTarget) {
+		t.Fatalf("ReplayLast in inspect mode = %v, want ErrNoTarget", err)
+	}
 }
 
 func TestReplaysAreNumberedEntriesOfTheirOriginal(t *testing.T) {

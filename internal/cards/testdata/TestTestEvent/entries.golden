@@ -1,0 +1,38 @@
+#1   POST  stripe   /api/webhooks  hookspot.t…   test   200   12ms  12:34:56.789
+✓ path works: hookspot → this terminal → http://localhost:3000/api/webhooks
+
+╭─ #2 stripe · POST /api/webhooks ──────────────────────  test   12:34:56.789 ─╮
+│  500 Internal Server Error  3ms  → http://localhost:3000/api/webhooks        │
+│ req_01JFULLREQUESTUID                                                        │
+├─ request · application/json · 57 B ──────────────────────────────────────────┤
+│ {                                                                            │
+│   "type": "hookspot.test",                                                   │
+│   "sent_at": "2026-07-12T12:34:56Z"                                          │
+│ }                                                                            │
+├─ response · text/plain · 4 B ────────────────────────────────────────────────┤
+│ boom                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+✓ path works: hookspot → this terminal → http://localhost:3000/api/webhooks
+
+╭─ #3 stripe · POST /api/webhooks ──────────────────────  test   12:34:56.789 ─╮
+│  ✗ connection refused  1ms  → http://localhost:3000/api/webhooks             │
+│ req_01JFULLREQUESTUID                                                        │
+│                                                                              │
+│ http://localhost:3000/api/webhooks is not reachable — is your server         │
+│ running?                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+✓ path works: hookspot → this terminal
+
+╭─ #4 stripe · POST /api/webhooks ──────────────────────  test   12:34:56.789 ─╮
+│ query  page=1&x=2                                      req_01JFULLREQUESTUID │
+├─ headers · 3 ────────────────────────────────────────────────────────────────┤
+│ authorization      hidden  --show-sensitive-headers to reveal                │
+│ content-type      application/json; charset=utf-8                            │
+│ stripe-signature  t=1690,v1=5f8e                                             │
+├─ body · application/json · 57 B ─────────────────────────────────────────────┤
+│ {                                                                            │
+│   "type": "hookspot.test",                                                   │
+│   "sent_at": "2026-07-12T12:34:56Z"                                          │
+│ }                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+✓ path works: hookspot → this terminal

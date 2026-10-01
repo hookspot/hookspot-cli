@@ -303,6 +303,93 @@ func TestStreamStatusLine(t *testing.T) {
 	}
 }
 
+// ingest is a fake Hookspot ingest endpoint: it answers 202, or 404 under
+// /missing, and hands each accepted test event's id to deliver.
+func ingest(t *testing.T, deliver func(id string)) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/missing" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		if deliver != nil {
+			deliver(r.Header.Get("X-Hookspot-Test"))
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+func TestStreamTestEvent(t *testing.T) {
+	t.Run("hint, then a test event through Hookspot", func(t *testing.T) {
+		keys, typeKeys := keyboard(t)
+		h := newHarness(t, forwarder{}, keys)
+		delivered := make(chan error, 1)
+		base := ingest(t, func(id string) {
+			d := delivery(1, "/hooks")
+			d.Headers = http.Header{"x-hookspot-test": {id}}
+			// Hookspot delivers it over the websocket, after answering the POST.
+			go func() {
+				_, err := h.session.Handle(d)
+				delivered <- err
+			}()
+		})
+		public := []api.Source{{UID: "src_stripe", Name: "stripe", URL: base + "/in/src_stripe", Routes: sources[0].Routes}}
+		h.session = session.New(h.ctx, public, forwarder{}, h.program.StreamSink(cards.Listen{Sources: map[string]string{"src_stripe": "stripe"}}, ""))
+		stream := h.stream()
+		stream.Tester = h.session
+		h.run(stream)
+
+		h.emit(t, session.Ready{})
+		teatest.WaitFor(t, h.out, func(out []byte) bool {
+			plain := ansi.Strip(string(out))
+			return strings.Contains(plain, "No requests yet.") && strings.Contains(plain, " t   send a test event to stripe") &&
+				strings.Contains(plain, "curl -X POST '"+base+"/in/src_stripe'")
+		})
+		typeKeys("t\r")
+		teatest.WaitFor(t, h.out, func(out []byte) bool {
+			plain := ansi.Strip(string(out))
+			return strings.Contains(plain, " test ") && strings.Contains(plain, "✓ path works: hookspot → this terminal → http://localhost:3000/hooks")
+		})
+		if err := <-delivered; err != nil {
+			t.Fatal(err)
+		}
+
+		h.program.Quit()
+		if r := h.wait(t); r.err != nil {
+			t.Fatal(r.err)
+		}
+	})
+
+	t.Run("replies", func(t *testing.T) {
+		base := ingest(t, nil)
+		stripe := api.Source{Name: "stripe", URL: base + "/in/src_stripe"}
+		github := api.Source{Name: "github", URL: base + "/missing"}
+		for _, test := range []struct {
+			name    string
+			sources []api.Source
+			line    string
+			want    string
+		}{
+			{name: "the only source", sources: []api.Source{stripe}, line: "t", want: "test event sent to stripe"},
+			{name: "a named source", sources: []api.Source{stripe, github}, line: " t  stripe ", want: "test event sent to stripe"},
+			{name: "several sources", sources: []api.Source{stripe, github}, line: "t", want: "test which source? t stripe · t github"},
+			{name: "not listened to", sources: []api.Source{stripe}, line: "t shopify\x1b", want: `shopify\x1b: not a source this run listens to`},
+			{name: "Hookspot refuses", sources: []api.Source{github}, line: "t", want: "test event to github: Hookspot answered 404 Not Found"},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				sess := session.New(context.Background(), test.sources, nil, discard{})
+				model := tea.Model(Stream{Replayer: sess, Tester: sess, Project: "Acme | Payments", Prompt: true})
+				model = typeLine(model, test.line)
+				if got := model.(Stream).reply; got != test.want {
+					t.Errorf("reply = %q, want %q", got, test.want)
+				}
+			})
+		}
+	})
+}
+
 // discard is a sink for sessions run without a program.
 type discard struct{}
 
@@ -349,12 +436,12 @@ func TestStreamCommands(t *testing.T) {
 		{name: "replay a number", replay: forwarding, line: " r  2 ", replays: true},
 		{name: "evicted", replay: forwarding, line: "r 1", want: "#1: request dropped from history"},
 		{name: "missing", replay: forwarding, line: "r 9", want: "#9: no such request"},
-		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · ? help"},
-		{name: "help", replay: forwarding, line: "?", want: "↵       replay the last request\nr N     replay request #N\nc N     copy request #N as cURL\ne N     export request #N as a fixture\nctrl-c  stop listening"},
+		{name: "typo", replay: forwarding, line: "r x", want: "commands: ↵ replay last · r N replay #N · c N copy as cURL · e N export fixture · t test event · ? help"},
+		{name: "help", replay: forwarding, line: "?", want: "↵       replay the last request\nr N     replay request #N\nc N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\nctrl-c  stop listening"},
 		{name: "inspect replay last", replay: inspecting, line: "", want: "nothing to replay without --forward-to"},
 		{name: "inspect replay", replay: inspecting, line: "r 1", want: "nothing to replay without --forward-to"},
-		{name: "inspect typo", replay: inspecting, line: "c", want: "commands: c N copy as cURL · e N export fixture · ? help"},
-		{name: "inspect help", replay: inspecting, line: "?", want: "c N     copy request #N as cURL\ne N     export request #N as a fixture\nreplays need --forward-to\nctrl-c  stop listening"},
+		{name: "inspect typo", replay: inspecting, line: "c", want: "commands: c N copy as cURL · e N export fixture · t test event · ? help"},
+		{name: "inspect help", replay: inspecting, line: "?", want: "c N     copy request #N as cURL\ne N     export request #N as a fixture\nt NAME  send a test event to source NAME\nreplays need --forward-to\nctrl-c  stop listening"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

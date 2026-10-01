@@ -147,12 +147,13 @@ var listenCmd = &cobra.Command{
 			}
 			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
 			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Replayer: sess, Exporter: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
+			stream := tui.Stream{Replayer: sess, Exporter: sess, Tester: sess, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
 			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
 
 		sess := session.New(listenContext, sources, local, writer)
 		commandsEnabled := isTerminalReader(cmd.InOrStdin())
+		writer.Commands = commandsEnabled
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {
 			hints = append(lineCommandHints(forwarder != nil), hints...)
@@ -433,7 +434,7 @@ func runningInContainer() bool {
 // lineCommandHints name the stream's line commands; without --forward-to
 // nothing replays.
 func lineCommandHints(forwarding bool) []string {
-	hints := []string{"c N copy as cURL", "e N export fixture"}
+	hints := []string{"c N copy as cURL", "e N export fixture", "t test event"}
 	if forwarding {
 		hints = append([]string{"↵ replay last", "r N replay #N"}, hints...)
 	}
@@ -442,7 +443,8 @@ func lineCommandHints(forwarding bool) []string {
 
 // runLineCommand runs one line typed into the stream: ↵ replays the last
 // request, r N replays #N, c N prints #N as a cURL command, e N exports it as
-// a fixture, and anything else gets the command list.
+// a fixture, t [source] sends a test event, and anything else gets the
+// command list.
 func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
 	fields := strings.Fields(line)
 	if len(fields) == 0 {
@@ -467,6 +469,14 @@ func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool
 				return writer.Reply(cards.Exported(number, fixture))
 			}
 		}
+	}
+	if len(fields) <= 2 && fields[0] == "t" {
+		// A test event that fails to send leaves listening as it was.
+		source, err := sess.SendTest(strings.Join(fields[1:], " "))
+		if err != nil {
+			return writer.Reply(err.Error())
+		}
+		return writer.Reply("test event sent to " + source)
 	}
 	return writer.Reply("commands: " + strings.Join(lineCommandHints(forwarding), " · "))
 }
