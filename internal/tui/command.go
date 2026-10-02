@@ -8,28 +8,41 @@ import (
 // Command is a line typed into the stream: at the › prompt, or into a plain
 // stream's terminal.
 type Command struct {
-	// Key is "" for an empty line, which replays the last request, or one of
-	// "r", "c", "e", "t" and "?".
-	Key string
+	Key CommandKey
 	// N is the request r, c and e act on.
 	N int
 	// Source is the source t tests; its name may contain spaces.
 	Source string
 }
 
+// CommandKey names a command by the key it's typed with.
+type CommandKey string
+
+const (
+	// ReplayLastKey is an empty line.
+	ReplayLastKey CommandKey = ""
+	ReplayKey     CommandKey = "r"
+	CurlKey       CommandKey = "c"
+	ExportKey     CommandKey = "e"
+	TestKey       CommandKey = "t"
+	HelpKey       CommandKey = "?"
+)
+
 // ParseCommand reads a typed line; ok is false when it isn't a command.
 func ParseCommand(line string) (command Command, ok bool) {
 	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return Command{Key: ReplayLastKey}, true
+	}
+	key := CommandKey(fields[0])
 	switch {
-	case len(fields) == 0:
-		return Command{}, true
-	case fields[0] == "t":
-		return Command{Key: "t", Source: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "t"))}, true
-	case len(fields) == 1 && fields[0] == "?":
-		return Command{Key: "?"}, true
-	case len(fields) == 2 && (fields[0] == "r" || fields[0] == "c" || fields[0] == "e"):
+	case key == TestKey:
+		return Command{Key: TestKey, Source: strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), string(TestKey)))}, true
+	case len(fields) == 1 && key == HelpKey:
+		return Command{Key: HelpKey}, true
+	case len(fields) == 2 && (key == ReplayKey || key == CurlKey || key == ExportKey):
 		n, err := strconv.Atoi(fields[1])
-		return Command{Key: fields[0], N: n}, err == nil
+		return Command{Key: key, N: n}, err == nil
 	}
 	return Command{}, false
 }
@@ -37,18 +50,34 @@ func ParseCommand(line string) (command Command, ok bool) {
 // QuitHint names the key that stops listening.
 const QuitHint = "ctrl-c quit"
 
+var commandHints = map[CommandKey]string{
+	ReplayLastKey: "↵ replay last",
+	ReplayKey:     "r N replay #N",
+	CurlKey:       "c N cURL",
+	ExportKey:     "e N fixture",
+	TestKey:       "t test event",
+	HelpKey:       "? help",
+}
+
+// hints name commands in order; without --forward-to nothing replays.
+func hints(forwarding bool, commands ...CommandKey) []string {
+	var named []string
+	for _, command := range commands {
+		if forwarding || (command != ReplayLastKey && command != ReplayKey) {
+			named = append(named, commandHints[command])
+		}
+	}
+	return named
+}
+
 // CommandHints name the commands; without --forward-to nothing replays.
 func CommandHints(forwarding bool) []string {
-	hints := []string{"c N cURL", "e N fixture", "t test event"}
-	if forwarding {
-		return append([]string{"↵ replay last", "r N replay #N"}, hints...)
-	}
-	return hints
+	return hints(forwarding, ReplayLastKey, ReplayKey, CurlKey, ExportKey, TestKey)
 }
 
 // CommandUsage answers a line that isn't a command.
 func CommandUsage(forwarding bool) string {
-	return "commands: " + strings.Join(append(CommandHints(forwarding), "? help"), " · ")
+	return "commands: " + strings.Join(append(CommandHints(forwarding), commandHints[HelpKey]), " · ")
 }
 
 // CommandHelp spells out every command.

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -21,11 +22,18 @@ import (
 const (
 	// splitWidth is the narrowest screen that puts the detail beside the
 	// list; narrower ones stack them.
-	splitWidth = 140
-	listWidth  = 72
+	splitWidth     = 140
+	splitListWidth = 72
 	// minPath is the path column's width below which the list drops its time
 	// column, then its method column.
 	minPath = 12
+	// maxSourceWidth caps the source columns, so long names leave room for
+	// paths and URLs.
+	maxSourceWidth = 12
+	// panelFrame is the columns a panel's borders and padding take.
+	panelFrame = 4
+	// markerWidth is the columns of a row's "› " selection marker.
+	markerWidth = 2
 )
 
 var (
@@ -56,9 +64,11 @@ type Fullscreen struct {
 	// and fixtures.
 	ShowSensitiveHeaders bool
 
-	// now and toastFor are time.Now and 4s unless a test fixes them.
-	now      func() time.Time
-	toastFor time.Duration
+	// now, toastFor and dialEvery are time.Now, 4s and 1s unless a test sets
+	// them.
+	now       func() time.Time
+	toastFor  time.Duration
+	dialEvery time.Duration
 
 	connection
 	width, height int
@@ -75,11 +85,8 @@ type Fullscreen struct {
 	offset int
 	tab    tab
 	scroll detailScroll
-	// filter narrows the list. wait is w's: it dials the target every
-	// dialEvery, 1s unless a test sets it, until it answers, then replays.
-	filter    filter
-	wait      wait
-	dialEvery time.Duration
+	filter filter
+	wait   wait
 	// notices are the source warnings, shown until a request arrives.
 	notices []string
 	hint    *session.TestHint
@@ -156,7 +163,7 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		}
 	case tea.PasteMsg:
 		if m.filter.editing {
-			m.filter.input += pasted(msg.Content)
+			m.filter.input = edited(m.filter.input, msg)
 		}
 	case tea.KeyPressMsg:
 		if m.filter.editing {
@@ -193,7 +200,7 @@ func (m Fullscreen) record(r session.Recorded) (Fullscreen, tea.Cmd) {
 		m.routes[r.Entry.RouteUID] = r.Route
 	}
 	if r.Entry.ReplayOf != 0 {
-		return m.show(fmt.Sprintf("replayed #%d as #%d", r.Entry.ReplayOf, r.Entry.Number))
+		return m.show("replayed #" + strconv.Itoa(r.Entry.ReplayOf) + " as #" + strconv.Itoa(r.Entry.Number))
 	}
 	return m, nil
 }
@@ -202,17 +209,18 @@ func (m Fullscreen) record(r session.Recorded) (Fullscreen, tea.Cmd) {
 func (m Fullscreen) show(text string) (Fullscreen, tea.Cmd) {
 	m.toastID++
 	m.toast = text
-	id, duration := m.toastID, m.toastFor
-	if duration == 0 {
-		duration = 4 * time.Second
-	}
-	return m, tea.Tick(duration, func(time.Time) tea.Msg { return toastExpiredMsg(id) })
+	id := m.toastID
+	return m, tea.Tick(m.toastDuration(), func(time.Time) tea.Msg { return toastExpiredMsg(id) })
+}
+
+func (m Fullscreen) toastDuration() time.Duration {
+	return cmp.Or(m.toastFor, 4*time.Second)
 }
 
 // keys are the requests view's keys; up, left and pageUp name their pairs in
 // help.
 var keys = struct {
-	up, down, left, right, pageUp, pageDown, follow, replay, copy, export, test, help, quit key.Binding
+	up, down, left, right, pageUp, pageDown, follow, replay, wait, copy, export, test, filter, esc, sources, help, quit key.Binding
 }{
 	up:       key.NewBinding(key.WithKeys("up"), key.WithHelp("↑↓", "select")),
 	down:     key.NewBinding(key.WithKeys("down")),
@@ -222,9 +230,13 @@ var keys = struct {
 	pageDown: key.NewBinding(key.WithKeys("pgdown")),
 	follow:   key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
 	replay:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "replay")),
+	wait:     key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wait, then replay")),
 	copy:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "curl")),
 	export:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
 	test:     key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "test")),
+	filter:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
+	esc:      key.NewBinding(key.WithKeys("esc")),
+	sources:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sources")),
 	help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	quit:     key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 }
@@ -250,7 +262,7 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 	case key.Matches(msg, keys.follow):
 		m.paused = false
 	case key.Matches(msg, keys.replay):
-		if m.Target == "" {
+		if !m.forwarding() {
 			return m.show(session.ErrNoTarget.Error())
 		}
 		if i >= 0 {
@@ -270,17 +282,36 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 	case key.Matches(msg, keys.help):
 		m.help = !m.help
 	case key.Matches(msg, keys.quit):
-		return m, Stop
-	case key.Matches(msg, filterKey):
+		return m, stopListening
+	case key.Matches(msg, keys.filter):
 		m.filter.editing, m.filter.input = true, m.filter.text
-	case key.Matches(msg, waitKey):
+	case key.Matches(msg, keys.wait):
 		return m.startWait(i)
-	case key.Matches(msg, escKey):
+	case key.Matches(msg, keys.esc):
 		m = m.escape()
-	case key.Matches(msg, sourcesKeys.open):
+	case key.Matches(msg, keys.sources):
 		m.sources.open = true
 	}
 	return m, nil
+}
+
+// escape stops w's wait, else dismisses the alerts, else clears the filter.
+func (m Fullscreen) escape() Fullscreen {
+	switch {
+	case m.waiting():
+		m.wait = wait{id: m.wait.id}
+	case m.reconnected != nil || m.notFound != nil:
+		m.reconnected, m.notFound = nil, nil
+	default:
+		m.filter = filter{}
+	}
+	return m
+}
+
+// forwarding reports whether listen runs with --forward-to; in inspect mode
+// nothing replays.
+func (m Fullscreen) forwarding() bool {
+	return m.Target != ""
 }
 
 // move selects the request delta rows away and stops following the newest.
@@ -344,8 +375,8 @@ func (m Fullscreen) layout() layout {
 	// last.
 	l.panes = max(0, height-2-len(m.alertLines(width))-len(m.filterLines(width))-len(m.toastLines(width))-len(m.footer(width)))
 	if l.split {
-		l.listWidth, l.listHeight = listWidth, l.panes
-		l.detailWidth, l.detailHeight = width-listWidth-1, l.panes
+		l.listWidth, l.listHeight = splitListWidth, l.panes
+		l.detailWidth, l.detailHeight = width-splitListWidth-1, l.panes
 	} else {
 		l.listWidth, l.listHeight = width, min(l.panes, max(6, l.panes*2/5))
 		l.detailWidth, l.detailHeight = width, l.panes-l.listHeight
@@ -358,7 +389,7 @@ func (m Fullscreen) layout() layout {
 // size is the terminal's, or the width rule's fallback until it's known.
 func (m Fullscreen) size() (int, int) {
 	if m.width == 0 {
-		return cards.DefaultWidth, 24
+		return cards.DefaultWidth, defaultHeight
 	}
 	return m.width, m.height
 }
@@ -388,6 +419,11 @@ func (m Fullscreen) View() tea.View {
 	}
 	lines = append(lines, m.toastLines(width)...)
 	lines = append(lines, m.footer(width)...)
+	return fullView(lines, width, height)
+}
+
+// fullView puts lines on the alt screen, cut to fit it.
+func fullView(lines []string, width, height int) tea.View {
 	lines = lines[:min(len(lines), height)]
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -400,7 +436,7 @@ func (m Fullscreen) View() tea.View {
 // header is the status line with the target and the clock at its right end.
 func (m Fullscreen) header(width int) string {
 	target := "→ terminal only"
-	if m.Target != "" {
+	if m.forwarding() {
 		target = "→ " + cards.Line(m.Target)
 	}
 	return cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: []string{target, m.clock().Format(time.TimeOnly)}}.Render(width)
@@ -418,7 +454,7 @@ func (m Fullscreen) clock() time.Time {
 func (m Fullscreen) sourceLine() string {
 	var sources []string
 	for i, route := range m.Routes {
-		if i == 0 || m.Routes[i-1].SourceUID != route.SourceUID {
+		if firstOfSource(m.Routes, i) {
 			sources = append(sources, cards.SourceStyle(route.SourceUID).Render("●")+" "+cards.Line(route.Source))
 		}
 	}
@@ -431,6 +467,12 @@ func (m Fullscreen) sourceLine() string {
 		line += faintStyle.Render("   following newest")
 	}
 	return line
+}
+
+// firstOfSource reports whether routes[i] is its source's first; a source's
+// routes are adjacent.
+func firstOfSource(routes []cards.BannerRoute, i int) bool {
+	return i == 0 || routes[i-1].SourceUID != routes[i].SourceUID
 }
 
 // empty shows the routes while no request has arrived, then the source
@@ -488,7 +530,7 @@ var helpStyles = help.Styles{
 
 // footer lists the keys on one line, or all of them in columns after ?.
 func (m Fullscreen) footer(width int) []string {
-	return helpView(keyMap{forwarding: m.Target != ""}, m.help, width)
+	return helpView(keyMap{forwarding: m.forwarding()}, m.help, width)
 }
 
 // helpView lists the keys on one line, or with all set, all of them in
@@ -512,18 +554,18 @@ func (k keyMap) ShortHelp() []key.Binding {
 	}
 	// bubbles/help cuts the line where it runs out of room, so help and quit
 	// come first.
-	return slices.Concat([]key.Binding{keys.help, keys.quit, keys.up, keys.left, keys.follow, filterKey}, actions, []key.Binding{sourcesKeys.open})
+	return slices.Concat([]key.Binding{keys.help, keys.quit, keys.up, keys.left, keys.follow, keys.filter}, actions, []key.Binding{keys.sources})
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	actions := []key.Binding{described(keys.copy, "copy as cURL"), described(keys.export, "export a fixture"), described(keys.test, "send a test event")}
 	if k.forwarding {
-		actions = append([]key.Binding{described(keys.replay, "replay locally"), waitKey}, actions...)
+		actions = append([]key.Binding{described(keys.replay, "replay locally"), keys.wait}, actions...)
 	}
 	return [][]key.Binding{
-		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), keys.pageUp, described(keys.follow, "follow the newest"), described(filterKey, "filter the list")},
+		{described(keys.up, "select a request"), described(keys.left, "switch tabs"), keys.pageUp, described(keys.follow, "follow the newest"), described(keys.filter, "filter the list")},
 		actions,
-		{described(sourcesKeys.open, "sources and routes"), described(keys.help, "close help"), described(keys.quit, "stop listening")},
+		{described(keys.sources, "sources and routes"), described(keys.help, "close help"), described(keys.quit, "stop listening")},
 	}
 }
 
@@ -536,26 +578,25 @@ func described(b key.Binding, description string) key.Binding {
 // list frames the requests, oldest first, from the offset row. A › marks the
 // selected one, which also shows in reverse.
 func (m Fullscreen) list(width, height int) []string {
-	// The marker and a space come first.
-	inner := max(0, width-6)
+	inner := max(0, width-panelFrame-markerWidth)
 	columns := m.columns(inner)
-	titles := make([]string, len(columns))
+	titles := make([]cell, len(columns))
 	for i, c := range columns {
-		titles[i] = c.title
+		titles[i] = cell{text: c.title}
 	}
-	lines := []string{"  " + faintStyle.Render(render(columns, titles, nil))}
+	lines := []string{"  " + faintStyle.Render(render(columns, titles, true))}
 	selected := m.selectedIndex()
 	shown := m.shown()
 	start := min(m.offset, len(shown))
 	for _, i := range shown[start:min(len(shown), start+max(0, height-3))] {
-		texts, styles := make([]string, len(columns)), make([]lipgloss.Style, len(columns))
+		cells := make([]cell, len(columns))
 		for j, c := range columns {
-			texts[j], styles[j] = c.value(m.entries[i])
+			cells[j] = c.value(m.entries[i])
 		}
 		if i == selected {
-			lines = append(lines, "› "+selectedStyle.Render(pad(render(columns, texts, nil), inner)))
+			lines = append(lines, "› "+selectedStyle.Render(cards.Pad(render(columns, cells, true), inner)))
 		} else {
-			lines = append(lines, "  "+render(columns, texts, styles))
+			lines = append(lines, "  "+render(columns, cells, false))
 		}
 	}
 	if len(shown) == 0 {
@@ -565,12 +606,17 @@ func (m Fullscreen) list(width, height int) []string {
 	return panel(title, count, width, height, lines)
 }
 
-// column is one of the request list's columns.
 type column struct {
 	title string
 	width int
+	// right lines up counts and latencies.
 	right bool
-	value func(session.Entry) (string, lipgloss.Style)
+	value func(session.Entry) cell
+}
+
+type cell struct {
+	text  string
+	style lipgloss.Style
 }
 
 // columns fit the list into width: the path gets the room left, and the time
@@ -582,26 +628,26 @@ func (m Fullscreen) columns(width int) []column {
 	}
 	source := len("SOURCE")
 	for _, name := range m.Listen.Sources {
-		source = min(12, max(source, lipgloss.Width(cards.Line(name))))
+		source = min(maxSourceWidth, max(source, lipgloss.Width(cards.Line(name))))
 	}
 	columns := []column{
-		{title: "#", width: number, right: true, value: func(e session.Entry) (string, lipgloss.Style) {
-			return strconv.Itoa(e.Number), faintStyle
+		{title: "#", width: number, right: true, value: func(e session.Entry) cell {
+			return cell{text: strconv.Itoa(e.Number), style: faintStyle}
 		}},
-		{title: "TIME", width: 8, value: func(e session.Entry) (string, lipgloss.Style) {
-			return e.Received.Format(time.TimeOnly), faintStyle
+		{title: "TIME", width: 8, value: func(e session.Entry) cell {
+			return cell{text: e.Received.Format(time.TimeOnly), style: faintStyle}
 		}},
-		{title: "SOURCE", width: source, value: func(e session.Entry) (string, lipgloss.Style) {
-			return cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)), cards.SourceStyle(e.Delivery.SourceUID)
+		{title: "SOURCE", width: source, value: func(e session.Entry) cell {
+			return cell{text: cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)), style: cards.SourceStyle(e.Delivery.SourceUID)}
 		}},
-		{title: "METHOD", width: 6, value: func(e session.Entry) (string, lipgloss.Style) {
-			return cards.Line(session.Method(e.Delivery)), lipgloss.Style{}
+		{title: "METHOD", width: 6, value: func(e session.Entry) cell {
+			return cell{text: cards.Line(session.Method(e.Delivery))}
 		}},
-		{title: "PATH", value: func(e session.Entry) (string, lipgloss.Style) {
-			return cards.Line(e.Delivery.Path), lipgloss.Style{}
+		{title: "PATH", value: func(e session.Entry) cell {
+			return cell{text: cards.Line(e.Delivery.Path)}
 		}},
 	}
-	if m.Target != "" {
+	if m.forwarding() {
 		columns = append(columns,
 			column{title: "STATUS", width: 7, value: outcome},
 			column{title: "LATENCY", width: 7, right: true, value: latency},
@@ -622,68 +668,69 @@ func (m Fullscreen) columns(width int) []column {
 	return columns
 }
 
-// render lines up texts in columns, styling each by styles when given.
-func render(columns []column, texts []string, styles []lipgloss.Style) string {
-	cells := make([]string, len(columns))
+// render lines up cells in columns. Titles and the selected row, which shows
+// in reverse, are plain: their cells' styles are left out.
+func render(columns []column, cells []cell, plain bool) string {
+	texts := make([]string, len(columns))
 	for i, c := range columns {
-		text := ansi.Truncate(texts[i], c.width, "…")
+		text := ansi.Truncate(cells[i].text, c.width, "…")
 		gap := strings.Repeat(" ", max(0, c.width-lipgloss.Width(text)))
 		if c.right {
 			text = gap + text
 		} else {
 			text += gap
 		}
-		if styles != nil {
-			text = styles[i].Render(text)
+		if !plain {
+			text = cells[i].style.Render(text)
 		}
-		cells[i] = text
+		texts[i] = text
 	}
-	return strings.Join(cells, "  ")
+	return strings.Join(texts, "  ")
 }
 
 // outcome is a forwarded request's status, or its transport failure in a
 // word.
-func outcome(e session.Entry) (string, lipgloss.Style) {
+func outcome(e session.Entry) cell {
 	if e.Failure == nil {
-		return strconv.Itoa(e.Response.Status), lipgloss.NewStyle().Foreground(cards.StatusColor(e.Response.Status))
+		return cell{text: strconv.Itoa(e.Response.Status), style: lipgloss.NewStyle().Foreground(cards.StatusColor(e.Response.Status))}
 	}
+	text := "failed"
 	switch e.Failure.Kind {
 	case proxy.TransportConnectionRefused:
-		return "refused", errorStyle
+		text = "refused"
 	case proxy.TransportTimeout:
-		return "timeout", errorStyle
+		text = "timeout"
 	case proxy.TransportDNS:
-		return "DNS", errorStyle
+		text = "DNS"
 	case proxy.TransportTLS:
-		return "TLS", errorStyle
-	default:
-		return "failed", errorStyle
+		text = "TLS"
 	}
+	return cell{text: text, style: errorStyle}
 }
 
 // latency is how long the target took, when that's known.
-func latency(e session.Entry) (string, lipgloss.Style) {
+func latency(e session.Entry) cell {
 	if !e.Timed() {
-		return "—", faintStyle
+		return cell{text: "—", style: faintStyle}
 	}
-	return cards.FormatLatency(e.Latency), faintStyle
+	return cell{text: cards.FormatLatency(e.Latency), style: faintStyle}
 }
 
-func mark(e session.Entry) (string, lipgloss.Style) {
+func mark(e session.Entry) cell {
 	switch {
 	case e.ReplayOf != 0:
-		return "↻", markStyle
+		return cell{text: "↻", style: markStyle}
 	case e.Test:
-		return "test", faintStyle
+		return cell{text: "test", style: faintStyle}
 	}
-	return "", lipgloss.Style{}
+	return cell{}
 }
 
 // panel frames lines in a box width × height, with title and label in its
 // top border. Lines are cut to fit; those past its height give way to a count
 // of the ones left out.
 func panel(title, label string, width, height int, lines []string) []string {
-	inner := width - 4
+	inner := width - panelFrame
 	if height < 2 || inner < 1 {
 		return make([]string, max(0, height))
 	}
@@ -710,14 +757,9 @@ func panel(title, label string, width, height int, lines []string) []string {
 		if i < len(lines) {
 			line = ansi.Truncate(lines[i], inner, "…")
 		}
-		framed = append(framed, side+" "+pad(line, inner)+" "+side)
+		framed = append(framed, side+" "+cards.Pad(line, inner)+" "+side)
 	}
 	return append(framed, faintStyle.Render("╰"+strings.Repeat("─", width-2)+"╯"))
-}
-
-// pad fills s, which may be styled, to width columns.
-func pad(s string, width int) string {
-	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
 }
 
 // wrap breaks prose lines at width.

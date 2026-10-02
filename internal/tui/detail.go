@@ -9,15 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
-	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"hookspot/internal/cards"
 	"hookspot/internal/session"
 )
 
-// tab is one of the detail's tabs.
 type tab int
 
 const (
@@ -49,7 +46,7 @@ func (m Fullscreen) detail(width, height int) []string {
 		content = append(content[:rows-1:rows-1], more)
 	}
 	lines := append(m.tabs(), content...)
-	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + cards.SourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.Listen.SourceName(e.Delivery.SourceUID))) +
+	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + m.Listen.Source(e.Delivery.SourceUID) +
 		faintStyle.Render(" · ") + cards.Line(session.Method(e.Delivery)) + " " + cards.Line(e.Delivery.Path)
 	label := ""
 	if e.Delivery.RequestUID != "" {
@@ -60,7 +57,7 @@ func (m Fullscreen) detail(width, height int) []string {
 
 // tabLines are the open tab's lines for e, in a detail width wide.
 func (m Fullscreen) tabLines(e session.Entry, width int) []string {
-	inner := max(1, width-4)
+	inner := max(1, width-panelFrame)
 	switch m.tab {
 	case requestTab:
 		return m.request(e)
@@ -140,15 +137,15 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 	case e.Target == "":
 		lines = wrap(width, []string{faintStyle.Render("printed only: without --forward-to nothing is forwarded")})
 	default:
-		lines = []string{outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency)+"  → "+cards.Line(e.Target))}
+		lines = []string{outcomeWithLatency(e) + faintStyle.Render("  → "+cards.Line(e.Target))}
 	}
 	if e.Failed() {
 		lines = append(lines, m.failure(e, width)...)
 	}
 	lines = append(lines, "",
-		field("source", cards.SourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)))),
+		field("source", m.Listen.Source(e.Delivery.SourceUID)),
 		field("route", m.route(e.RouteUID)),
-		field("received", e.Received.Format(time.TimeOnly+".000")),
+		field("received", cards.Timestamp(e)),
 	)
 	if e.Failed() {
 		lines = append(lines, field("target", m.targetState()), field("last ok", m.lastSuccess()))
@@ -184,7 +181,7 @@ func (m Fullscreen) request(e session.Entry) []string {
 	if d.Query != "" {
 		target += "?" + cards.Line(d.Query)
 	}
-	lines := []string{boldStyle.Render(cards.Line(session.Method(e.Delivery))) + " " + target}
+	lines := []string{boldStyle.Render(cards.Line(session.Method(d))) + " " + target}
 	return append(lines, m.message(d.Headers, d.Body)...)
 }
 
@@ -194,11 +191,11 @@ func (m Fullscreen) response(e session.Entry, width int) []string {
 	case e.Target == "":
 		return wrap(width, []string{faintStyle.Render("not forwarded: listen with --forward-to to send requests to a local server")})
 	case e.Failure != nil:
-		lines := []string{outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency)), ""}
+		lines := []string{outcomeWithLatency(e), ""}
 		return append(lines, wrap(width, m.Listen.TransportHints(e.Target, e.Failure))...)
 	}
 	r := e.Response
-	lines := []string{outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))}
+	lines := []string{outcomeWithLatency(e)}
 	if hint := cards.RedirectHint(r); hint != nil {
 		lines = append(append(lines, ""), wrap(width, hint)...)
 	}
@@ -220,7 +217,7 @@ func (m Fullscreen) message(headers http.Header, body []byte) []string {
 // latencies so far.
 func (m Fullscreen) timing(e session.Entry) []string {
 	latency := cards.FormatLatency(e.Latency)
-	lines := []string{field("received", e.Received.Format(time.TimeOnly+".000"))}
+	lines := []string{field("received", cards.Timestamp(e))}
 	switch {
 	case e.Target == "":
 		lines = append(lines, field("forwarded", faintStyle.Render("no, without --forward-to")))
@@ -233,14 +230,19 @@ func (m Fullscreen) timing(e session.Entry) []string {
 		lines = append(lines, field("replayed", "#"+strconv.Itoa(c.Original)+" took "+cards.FormatLatency(c.Latency)))
 	}
 	if stats := m.routes[e.RouteUID]; e.RouteUID != "" && stats.Max > 0 {
-		lines = append(lines, field("route", "p50 "+cards.FormatLatency(stats.P50)+" · p95 "+cards.FormatLatency(stats.P95)+" · max "+cards.FormatLatency(stats.Max)))
+		lines = append(lines, field("route", latencies(stats)))
 	}
 	return lines
 }
 
-// field is a labelled line of the detail.
 func field(label, value string) string {
-	return faintStyle.Render(pad(label, 10)) + value
+	return faintStyle.Render(cards.Pad(label, 10)) + value
+}
+
+// latencies are a route's latencies so far.
+func latencies(stats session.Stats) string {
+	separator := faintStyle.Render(" · ")
+	return "p50 " + cards.FormatLatency(stats.P50) + separator + "p95 " + cards.FormatLatency(stats.P95) + separator + "max " + cards.FormatLatency(stats.Max)
 }
 
 // outcomeBadge is what forwarding got: the status, or the transport failure.
@@ -249,6 +251,15 @@ func outcomeBadge(e session.Entry) string {
 		return cards.ColorBadge(cards.StatusColor(0), "✗ "+cards.TransportLabel(e.Failure.Kind))
 	}
 	return cards.ColorBadge(cards.StatusColor(e.Response.Status), session.StatusText(e.Response.Status))
+}
+
+func outcomeWithLatency(e session.Entry) string {
+	return outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))
+}
+
+// numberedAt names request e and when it arrived.
+func numberedAt(e session.Entry) string {
+	return "#" + strconv.Itoa(e.Number) + " at " + e.Received.Format(time.TimeOnly)
 }
 
 // failure says what happened to failed e, then what to do: replay now or,
@@ -280,14 +291,14 @@ func (m Fullscreen) targetState() string {
 	if e.Failure != nil {
 		state = errorStyle.Render("✗ " + cards.TransportLabel(e.Failure.Kind))
 	}
-	return m.targetAddress() + "  " + state + faintStyle.Render(" · #"+strconv.Itoa(e.Number)+" at "+e.Received.Format(time.TimeOnly))
+	return m.targetAddress() + "  " + state + faintStyle.Render(" · "+numberedAt(e))
 }
 
 // lastSuccess is the newest request the target answered with a 2xx.
 func (m Fullscreen) lastSuccess() string {
 	for i := len(m.entries) - 1; i >= 0; i-- {
 		if e := m.entries[i]; e.Target != "" && !e.Failed() {
-			return "#" + strconv.Itoa(e.Number) + " at " + e.Received.Format(time.TimeOnly) + faintStyle.Render(" · "+cards.FormatLatency(e.Latency))
+			return numberedAt(e) + faintStyle.Render(" · "+cards.FormatLatency(e.Latency))
 		}
 	}
 	return faintStyle.Render("none yet")
@@ -306,116 +317,4 @@ func (m Fullscreen) targetAddress() string {
 		port = "80"
 	}
 	return net.JoinHostPort(target.Hostname(), port)
-}
-
-const dialTimeout = time.Second
-
-var waitKey = key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wait, then replay"))
-
-// wait is w's: it dials the target until it answers, then replays request
-// number. id tells its messages from an earlier wait's.
-type wait struct {
-	id, number int
-	// replaying is set once the target answered; result is the replay's
-	// outcome.
-	replaying bool
-	result    string
-}
-
-type (
-	// dialedMsg is a dial of wait id's target; err is nil when it answered.
-	dialedMsg struct {
-		id  int
-		err error
-	}
-	// waitReplayedMsg ends wait id with its replay's error.
-	waitReplayedMsg struct {
-		id  int
-		err error
-	}
-)
-
-// waiting reports whether a wait hasn't ended yet.
-func (m Fullscreen) waiting() bool {
-	return m.wait.number != 0 && m.wait.result == ""
-}
-
-// startWait waits on the selected request when it found nothing listening,
-// pausing on it so its detail shows the wait.
-func (m Fullscreen) startWait(i int) (Fullscreen, tea.Cmd) {
-	switch {
-	case m.Target == "":
-		return m.show(session.ErrNoTarget.Error())
-	case i < 0:
-		return m, nil
-	case m.entries[i].Failure == nil:
-		return m.show("#" + strconv.Itoa(m.entries[i].Number) + " got a response; r replays it now")
-	}
-	m.paused, m.selected = true, m.entries[i].Number
-	m.wait = wait{id: m.wait.id + 1, number: m.selected}
-	return m, dial(m.targetAddress(), 0, m.wait.id)
-}
-
-// dial tries address after a pause, off the event loop.
-func dial(address string, after time.Duration, id int) tea.Cmd {
-	return func() tea.Msg {
-		time.Sleep(after)
-		conn, err := net.DialTimeout("tcp", address, dialTimeout)
-		if err == nil {
-			_ = conn.Close()
-		}
-		return dialedMsg{id: id, err: err}
-	}
-}
-
-// dialed replays once the target answers, else dials again after dialEvery.
-func (m Fullscreen) dialed(msg dialedMsg) (Fullscreen, tea.Cmd) {
-	if msg.id != m.wait.id || !m.waiting() {
-		return m, nil
-	}
-	if msg.err != nil {
-		return m, dial(m.targetAddress(), m.dialInterval(), msg.id)
-	}
-	m.wait.replaying = true
-	requests, n := m.Requests, m.wait.number
-	return m, func() tea.Msg { return waitReplayedMsg{id: msg.id, err: requests.Replay(n)} }
-}
-
-// waitReplayed puts the replay's outcome in place of the waiting line. The
-// replay's entry was recorded before Replay returned.
-func (m Fullscreen) waitReplayed(msg waitReplayedMsg) Fullscreen {
-	if msg.id != m.wait.id || !m.waiting() {
-		return m
-	}
-	if msg.err != nil {
-		m.wait.result = errorStyle.Render("✗") + " " + cards.Line(msg.err.Error())
-		return m
-	}
-	m.wait.result = markStyle.Render("↻") + " replayed"
-	for i := len(m.entries) - 1; i >= 0; i-- {
-		if e := m.entries[i]; e.ReplayOf == m.wait.number {
-			m.wait.result += " as #" + strconv.Itoa(e.Number) + " " + outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))
-			break
-		}
-	}
-	return m
-}
-
-// waitLine is w's progress: waiting, replaying, then the replay's outcome.
-func (m Fullscreen) waitLine() string {
-	address := m.targetAddress()
-	switch {
-	case m.wait.result != "":
-		return m.wait.result
-	case m.wait.replaying:
-		return markStyle.Render("↻") + " " + address + " answered, replaying #" + strconv.Itoa(m.wait.number) + "…"
-	}
-	return markStyle.Render("○") + " waiting for " + address + faintStyle.Render(" · checking every "+m.dialInterval().String()+" · esc stops")
-}
-
-func (m Fullscreen) dialInterval() time.Duration {
-	if m.dialEvery == 0 {
-		return time.Second
-	}
-	return m.dialEvery
 }

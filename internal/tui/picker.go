@@ -41,10 +41,9 @@ var pickerKeys = cards.Badge("↑↓") + faintStyle.Render(" move  ") +
 // keep the selection in view. Once chosen or cancelled it draws nothing, so
 // the box leaves the screen.
 type picker struct {
-	projects []api.Project
-	current  int
-	selected int
-	// offset is the index of the first row shown.
+	projects          []api.Project
+	current           int
+	selected          int
 	offset            int
 	width, height     int
 	chosen, cancelled bool
@@ -99,10 +98,10 @@ func (m picker) View() tea.View {
 		return tea.NewView("")
 	}
 
-	const current = "  current"
+	const currentTag = "  current"
 	tag := ""
 	if m.current >= 0 {
-		tag = current
+		tag = currentTag
 	}
 	org, name := 0, 0
 	for _, p := range m.projects {
@@ -110,7 +109,7 @@ func (m picker) View() tea.View {
 		name = max(name, lipgloss.Width(cards.Line(p.Name)))
 	}
 	// The marker and the gap between columns take 4 columns.
-	inner := max(1, min(m.width-4, max(4+org+name+len(tag), lipgloss.Width(pickerKeys))))
+	inner := max(1, min(m.width-panelFrame, max(4+org+name+len(tag), lipgloss.Width(pickerKeys))))
 	if spare := inner - 4 - len(tag); org+name > spare {
 		org = max(0, min(org, max(spare/2, spare-name)))
 		name = max(0, spare-org)
@@ -120,14 +119,14 @@ func (m picker) View() tea.View {
 	lines := make([]string, 0, rows+2)
 	for i := m.offset; i < m.offset+rows; i++ {
 		p := m.projects[i]
-		cells := pad(ansi.Truncate(cards.Line(p.Organization.Name), org, "…"), org) + "  " +
-			pad(ansi.Truncate(cards.Line(p.Name), name, "…"), name)
+		cells := cards.Pad(ansi.Truncate(cards.Line(p.Organization.Name), org, "…"), org) + "  " +
+			cards.Pad(ansi.Truncate(cards.Line(p.Name), name, "…"), name)
 		mark := strings.Repeat(" ", len(tag))
 		if i == m.current {
-			mark = current
+			mark = currentTag
 		}
 		if i == m.selected {
-			lines = append(lines, "› "+selectedStyle.Render(pad(cells+mark, inner-2)))
+			lines = append(lines, "› "+selectedStyle.Render(cards.Pad(cells+mark, inner-2)))
 		} else {
 			lines = append(lines, "  "+cells+faintStyle.Render(mark))
 		}
@@ -138,7 +137,7 @@ func (m picker) View() tea.View {
 	if rows < len(m.projects) {
 		label = strconv.Itoa(m.selected+1) + "/" + strconv.Itoa(len(m.projects))
 	}
-	box := panel("Select a project", label, inner+4, rows+4, lines)
+	box := panel("Select a project", label, inner+panelFrame, rows+4, lines)
 	// A rule, not a blank line, separates the keys.
 	box[len(box)-3] = faintStyle.Render("├" + strings.Repeat("─", inner+2) + "┤")
 	return tea.NewView(strings.Join(box, "\n"))

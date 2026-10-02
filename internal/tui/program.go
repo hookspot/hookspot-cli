@@ -19,6 +19,10 @@ import (
 // ErrClosed is returned for output sent after the program exited.
 var ErrClosed = errors.New("terminal output closed")
 
+// defaultHeight is the screen height until the terminal's is known, as
+// cards.DefaultWidth is its width.
+const defaultHeight = 24
+
 // Program runs one listen run's model and owns its shutdown: the first Ctrl-C
 // stops listening, the program quits once listen has, and a second Ctrl-C
 // kills it.
@@ -34,7 +38,8 @@ type Program struct {
 	// drawn closes once the first frame is on the screen.
 	drawn    chan struct{}
 	finished chan struct{}
-	// stopping is set by the first Ctrl-C or Stop; only the event loop uses it.
+	// stopping is set by the first Ctrl-C or stopListening; only the event
+	// loop uses it.
 	stopping bool
 }
 
@@ -65,8 +70,8 @@ func (p *Program) Run(model tea.Model) (tea.Model, error) {
 		tea.WithOutput(p.canvas()),
 		tea.WithColorProfile(p.profile),
 		// A terminal's own size replaces this; it's the width rule's fallback.
-		tea.WithWindowSize(cards.DefaultWidth, 24),
-		tea.WithFilter(p.filter),
+		tea.WithWindowSize(cards.DefaultWidth, defaultHeight),
+		tea.WithFilter(p.ctrlCFilter),
 	)
 	close(p.started)
 	final, err := p.program.Run()
@@ -149,7 +154,7 @@ type terminalFile interface {
 	Fd() uintptr
 }
 
-// terminalCanvas is a canvas on a terminal file.
+// terminalCanvas keeps the terminal file's Fd for tea.
 type terminalCanvas struct {
 	*canvas
 	terminalFile
@@ -170,8 +175,8 @@ func (p *Program) Quit() {
 	p.program.Quit()
 }
 
-// Stop is a Cmd that stops listening as the first Ctrl-C does.
-func Stop() tea.Msg {
+// stopListening is a Cmd that stops listening as the first Ctrl-C does.
+func stopListening() tea.Msg {
 	return stopMsg{}
 }
 
@@ -183,10 +188,10 @@ type (
 	stoppedMsg struct{}
 )
 
-// filter runs Ctrl-C ahead of the model; in raw mode it's a key, not a
-// SIGINT. The first press, like Stop, stops listening; a second kills the
-// program and exits 130.
-func (p *Program) filter(_ tea.Model, msg tea.Msg) tea.Msg {
+// ctrlCFilter runs Ctrl-C ahead of the model; in raw mode it's a key, not a
+// SIGINT. The first press, like stopListening, stops listening; a second
+// kills the program and exits 130.
+func (p *Program) ctrlCFilter(_ tea.Model, msg tea.Msg) tea.Msg {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		if msg.String() != "ctrl+c" {

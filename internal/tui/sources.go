@@ -19,8 +19,11 @@ import (
 	"hookspot/internal/ws"
 )
 
-// activityWidth is the activity panel's width beside the route detail.
-const activityWidth = 50
+const (
+	// activityWidth is the activity panel's width beside the route detail.
+	activityWidth      = 50
+	activityLabelWidth = 12
+)
 
 // sourcesPage is the Sources page's state. The requests view keeps its own
 // selection while the page is open.
@@ -35,9 +38,8 @@ type sourcesPage struct {
 // sourcesKeys are the Sources page's own keys; ↑↓, t, ? and q work as in the
 // requests view.
 var sourcesKeys = struct {
-	open, back, copy, field, cancel key.Binding
+	back, copy, field, cancel key.Binding
 }{
-	open:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sources")),
 	back:   key.NewBinding(key.WithKeys("esc", "s"), key.WithHelp("esc", "back")),
 	copy:   key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy…")),
 	field:  key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6"), key.WithHelp("1-6", "copy that field")),
@@ -69,7 +71,7 @@ func (m Fullscreen) sourcesKey(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 	case key.Matches(msg, keys.help):
 		m.help = !m.help
 	case key.Matches(msg, keys.quit):
-		return m, Stop
+		return m, stopListening
 	}
 	return m, nil
 }
@@ -83,14 +85,13 @@ func (m Fullscreen) copyField(n int) (Fullscreen, tea.Cmd) {
 	return m, tea.Batch(tea.SetClipboard(value), expire)
 }
 
-// routeField is one of a route's numbered, copyable fields.
 type routeField struct {
 	label, value string
 }
 
 func (m Fullscreen) routeFields(route cards.BannerRoute) []routeField {
 	listen := "hookspot listen " + shellWord(route.Source)
-	if m.Target != "" {
+	if m.forwarding() {
 		listen += " --forward-to " + shellWord(m.Target)
 	}
 	return []routeField{
@@ -106,7 +107,7 @@ func (m Fullscreen) routeFields(route cards.BannerRoute) []routeField {
 // routeDestination is where the route's requests go: its URL, or in inspect
 // mode only its path.
 func (m Fullscreen) routeDestination(route cards.BannerRoute) string {
-	if m.Target == "" {
+	if !m.forwarding() {
 		return route.Path
 	}
 	return route.Destination
@@ -149,38 +150,18 @@ func (m Fullscreen) sourcesView() tea.View {
 		}
 	}
 	lines = append(lines, make([]string, max(0, 2+panes-len(lines)))...)
-	lines = append(append(lines, toasts...), footer...)
-	lines = lines[:min(len(lines), height)]
-	for i, line := range lines {
-		lines[i] = ansi.Truncate(line, width, "…")
-	}
-	view := tea.NewView(strings.Join(lines, "\n"))
-	view.AltScreen = true
-	return view
+	return fullView(append(append(lines, toasts...), footer...), width, height)
 }
 
 // sourcesTitle names the page and what it counts.
 func (m Fullscreen) sourcesTitle() string {
 	sources := 0
-	for i, route := range m.Routes {
-		if i == 0 || m.Routes[i-1].SourceUID != route.SourceUID {
+	for i := range m.Routes {
+		if firstOfSource(m.Routes, i) {
 			sources++
 		}
 	}
-	return boldStyle.Render("Sources") + faintStyle.Render(" · "+counted(sources, "source")+" · "+counted(len(m.Routes), "route")+" · stats since listen started")
-}
-
-func counted(n int, noun string) string {
-	if n != 1 {
-		noun += "s"
-	}
-	return strconv.Itoa(n) + " " + noun
-}
-
-// cell is a table cell's text and style.
-type cell struct {
-	text  string
-	style lipgloss.Style
+	return boldStyle.Render("Sources") + faintStyle.Render(" · "+cards.Count(sources, "source")+" · "+cards.Count(len(m.Routes), "route")+" · stats since listen started")
 }
 
 // sourcesTable frames a row per route, the selected one marked as in the
@@ -196,24 +177,24 @@ func (m Fullscreen) sourcesTable(width, height int) []string {
 		rows[i] = m.statsCells(stats)
 		rows[i]["ROUTE"] = cell{text: cards.Line(route.Label)}
 		rows[i]["DESTINATION"] = cell{text: cards.Line(m.routeDestination(route))}
-		if i > 0 && m.Routes[i-1].SourceUID == route.SourceUID {
-			rows[i]["SOURCE"] = cell{text: " └", style: faintStyle}
-		} else {
+		if firstOfSource(m.Routes, i) {
 			rows[i]["SOURCE"] = cell{text: cards.Line(route.Source), style: cards.SourceStyle(route.SourceUID)}
 			rows[i]["PUBLIC URL"] = cell{text: cards.Line(route.PublicURL), style: faintStyle}
+		} else {
+			rows[i]["SOURCE"] = cell{text: " └", style: faintStyle}
 		}
 	}
 	totals := m.statsCells(m.totals)
 	delete(totals, "LAST")
 
-	// The marker and a space come first.
-	inner := max(0, width-6)
-	numbers := []string{"REQS", "OK", "FAIL", "P50", "LAST"}
-	if m.Target == "" {
-		numbers = []string{"REQS", "LAST"}
+	inner := max(0, width-panelFrame-markerWidth)
+	requests, last := column{title: "REQS", right: true}, column{title: "LAST"}
+	numbers := []column{requests, {title: "OK", right: true}, {title: "FAIL", right: true}, {title: "P50", right: true}, last}
+	if !m.forwarding() {
+		numbers = []column{requests, last}
 	}
 	numberColumns := sized(numbers, slices.Concat(rows, []map[string]cell{totals}))
-	names := sizedNames(sized([]string{"SOURCE", "PUBLIC URL", "ROUTE", "DESTINATION"}, rows), inner-2-rowWidth(numberColumns))
+	names := sizedNames(sized([]column{{title: "SOURCE"}, {title: "PUBLIC URL"}, {title: "ROUTE"}, {title: "DESTINATION"}}, rows), inner-2-rowWidth(numberColumns))
 	for _, cells := range rows {
 		for _, c := range names {
 			if text := cells[c.title].text; urlColumn(c) && lipgloss.Width(text) > c.width {
@@ -222,7 +203,7 @@ func (m Fullscreen) sourcesTable(width, height int) []string {
 		}
 	}
 	row := func(cells map[string]cell, plain bool) string {
-		return render(names, texts(names, cells), styles(names, cells, plain)) + "  " + render(numberColumns, texts(numberColumns, cells), styles(numberColumns, cells, plain))
+		return render(names, rowCells(names, cells), plain) + "  " + render(numberColumns, rowCells(numberColumns, cells), plain)
 	}
 
 	titles := map[string]cell{}
@@ -236,7 +217,7 @@ func (m Fullscreen) sourcesTable(width, height int) []string {
 	for i := first; i < min(len(rows), first+visible); i++ {
 		cells := rows[i]
 		if i == m.sources.selected {
-			lines = append(lines, "› "+selectedStyle.Render(pad(row(cells, true), inner)))
+			lines = append(lines, "› "+selectedStyle.Render(cards.Pad(row(cells, true), inner)))
 		} else {
 			lines = append(lines, "  "+row(cells, false))
 		}
@@ -246,7 +227,7 @@ func (m Fullscreen) sourcesTable(width, height int) []string {
 		label += " · " + strconv.Itoa(unmatched) + " unmatched"
 	}
 	span := rowWidth(names)
-	totalsRow := faintStyle.Render(pad(ansi.Truncate(label, span, "…"), span)) + "  " + render(numberColumns, texts(numberColumns, totals), styles(numberColumns, totals, false))
+	totalsRow := faintStyle.Render(cards.Pad(ansi.Truncate(label, span, "…"), span)) + "  " + render(numberColumns, rowCells(numberColumns, totals), false)
 	lines = append(lines, "  "+totalsRow)
 	return panel("Sources & routes", "", width, height, lines)
 }
@@ -258,9 +239,9 @@ func (m Fullscreen) statsCells(stats session.Stats) map[string]cell {
 	if stats.Last.Number != 0 {
 		last := stats.Last.Received.Format(time.TimeOnly)
 		cells["LAST"] = cell{text: last, style: faintStyle}
-		if m.Target != "" {
-			text, style := outcome(stats.Last)
-			cells["LAST"] = cell{text: last + " " + text, style: style}
+		if m.forwarding() {
+			result := outcome(stats.Last)
+			cells["LAST"] = cell{text: last + " " + result.text, style: result.style}
 		}
 	}
 	failed := lipgloss.Style{}
@@ -276,14 +257,12 @@ func (m Fullscreen) statsCells(stats session.Stats) map[string]cell {
 	return cells
 }
 
-// sized are columns titled titles, as wide as their widest text; counts and
-// latencies line up right.
-func sized(titles []string, rows []map[string]cell) []column {
-	columns := make([]column, len(titles))
-	for i, title := range titles {
-		columns[i] = column{title: title, width: len(title), right: slices.Contains([]string{"REQS", "OK", "FAIL", "P50"}, title)}
+// sized makes columns as wide as their widest text.
+func sized(columns []column, rows []map[string]cell) []column {
+	for i, c := range columns {
+		columns[i].width = len(c.title)
 		for _, cells := range rows {
-			columns[i].width = max(columns[i].width, lipgloss.Width(cells[title].text))
+			columns[i].width = max(columns[i].width, lipgloss.Width(cells[c.title].text))
 		}
 	}
 	return columns
@@ -296,7 +275,7 @@ func sizedNames(columns []column, width int) []column {
 	for i, c := range columns {
 		switch c.title {
 		case "SOURCE":
-			columns[i].width = min(c.width, 12)
+			columns[i].width = min(c.width, maxSourceWidth)
 		case "ROUTE":
 			columns[i].width = min(c.width, 16)
 		}
@@ -348,24 +327,12 @@ func rowWidth(columns []column) int {
 	return width
 }
 
-func texts(columns []column, cells map[string]cell) []string {
-	texts := make([]string, len(columns))
+func rowCells(columns []column, cells map[string]cell) []cell {
+	row := make([]cell, len(columns))
 	for i, c := range columns {
-		texts[i] = cells[c.title].text
+		row[i] = cells[c.title]
 	}
-	return texts
-}
-
-// styles are nil for plain, the selected row, which shows in reverse.
-func styles(columns []column, cells map[string]cell, plain bool) []lipgloss.Style {
-	if plain {
-		return nil
-	}
-	styles := make([]lipgloss.Style, len(columns))
-	for i, c := range columns {
-		styles[i] = cells[c.title].style
-	}
-	return styles
+	return row
 }
 
 // routeDetail numbers the route's fields; after c, the numbers stand out.
@@ -376,7 +343,7 @@ func (m Fullscreen) routeDetail(route cards.BannerRoute) []string {
 		if m.sources.copying {
 			number = cards.Badge(strconv.Itoa(i + 1))
 		}
-		lines = append(lines, number+"  "+faintStyle.Render(pad(f.label, 13))+cards.Line(f.value))
+		lines = append(lines, number+"  "+faintStyle.Render(cards.Pad(f.label, 13))+cards.Line(f.value))
 	}
 	return lines
 }
@@ -387,7 +354,7 @@ func (m Fullscreen) routeDetail(route cards.BannerRoute) []string {
 func (m Fullscreen) activity(route cards.BannerRoute) []string {
 	stats := m.routes[route.RouteUID]
 	requests := strconv.Itoa(stats.Count)
-	if m.Target != "" {
+	if m.forwarding() {
 		failed := strconv.Itoa(stats.Failed) + " failed"
 		if stats.Failed > 0 {
 			failed = errorStyle.Render(failed)
@@ -395,10 +362,10 @@ func (m Fullscreen) activity(route cards.BannerRoute) []string {
 		requests += faintStyle.Render(" · ") + strconv.Itoa(stats.OK) + " ok" + faintStyle.Render(" · ") + failed
 	}
 	lines := []string{activityLine("requests", requests)}
-	if m.Target != "" {
+	if m.forwarding() {
 		latency := faintStyle.Render("—")
 		if stats.Max > 0 {
-			latency = "p50 " + cards.FormatLatency(stats.P50) + faintStyle.Render(" · ") + "p95 " + cards.FormatLatency(stats.P95) + faintStyle.Render(" · ") + "max " + cards.FormatLatency(stats.Max)
+			latency = latencies(stats)
 		}
 		lines = append(lines, activityLine("latency", latency))
 	}
@@ -406,29 +373,28 @@ func (m Fullscreen) activity(route cards.BannerRoute) []string {
 	last := faintStyle.Render("—")
 	if e := stats.Last; e.Number != 0 {
 		last = "#" + strconv.Itoa(e.Number) + "  " + faintStyle.Render(e.Received.Format(time.TimeOnly))
-		if m.Target != "" {
-			text, style := outcome(e)
-			last += "  " + style.Render(text)
+		if m.forwarding() {
+			result := outcome(e)
+			last += "  " + result.style.Render(result.text)
 		}
 	}
 	lines = append(lines, activityLine("last", last))
-	if m.Target == "" {
+	if !m.forwarding() {
 		return lines
 	}
 	return append(lines, statusBars(stats.Outcomes)...)
 }
 
 func activityLine(label, value string) string {
-	return faintStyle.Render(pad(label, 12)) + value
+	return faintStyle.Render(cards.Pad(label, activityLabelWidth)) + value
 }
 
 // statusBars break forwarded requests down by outcome, most common first,
 // with bars scaled to the most common.
 func statusBars(outcomes map[session.Outcome]int) []string {
 	type bar struct {
-		text  string
-		style lipgloss.Style
-		count int
+		outcome cell
+		count   int
 	}
 	var bars []bar
 	labelWidth, countWidth, most := 0, 0, 0
@@ -437,20 +403,20 @@ func statusBars(outcomes map[session.Outcome]int) []string {
 		if o.Failure != "" {
 			e.Failure = &proxy.TransportFailure{Kind: o.Failure}
 		}
-		text, style := outcome(e)
-		bars = append(bars, bar{text, style, count})
-		labelWidth, countWidth, most = max(labelWidth, len(text)), max(countWidth, len(strconv.Itoa(count))), max(most, count)
+		b := bar{outcome(e), count}
+		bars = append(bars, b)
+		labelWidth, countWidth, most = max(labelWidth, len(b.outcome.text)), max(countWidth, len(strconv.Itoa(count))), max(most, count)
 	}
-	slices.SortFunc(bars, func(a, b bar) int { return cmp.Or(b.count-a.count, strings.Compare(a.text, b.text)) })
-	// The panel's borders, the label, the gaps and the count leave the rest.
-	longest := max(1, activityWidth-4-12-labelWidth-2-1-countWidth)
+	slices.SortFunc(bars, func(a, b bar) int { return cmp.Or(b.count-a.count, strings.Compare(a.outcome.text, b.outcome.text)) })
+	// The label, the gaps and the count leave the rest.
+	longest := max(1, activityWidth-panelFrame-activityLabelWidth-labelWidth-2-1-countWidth)
 	var lines []string
 	for i, b := range bars {
 		label := ""
 		if i == 0 {
 			label = "status"
 		}
-		lines = append(lines, activityLine(label, pad(b.text, labelWidth)+"  "+b.style.Render(strings.Repeat("█", max(1, b.count*longest/most)))+" "+strconv.Itoa(b.count)))
+		lines = append(lines, activityLine(label, cards.Pad(b.outcome.text, labelWidth)+"  "+b.outcome.style.Render(strings.Repeat("█", max(1, b.count*longest/most)))+" "+strconv.Itoa(b.count)))
 	}
 	return lines
 }

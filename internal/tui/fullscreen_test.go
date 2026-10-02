@@ -78,6 +78,13 @@ func refused(n int) session.Entry {
 	return e
 }
 
+// printedOnly is request n from source without --forward-to.
+func printedOnly(n int, source string) session.Entry {
+	e := entry(n, source, 0)
+	e.Target, e.Response, e.Latency = "", ws.Response{}, 0
+	return e
+}
+
 // tally reports entries as a session would: each but a replay counts in the
 // totals and its route's stats, all in the clock's minute, with p50 at half
 // the slowest response and p95 a millisecond under it.
@@ -228,10 +235,8 @@ func TestFullscreen(t *testing.T) {
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), letter('?')}
 		}},
 		{name: "inspect", width: 80, height: 24, inspect: true, events: func(r *tally) []tea.Msg {
-			e := entry(1, "src_stripe", 0)
-			e.Target, e.Response, e.Latency = "", ws.Response{}, 0
 			// Nothing replays without --forward-to.
-			return []tea.Msg{session.Ready{}, r.recorded(e), letter('r')}
+			return []tea.Msg{session.Ready{}, r.recorded(printedOnly(1, "src_stripe")), letter('r')}
 		}},
 		{name: "offline", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			return []tea.Msg{
@@ -269,10 +274,7 @@ func TestFullscreen(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			m := screen()
 			if test.inspect {
-				m.Target = ""
-				for i := range m.Routes {
-					m.Routes[i].Destination = ""
-				}
+				m = inspected(m)
 			}
 			tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(test.width, test.height))
 			for _, msg := range test.events(&tally{}) {
@@ -485,11 +487,10 @@ func hostileEntries() []session.Entry {
 	unmatched.RouteUID = ""
 	unmatched.Delivery.Method = strings.Repeat("PROPFIND", 100)
 
-	inspected := entry(7, "src_github", 0)
-	inspected.Target, inspected.Response, inspected.Latency = "", ws.Response{}, 0
-	inspected.Delivery.Query = strings.Repeat(hostile, 100)
-	inspected.Delivery.Headers = http.Header{strings.Repeat("X-"+hostile, 100): {strings.Repeat(hostile, 100)}}
-	return []session.Entry{failed, binary, unreachable, replay, test, unmatched, inspected}
+	printed := printedOnly(7, "src_github")
+	printed.Delivery.Query = strings.Repeat(hostile, 100)
+	printed.Delivery.Headers = http.Header{strings.Repeat("X-"+hostile, 100): {strings.Repeat(hostile, 100)}}
+	return []session.Entry{failed, binary, unreachable, replay, test, unmatched, printed}
 }
 
 var styling = regexp.MustCompile(`\x1b\[[0-9;:]*m`)

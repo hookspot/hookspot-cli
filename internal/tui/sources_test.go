@@ -13,7 +13,6 @@ import (
 
 	"hookspot/internal/cards"
 	"hookspot/internal/session"
-	"hookspot/internal/ws"
 )
 
 // sourcesScreen is screen with a second stripe route, refunds, and every
@@ -55,11 +54,11 @@ func unmatched(n int) session.Entry {
 }
 
 // traffic is a run's first six requests, one of them unmatched.
-func traffic(t *tally) []tea.Msg {
+func traffic(r *tally) []tea.Msg {
 	return []tea.Msg{
 		session.Ready{},
-		t.recorded(entry(1, "src_stripe", 200)), t.recorded(entry(2, "src_github", 500)), t.recorded(refused(3)),
-		t.recorded(refunds(4, 200)), t.recorded(unmatched(5)), t.recorded(entry(6, "src_stripe", 200)),
+		r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), r.recorded(refused(3)),
+		r.recorded(refunds(4, 200)), r.recorded(unmatched(5)), r.recorded(entry(6, "src_stripe", 200)),
 	}
 }
 
@@ -69,31 +68,29 @@ func TestSources(t *testing.T) {
 		name          string
 		width, height int
 		inspect       bool
-		events        func(t *tally) []tea.Msg
+		events        func(r *tally) []tea.Msg
 	}{
-		{name: "open", width: 80, height: 30, events: func(t *tally) []tea.Msg {
-			return append(traffic(t), open)
+		{name: "open", width: 80, height: 30, events: func(r *tally) []tea.Msg {
+			return append(traffic(r), open)
 		}},
-		{name: "move", width: 140, height: 24, events: func(t *tally) []tea.Msg {
-			return append(traffic(t), open, down, down, down, up)
+		{name: "move", width: 140, height: 24, events: func(r *tally) []tea.Msg {
+			return append(traffic(r), open, down, down, down, up)
 		}},
-		{name: "copy mode", width: 80, height: 30, events: func(t *tally) []tea.Msg {
-			return append(traffic(t), open, letter('c'))
+		{name: "copy mode", width: 80, height: 30, events: func(r *tally) []tea.Msg {
+			return append(traffic(r), open, letter('c'))
 		}},
-		{name: "live update", width: 80, height: 30, events: func(t *tally) []tea.Msg {
-			return append([]tea.Msg{open}, append(traffic(t), t.recorded(entry(7, "src_stripe", 422)))...)
+		{name: "live update", width: 80, height: 30, events: func(r *tally) []tea.Msg {
+			return append([]tea.Msg{open}, append(traffic(r), r.recorded(entry(7, "src_stripe", 422)))...)
 		}},
-		{name: "inspect", width: 80, height: 24, inspect: true, events: func(t *tally) []tea.Msg {
-			e := entry(1, "src_stripe", 0)
-			e.Target, e.Response, e.Latency = "", ws.Response{}, 0
-			return []tea.Msg{session.Ready{}, t.recorded(e), open}
+		{name: "inspect", width: 80, height: 24, inspect: true, events: func(r *tally) []tea.Msg {
+			return []tea.Msg{session.Ready{}, r.recorded(printedOnly(1, "src_stripe")), open}
 		}},
-		{name: "help", width: 80, height: 30, events: func(t *tally) []tea.Msg {
-			return append(traffic(t), open, letter('?'))
+		{name: "help", width: 80, height: 30, events: func(r *tally) []tea.Msg {
+			return append(traffic(r), open, letter('?'))
 		}},
-		{name: "back to the list", width: 80, height: 24, events: func(t *tally) []tea.Msg {
+		{name: "back to the list", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			// The requests view stays paused on #5.
-			return append(traffic(t), up, open, down, open)
+			return append(traffic(r), up, open, down, open)
 		}},
 	}
 	for _, test := range tests {
