@@ -82,7 +82,7 @@ func Projects(projects []api.Project, activeUID string, width int) string {
 	for i, row := range rows {
 		cells := make([]string, len(row))
 		for column, cell := range row {
-			cells[column] = pad(cell, widths[column])
+			cells[column] = Pad(cell, widths[column])
 		}
 		lines[i] = strings.Join(cells, "  ")
 	}
