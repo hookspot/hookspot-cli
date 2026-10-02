@@ -47,6 +47,8 @@ func TestFilterMatches(t *testing.T) {
 	redirected.Delivery.Path = "/hooks/v2"
 	entries := []session.Entry{entry(1, "src_stripe", 200), entry(2, "src_github", 500), refused(3), push, printed, redirected}
 	listen := screen().Listen
+	// A source name may hold spaces, which a filter word can't.
+	listen.Sources["src_stripe"] = "Stripe Prod"
 
 	tests := []struct {
 		filter string
@@ -60,6 +62,7 @@ func TestFilterMatches(t *testing.T) {
 		{filter: "status:2xx source:stripe", want: []int{1}},
 		{filter: "status:error source:stripe", want: []int{3, 6}},
 		{filter: "source:GitHub", want: []int{2, 4}},
+		{filter: "source:prod", want: nil},
 		{filter: "path:/hooks/", want: []int{6}},
 		{filter: "path:hooks", want: nil},
 		// Free text looks in the path and the summary, ignoring case.

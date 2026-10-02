@@ -497,7 +497,7 @@
 - Modify: `internal/tui/fullscreen.go`
 - Modify: `internal/tui/detail.go`
 
-- [x] `/` filter: `status:error|2xx|4xx|5xx|<code>`, `source:<name>`, `path:<prefix>`, and free text across path and summary; `esc` clears; matches shown in the list title
+- [x] `/` filter: `status:error|2xx|4xx|5xx|<code>`, `source:<name prefix>`, `path:<prefix>`, and free text across path and summary; `esc` clears; matches shown in the list title
 - [x] failure detail: what happened, local target state, last success; `r` replays now
 - [x] `w` dials the local target at an injectable interval until it answers or `esc`, then calls `Replay`; the result replaces the "waiting" line
 - [x] write tests: filter parsing (unknown keys are plain text); combined terms; `w` with a fake listener that starts late; `esc` stops waiting

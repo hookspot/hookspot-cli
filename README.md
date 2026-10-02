@@ -176,8 +176,8 @@ requests and 64 MiB of bodies; naming an older number says it was dropped.
 | `q`, `ctrl-c` | stop listening; a second `ctrl-c` forces exit |
 
 Filter terms must all match: `status:error`, `status:2xx` (also `3xx`, `4xx`,
-`5xx`, or a code such as `status:422`), `source:<name>`, `path:<prefix>`, and
-free text matched against the path and the event summary.
+`5xx`, or a code such as `status:422`), `source:<name prefix>` (ignoring case),
+`path:<prefix>`, and free text matched against the path and the event summary.
 
 ### Stream commands
 
