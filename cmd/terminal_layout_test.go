@@ -104,9 +104,7 @@ func TestTerminalHostileDelivery(t *testing.T) {
 		run.waitFor("the request tab", func(screen string) bool {
 			return strings.Contains(screen, "│ x-"+escaped) && strings.Contains(screen, "│ body "+escaped) && wholeBoxes(screen, 80)
 		})
-		if !run.altScreen() {
-			t.Error("the delivery took listen off the alt screen")
-		}
+		run.requireAltScreen()
 		requireNoneRaw(t, run)
 	})
 
