@@ -87,6 +87,7 @@ func TestTerminalModes(t *testing.T) {
 	prompt := regexp.MustCompile(`(?m)^› .*ctrl-c quit$`)
 	banner := "╭─ Listening in Acme | Payments "
 	card := "╭─ #1 stripe · POST /webhooks/stripe "
+	row := regexp.MustCompile(`(?m)^#1 +POST +stripe +/webhooks/stripe `)
 
 	t.Run("stream", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, fakeHookspotSources)
@@ -134,7 +135,6 @@ func TestTerminalModes(t *testing.T) {
 		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 		hookspot.deliver(t, terminalDelivery)
-		row := regexp.MustCompile(`(?m)^#1 +POST +stripe +/webhooks/stripe `)
 		run.waitFor("#1 on stdout", func(string) bool { return row.MatchString(run.piped()) })
 
 		// stdin is a terminal, so it takes line commands; replies go to stderr.
@@ -159,12 +159,27 @@ func TestTerminalModes(t *testing.T) {
 		}
 	})
 
-	t.Run("background job", func(t *testing.T) {
+	t.Run("stdout piped in inspect mode", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, fakeHookspotSources)
-		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true, background: true}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		// A pager reading the pipe, such as less, keeps the keyboard.
+		hookspot.end(t)
+		if code := run.wait(); code != 1 {
+			t.Fatalf("exit code = %d, want 1 for the invalid delivery; screen:\n%s", code, run.text())
+		}
+		if stdout := run.piped(); !strings.Contains(stdout, "─ ctrl-c quit ─╯\n") {
+			t.Errorf("piped inspect mode offers line commands:\n%s", stdout)
+		}
+	})
+
+	t.Run("background job", func(t *testing.T) {
+		local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		defer local.Close()
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true, background: true}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 		// Reading the terminal from the background would stop the job.
 		hookspot.deliver(t, terminalDelivery)
-		run.waitFor("card #1 on stdout", func(string) bool { return strings.Contains(run.piped(), card) })
+		run.waitFor("#1 on stdout", func(string) bool { return row.MatchString(run.piped()) })
 		hookspot.end(t)
 		if code := run.wait(); code != 1 {
 			t.Fatalf("exit code = %d, want 1 for the invalid delivery; screen:\n%s", code, run.text())

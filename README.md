@@ -148,8 +148,11 @@ standard Base64; responses sent back over Phoenix Channels use padded Base64.
   terminal, a `›` prompt below it takes commands.
 - **Plain** (stdout is piped or redirected, or `TERM=dumb`): text with no
   color or cursor control, one block per request, for scripts. When stdin is
-  still a terminal (`hookspot listen | tee log`), the same commands work and
-  their replies go to stderr; a background job (`&`) gets none.
+  still a terminal, the same commands work and their replies go to stderr.
+  With stdout piped, only `--forward-to` takes them
+  (`hookspot listen --forward-to 3000 | tee log`), so `hookspot listen | less`
+  leaves the keyboard to `less`; add `</dev/null` to page with `--forward-to`.
+  A background job (`&`) gets none.
 
 `NO_COLOR` turns color off in every mode. A route shows as its name, or as its
 destination path when it has none.
