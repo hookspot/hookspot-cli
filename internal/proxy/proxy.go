@@ -116,7 +116,8 @@ type Forwarder struct {
 
 var barePort = regexp.MustCompile(`^[0-9]+(/.*)?$`)
 
-// New returns a Forwarder that sends requests to targetBaseURL.
+// New returns a Forwarder that sends requests to targetBaseURL. A bare port,
+// optionally with a path, targets localhost.
 func New(targetBaseURL string) (*Forwarder, error) {
 	if targetBaseURL == "" {
 		return nil, errors.New("forward target is empty")

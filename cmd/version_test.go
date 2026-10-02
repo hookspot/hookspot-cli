@@ -119,10 +119,8 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
 		t.Fatal(err)
 	}
-	metadata := map[string]string{
-		"version": "1.2.3-rc.4", "server_url": "https://PROD.example.invalid:0443/prefix/",
-		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
-	}
+	metadata := releaseMetadata("1.2.3-rc.4")
+	metadata["server_url"] = "https://PROD.example.invalid:0443/prefix/"
 	result := runCommandProcess(t, "", metadata, "--config", badConfig, "version", "--json")
 	if result.err != nil {
 		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
@@ -161,12 +159,8 @@ func TestVersionPrintsNameAndVersion(t *testing.T) {
 }
 
 func TestVersionFlagPrintsVersionWithoutUpgradeCheck(t *testing.T) {
-	release := map[string]string{
-		"version": "9.9.9", "server_url": "https://prod.example.invalid",
-		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
-	}
 	for _, args := range [][]string{{"--version"}, {"-v"}} {
-		result := runCommandProcess(t, "", release, args...)
+		result := runCommandProcess(t, "", releaseMetadata("9.9.9"), args...)
 		if result.err != nil {
 			t.Fatalf("%v failed: %v\nstderr: %s", args, result.err, result.stderr)
 		}
@@ -296,12 +290,7 @@ func TestVersionPrintsUpdateCard(t *testing.T) {
 		_, _ = w.Write([]byte(`{"tag_name":"v1.3.0"}`))
 	}))
 	defer github.Close()
-	release := map[string]string{
-		"version": "1.2.3", "server_url": "https://prod.example.invalid",
-		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
-	}
-
-	result := runCommandProcessEnvironment(t, "", release, map[string]string{"TEST_GITHUB_API_URL": github.URL}, "version")
+	result := runCommandProcessEnvironment(t, "", releaseMetadata("1.2.3"), map[string]string{"TEST_GITHUB_API_URL": github.URL}, "version")
 	if result.err != nil {
 		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
 	}

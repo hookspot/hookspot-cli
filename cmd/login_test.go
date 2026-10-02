@@ -179,11 +179,8 @@ func TestRunBrowserLoginWithoutProjectKeepsSavedProject(t *testing.T) {
 	if !strings.Contains(string(contents), "new-key") || !strings.Contains(string(contents), "kept-project") {
 		t.Fatalf("unexpected config:\n%s", contents)
 	}
-	if !strings.Contains(out.String(), "Logged in as dev@example.com\n") {
-		t.Fatalf("missing login line:\n%s", out.String())
-	}
-	if !strings.Contains(out.String(), "hookspot project use") {
-		t.Fatalf("missing project hint:\n%s", out.String())
+	if !strings.HasSuffix(out.String(), "✓ Logged in as dev@example.com\n⚠ No active project set; run 'hookspot project use' to select one.\n") {
+		t.Fatalf("missing login line and project hint:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "Active project set to") {
 		t.Fatalf("unexpected project line:\n%s", out.String())
@@ -291,7 +288,7 @@ func TestRunBrowserLoginRejectsUnsupportedServer(t *testing.T) {
 }
 
 func TestRunBrowserLoginRejectsExpiredAttempt(t *testing.T) {
-	for _, tc := range []struct {
+	for _, test := range []struct {
 		name      string
 		expiresIn int
 		poll      func(context.Context, string) (*api.LoginResult, error)
@@ -311,14 +308,14 @@ func TestRunBrowserLoginRejectsExpiredAttempt(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			loginAPI := &fakeLoginAPI{
 				start: func(context.Context, string) (*api.LoginAttempt, error) {
 					attempt := instantLoginAttempt()
-					attempt.ExpiresIn = tc.expiresIn
+					attempt.ExpiresIn = test.expiresIn
 					return attempt, nil
 				},
-				poll: tc.poll,
+				poll: test.poll,
 			}
 
 			err := runBrowserLogin(context.Background(), browserLoginDeps{

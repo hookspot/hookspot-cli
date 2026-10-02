@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,13 +86,13 @@ func TestSelectProjectHasNoCurrentWithoutSavedProjectListed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			projects := selectionProjects()[:2]
 			promptCalled := false
-			prompt := func(ctx context.Context, in io.Reader, out io.Writer, options []api.Project, current int) (int, error) {
+			prompt := func(ctx context.Context, in io.Reader, out io.Writer, got []api.Project, current int) (int, error) {
 				promptCalled = true
 				if err := ctx.Err(); err != nil {
 					t.Fatal(err)
 				}
-				if len(options) != len(projects) || options[0].UID != projects[0].UID || options[1].UID != projects[1].UID {
-					t.Fatalf("options = %+v, want %+v", options, projects)
+				if !reflect.DeepEqual(got, projects) {
+					t.Fatalf("projects = %+v, want %+v", got, projects)
 				}
 				if current != -1 {
 					t.Fatalf("current = %d, want -1", current)

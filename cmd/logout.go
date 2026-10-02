@@ -19,7 +19,9 @@ var logoutCmd = &cobra.Command{
 		}
 
 		out := cmd.OutOrStdout()
-		lipgloss.Fprintln(out, cards.Logout(store.EnvironmentCLIKeyActive(), cards.Width(out)))
+		if _, err := lipgloss.Fprintln(out, cards.Logout(store.EnvironmentCLIKeyActive(), cards.Width(out))); err != nil {
+			return fmt.Errorf("write logout: %w", err)
+		}
 		return nil
 	},
 }

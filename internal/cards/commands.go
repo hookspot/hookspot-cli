@@ -41,6 +41,11 @@ func Done(label, value string) string {
 	return line
 }
 
+// NoProject follows a login that set no active project.
+func NoProject() string {
+	return warnStyle.Render("⚠") + " No active project set; run 'hookspot project use' to select one."
+}
+
 // Logout confirms the logout and warns when HOOKSPOT_CLI_KEY still signs
 // this shell in.
 func Logout(environmentKey bool, width int) string {

@@ -26,7 +26,7 @@ func TestTerminalProjectPicker(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 		config := filepath.Join(t.TempDir(), "config.toml")
-		if err := writeCommandFixture(config, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+		if err := writeCommandFixture(config, []byte(fakeHookspotConfig)); err != nil {
 			t.Fatal(err)
 		}
 		return startTerminal(t, options, developmentMetadata(server.URL), "--config", config, "project", "use"), config

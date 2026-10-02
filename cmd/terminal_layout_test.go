@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -19,7 +18,7 @@ func TestTerminalResize(t *testing.T) {
 	t.Run("full screen", func(t *testing.T) {
 		local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		defer local.Close()
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 150, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 		hookspot.deliver(t, terminalDelivery)
 
@@ -51,7 +50,7 @@ func TestTerminalResize(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		// Without a terminal on stdin the status line ends with its hint.
 		run := startTerminal(t, terminalOptions{width: 100, height: 40, stdin: strings.NewReader("")}, developmentMetadata(hookspot.url), hookspot.listen()...)
 		status := func(requests string, width int) func(string) bool {
@@ -94,7 +93,7 @@ func TestTerminalHostileDelivery(t *testing.T) {
 	}
 
 	t.Run("full screen", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 80, height: 40}, developmentMetadata(hookspot.url), hookspot.listen()...)
 		hookspot.deliver(t, delivery)
 		run.waitFor("the request and its overview", func(screen string) bool {
@@ -109,7 +108,7 @@ func TestTerminalHostileDelivery(t *testing.T) {
 	})
 
 	t.Run("stream", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 80, height: 40}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, delivery)
 		run.waitFor("the request's card", func(screen string) bool {
@@ -117,31 +116,4 @@ func TestTerminalHostileDelivery(t *testing.T) {
 		})
 		requireNoneRaw(t, run)
 	})
-}
-
-// boxEdges pairs each box-drawing character that starts a line with the one
-// that must end it.
-var boxEdges = map[rune]rune{'╭': '╮', '│': '│', '├': '┤', '╰': '╯'}
-
-// wholeBoxes reports whether every line of screen that starts a box ends it
-// in column width: nothing in a box wrapped, spilled over or was cut.
-func wholeBoxes(screen string, width int) bool {
-	for _, line := range strings.Split(screen, "\n") {
-		first, _ := utf8.DecodeRuneInString(line)
-		last, _ := utf8.DecodeLastRuneInString(line)
-		if end, box := boxEdges[first]; box && (last != end || ansi.StringWidth(line) != width) {
-			return false
-		}
-	}
-	return true
-}
-
-// firstCard is the stream's card #1, from its top border to its bottom one.
-var firstCard = regexp.MustCompile(`(?ms)^╭─ #1 .*?^╰[^\n]*`)
-
-// wholeCard reports whether the stream shows card #1 whole in a terminal
-// width columns wide. Cards leave the last column free.
-func wholeCard(screen string, width int) bool {
-	card := firstCard.FindString(screen)
-	return card != "" && wholeBoxes(card, width-1)
 }

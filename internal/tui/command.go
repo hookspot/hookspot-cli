@@ -34,6 +34,9 @@ func ParseCommand(line string) (command Command, ok bool) {
 	return Command{}, false
 }
 
+// QuitHint names the key that stops listening.
+const QuitHint = "ctrl-c quit"
+
 // CommandHints name the commands; without --forward-to nothing replays.
 func CommandHints(forwarding bool) []string {
 	hints := []string{"c N cURL", "e N fixture", "t test event"}

@@ -17,6 +17,13 @@ func developmentMetadata(serverURL string) map[string]string {
 	}
 }
 
+func releaseMetadata(version string) map[string]string {
+	return map[string]string{
+		"version": version, "server_url": "https://prod.example.invalid",
+		"commit": strings.Repeat("a", 40), "source_date": "2026-09-05T10:11:12Z", "build_kind": "release",
+	}
+}
+
 func TestOrdinaryCommandRejectsMissingExplicitConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.toml")
 	result := runCommandProcess(t, "", developmentMetadata("http://127.0.0.1:1"), "--config", path, "project", "list")

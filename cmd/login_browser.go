@@ -67,7 +67,9 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 	}
 
 	opened := deps.openBrowser(browserURL.String()) == nil
-	lipgloss.Fprintln(deps.out, cards.Login(attempt.Code, browserURL.String(), opened, cards.Width(deps.out)))
+	if _, err := lipgloss.Fprintln(deps.out, cards.Login(attempt.Code, browserURL.String(), opened, cards.Width(deps.out))); err != nil {
+		return fmt.Errorf("write login code: %w", err)
+	}
 
 	deadline := time.NewTimer(browserLoginTTL(attempt.ExpiresIn))
 	defer deadline.Stop()
@@ -116,11 +118,12 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		lipgloss.Fprintln(deps.out, cards.Done("Logged in as", result.User.Email))
+		project := cards.NoProject()
 		if result.Project != nil {
-			lipgloss.Fprintln(deps.out, cards.Done("Active project set to", projectDisplayName(*result.Project)))
-		} else {
-			fmt.Fprintln(deps.out, "No active project set; run 'hookspot project use' to select one.")
+			project = cards.Done("Active project set to", projectDisplayName(*result.Project))
+		}
+		if _, err := lipgloss.Fprintln(deps.out, cards.Done("Logged in as", result.User.Email)+"\n"+project); err != nil {
+			return fmt.Errorf("write login: %w", err)
 		}
 		return nil
 	}
