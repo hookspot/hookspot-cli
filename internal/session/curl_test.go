@@ -75,7 +75,7 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	at := ws.Delivery{AttemptUID: "att_3", RequestUID: "req_at", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("@/etc/hostname")}
 	// Pasting turns a carriage return into a newline, and terminals copy tabs as spaces.
 	crlf := ws.Delivery{AttemptUID: "att_4", RequestUID: "req_crlf", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("a=1\r\n\tb=2")}
-	large := ws.Delivery{AttemptUID: "att_5", RequestUID: "req_large", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: bytes.Repeat([]byte("x"), maxInlineBody+1)}
+	large := ws.Delivery{AttemptUID: "att_5", RequestUID: "req_large", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: bytes.Repeat([]byte("x"), maxInlineBodyBytes+1)}
 	// Whoever posts to a source picks the method; these are all HTTP token characters.
 	method := ws.Delivery{AttemptUID: "att_6", RequestUID: "req_method", SourceUID: "src_stripe", Method: "X`touch$IFS'pwned'`|$HOME", Path: "/orders"}
 

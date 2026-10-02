@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	statsMinutes      = 15
+	// StatsMinutes is how many minutes PerMinute covers.
+	StatsMinutes      = 15
 	maxLatencySamples = 1000
 )
 
@@ -18,14 +19,14 @@ type Stats struct {
 	Count int
 	// OK and Failed count forwarded requests: 2xx, and anything else.
 	OK, Failed int
-	// P50, P95 and Max cover the newest 1000 forwarded requests that got a
-	// response or timed out.
+	// P50, P95 and Max cover the newest maxLatencySamples forwarded requests
+	// that got a response or timed out.
 	P50, P95, Max time.Duration
 	// Outcomes counts forwarded requests by how they ended.
 	Outcomes map[Outcome]int
-	// PerMinute counts requests in each of the 15 minutes up to Minute,
-	// oldest first.
-	PerMinute [statsMinutes]int
+	// PerMinute counts requests in each of the StatsMinutes minutes up to
+	// Minute, oldest first.
+	PerMinute [StatsMinutes]int
 	Minute    time.Time
 	// Last is the newest request without its headers and bodies; its Number
 	// is 0 before the first.
@@ -46,7 +47,7 @@ type stats struct {
 	latencies []time.Duration
 	next      int
 	// minutes counts requests per minute, oldest first, ending at minute.
-	minutes [statsMinutes]int
+	minutes [StatsMinutes]int
 	minute  time.Time
 	last    Entry
 }
@@ -59,8 +60,8 @@ func (s *stats) add(entry Entry) {
 	s.last.Delivery.Headers, s.last.Delivery.Body = nil, nil
 	s.last.Response.Headers, s.last.Response.Body = nil, nil
 	s.shift(entry.Received)
-	if back := int(s.minute.Sub(entry.Received.Truncate(time.Minute)) / time.Minute); back < statsMinutes {
-		s.minutes[statsMinutes-1-back]++
+	if back := int(s.minute.Sub(entry.Received.Truncate(time.Minute)) / time.Minute); back < StatsMinutes {
+		s.minutes[StatsMinutes-1-back]++
 	}
 	if !entry.forwarded() {
 		return
@@ -89,15 +90,14 @@ func (s *stats) add(entry Entry) {
 	s.next = (s.next + 1) % maxLatencySamples
 }
 
-// shift moves the per-minute window forward to end at t's minute.
 func (s *stats) shift(t time.Time) {
 	minute := t.Truncate(time.Minute)
 	if !minute.After(s.minute) {
 		return
 	}
-	if gone := int(minute.Sub(s.minute) / time.Minute); gone < statsMinutes {
+	if gone := int(minute.Sub(s.minute) / time.Minute); gone < StatsMinutes {
 		copy(s.minutes[:], s.minutes[gone:])
-		clear(s.minutes[statsMinutes-gone:])
+		clear(s.minutes[StatsMinutes-gone:])
 	} else {
 		clear(s.minutes[:])
 	}
@@ -118,7 +118,7 @@ func (s *stats) snapshot(now time.Time) Stats {
 
 // PerMinuteAt is PerMinute moved on to end at now's minute, for a snapshot
 // taken earlier.
-func (s Stats) PerMinuteAt(now time.Time) [statsMinutes]int {
+func (s Stats) PerMinuteAt(now time.Time) [StatsMinutes]int {
 	window := stats{minutes: s.PerMinute, minute: s.Minute}
 	window.shift(now)
 	return window.minutes

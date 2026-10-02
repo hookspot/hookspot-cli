@@ -134,7 +134,7 @@ func (m Fullscreen) sourcesView() tea.View {
 	if rest := 2 + panes - len(lines); len(m.Routes) > 0 && rest > 0 {
 		route := m.Routes[m.sources.selected]
 		fields, activity := m.routeDetail(route), m.activity(route)
-		title := sourceStyle(route.SourceUID).Render(cards.Line(route.Source)) + faintStyle.Render(" → ") + cards.Line(route.Label)
+		title := cards.SourceStyle(route.SourceUID).Render(cards.Line(route.Source)) + faintStyle.Render(" → ") + cards.Line(route.Label)
 		label := faintStyle.Render("press c, then a number, to copy")
 		if width >= splitWidth {
 			left := panel(title, label, width-activityWidth-1, rest, fields)
@@ -199,7 +199,7 @@ func (m Fullscreen) sourcesTable(width, height int) []string {
 		if i > 0 && m.Routes[i-1].SourceUID == route.SourceUID {
 			rows[i]["SOURCE"] = cell{text: " └", style: faintStyle}
 		} else {
-			rows[i]["SOURCE"] = cell{text: cards.Line(route.Source), style: sourceStyle(route.SourceUID)}
+			rows[i]["SOURCE"] = cell{text: cards.Line(route.Source), style: cards.SourceStyle(route.SourceUID)}
 			rows[i]["PUBLIC URL"] = cell{text: cards.Line(route.PublicURL), style: faintStyle}
 		}
 	}
@@ -381,8 +381,8 @@ func (m Fullscreen) routeDetail(route cards.BannerRoute) []string {
 	return lines
 }
 
-// activity sums up the route's requests: counts, latency, a sparkline of the
-// last 15 minutes, the newest request and how forwarded ones ended. Inspect
+// activity sums up the route's requests: counts, latency, a per-minute
+// sparkline, the newest request and how forwarded ones ended. Inspect
 // mode forwards nothing, so it shows only counts and times.
 func (m Fullscreen) activity(route cards.BannerRoute) []string {
 	stats := m.routes[route.RouteUID]
@@ -402,7 +402,7 @@ func (m Fullscreen) activity(route cards.BannerRoute) []string {
 		}
 		lines = append(lines, activityLine("latency", latency))
 	}
-	lines = append(lines, activityLine("per minute", sparkline(stats.PerMinuteAt(m.clock()))+faintStyle.Render("  last 15 min")))
+	lines = append(lines, activityLine("per minute", sparkline(stats.PerMinuteAt(m.clock()))+faintStyle.Render("  last "+strconv.Itoa(session.StatsMinutes)+" min")))
 	last := faintStyle.Render("—")
 	if e := stats.Last; e.Number != 0 {
 		last = "#" + strconv.Itoa(e.Number) + "  " + faintStyle.Render(e.Received.Format(time.TimeOnly))
@@ -459,7 +459,7 @@ var sparks = []rune("▁▂▃▄▅▆▇█")
 
 // sparkline draws counts as bars scaled to the largest; any request at all
 // rises above the floor.
-func sparkline(counts [15]int) string {
+func sparkline(counts [session.StatsMinutes]int) string {
 	most := slices.Max(counts[:])
 	var line strings.Builder
 	for _, count := range counts {

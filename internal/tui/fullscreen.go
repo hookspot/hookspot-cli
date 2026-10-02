@@ -403,7 +403,7 @@ func (m Fullscreen) header(width int) string {
 	if m.Target != "" {
 		target = "→ " + cards.Line(m.Target)
 	}
-	return cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: []string{target, m.clock().Format(time.TimeOnly)}}.Line(width)
+	return cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: []string{target, m.clock().Format(time.TimeOnly)}}.Render(width)
 }
 
 func (m Fullscreen) clock() time.Time {
@@ -419,7 +419,7 @@ func (m Fullscreen) sourceLine() string {
 	var sources []string
 	for i, route := range m.Routes {
 		if i == 0 || m.Routes[i-1].SourceUID != route.SourceUID {
-			sources = append(sources, sourceStyle(route.SourceUID).Render("●")+" "+cards.Line(route.Source))
+			sources = append(sources, cards.SourceStyle(route.SourceUID).Render("●")+" "+cards.Line(route.Source))
 		}
 	}
 	line := strings.Join(sources, "   ")
@@ -592,10 +592,10 @@ func (m Fullscreen) columns(width int) []column {
 			return e.Received.Format(time.TimeOnly), faintStyle
 		}},
 		{title: "SOURCE", width: source, value: func(e session.Entry) (string, lipgloss.Style) {
-			return cards.Line(m.sourceName(e.Delivery.SourceUID)), sourceStyle(e.Delivery.SourceUID)
+			return cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)), cards.SourceStyle(e.Delivery.SourceUID)
 		}},
 		{title: "METHOD", width: 6, value: func(e session.Entry) (string, lipgloss.Style) {
-			return cards.Line(method(e)), lipgloss.Style{}
+			return cards.Line(session.Method(e.Delivery)), lipgloss.Style{}
 		}},
 		{title: "PATH", value: func(e session.Entry) (string, lipgloss.Style) {
 			return cards.Line(e.Delivery.Path), lipgloss.Style{}
@@ -677,24 +677,6 @@ func mark(e session.Entry) (string, lipgloss.Style) {
 		return "test", faintStyle
 	}
 	return "", lipgloss.Style{}
-}
-
-func (m Fullscreen) sourceName(uid string) string {
-	if name := m.Listen.Sources[uid]; name != "" {
-		return name
-	}
-	return "unknown"
-}
-
-func sourceStyle(uid string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(cards.SourceColor(uid))
-}
-
-func method(e session.Entry) string {
-	if e.Delivery.Method == "" {
-		return "POST"
-	}
-	return e.Delivery.Method
 }
 
 // panel frames lines in a box width × height, with title and label in its

@@ -11,10 +11,10 @@ import (
 	"hookspot/internal/proxy"
 )
 
-// maxInlineBody is the largest body a command carries inline. Linux caps one
-// argument at 128 KiB, and a bigger body would flood scrollback and the
+// maxInlineBodyBytes is the largest body a command carries inline. Linux caps
+// one argument at 128 KiB, and a bigger body would flood scrollback and the
 // clipboard.
-const maxInlineBody = 64 << 10
+const maxInlineBodyBytes = 64 * 1024
 
 // Curl is a request as a curl command for a POSIX shell. Its only control
 // characters are line breaks, between arguments and in a body, so pasting it
@@ -36,11 +36,11 @@ type Curl struct {
 }
 
 // Curl builds entry n as a curl command to the URL it was forwarded to, or in
-// inspect mode its source's public URL. A body over 64 KiB or with a control
-// character other than a newline is written to its fixture's .body file:
-// pasting turns a carriage return into a newline, and terminals copy tabs as
-// spaces. Headers with control characters go to a .headers file (read with
-// curl 7.55 and later).
+// inspect mode its source's public URL. A body over maxInlineBodyBytes or
+// with a control character other than a newline is written to its fixture's
+// .body file: pasting turns a carriage return into a newline, and terminals
+// copy tabs as spaces. Headers with control characters go to a .headers file
+// (read with curl 7.55 and later).
 func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	entry, err := s.entry(n)
 	if err != nil {
@@ -70,18 +70,16 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 
 	headers := proxy.Headers(d.Headers)
 	headers.Del("Content-Length")
+	shownHeaders, _ := redactHeaders(headers, redact)
 	var unprintable []string
 	for _, name := range slices.Sorted(maps.Keys(headers)) {
-		for _, value := range headers[name] {
+		for i, value := range headers[name] {
 			if !printable(name+value, "") {
 				unprintable = append(unprintable, headerLine(name, value))
 				continue
 			}
 			full = append(full, "-H "+Quote(headerLine(name, value)))
-			if redact && SensitiveHeader(name) {
-				value, curl.Redacted = redactedValue, true
-			}
-			shown = append(shown, "-H "+Quote(headerLine(name, value)))
+			shown = append(shown, "-H "+Quote(headerLine(name, shownHeaders[name][i])))
 		}
 	}
 	if len(d.Body) > 0 && len(headers["Content-Type"]) == 0 {
@@ -101,7 +99,7 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	}
 	if body := string(d.Body); body != "" {
 		// curl reads a body starting with @ as a file name.
-		if len(body) > maxInlineBody || !printable(body, "\n") || strings.HasPrefix(body, "@") {
+		if len(body) > maxInlineBodyBytes || !printable(body, "\n") || strings.HasPrefix(body, "@") {
 			path, err := writeFixture(name+".body", d.Body)
 			if err != nil {
 				return Curl{}, err
@@ -112,14 +110,8 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	}
 	curl.Command = strings.Join(append(full, files...), " \\\n  ")
 	curl.Shown = strings.Join(append(shown, files...), " \\\n  ")
+	curl.Redacted = curl.Shown != curl.Command
 	return curl, nil
-}
-
-// entry returns entry n, or why history has none.
-func (s *Session) entry(n int) (Entry, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.history.get(n)
 }
 
 func (s *Session) publicURL(sourceUID string) string {

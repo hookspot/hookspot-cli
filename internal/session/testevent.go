@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +15,17 @@ import (
 	"hookspot/internal/ws"
 )
 
-// testHeader carries a test event's id through Hookspot to its deliveries.
-const testHeader = "X-Hookspot-Test"
+const (
+	// testHeader carries a test event's id through Hookspot to its deliveries.
+	testHeader  = "X-Hookspot-Test"
+	testTimeout = 10 * time.Second
+	// maxTestDrainBytes caps how much of Hookspot's answer is drained, which
+	// lets its connection be reused.
+	maxTestDrainBytes = 64 * 1024
+)
 
 var testClient = &http.Client{
-	Timeout: 10 * time.Second,
+	Timeout: testTimeout,
 	// A redirect means the public URL is wrong, so it's reported like any non-2xx.
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
@@ -66,14 +71,10 @@ func (s *Session) SendTest(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("test event to %s: %w", source.Name, err)
 	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxTestDrainBytes))
 	_ = response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		status := strconv.Itoa(response.StatusCode)
-		if text := http.StatusText(response.StatusCode); text != "" {
-			status += " " + text
-		}
-		return "", fmt.Errorf("test event to %s: Hookspot answered %s", source.Name, status)
+	if !Success(response.StatusCode) {
+		return "", fmt.Errorf("test event to %s: Hookspot answered %s", source.Name, StatusText(response.StatusCode))
 	}
 	return source.Name, nil
 }
@@ -100,16 +101,12 @@ func (s *Session) testSource(name string) (api.Source, error) {
 }
 
 // sentTest reports whether delivery carries the id of a test event this run
-// sent. Senders and Hookspot may change the header name's case.
+// sent.
 func (s *Session) sentTest(delivery ws.Delivery) bool {
-	for key, values := range delivery.Headers {
-		if strings.EqualFold(key, testHeader) && len(values) > 0 {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			return slices.Contains(s.tests, values[0])
-		}
-	}
-	return false
+	id := HeaderValue(delivery.Headers, testHeader)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return id != "" && slices.Contains(s.tests, id)
 }
 
 // TestCurl is a POSIX shell command that sends a test event to publicURL from

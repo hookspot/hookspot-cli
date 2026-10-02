@@ -19,6 +19,9 @@ import (
 	"hookspot/internal/endpoint"
 )
 
+// ForwardTimeout is how long Forward waits for the local target's response.
+const ForwardTimeout = 30 * time.Second
+
 // TransportErrorKind identifies common failures that prevent a request from
 // receiving an HTTP response.
 type TransportErrorKind string
@@ -142,7 +145,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 		trailingSlash: strings.HasSuffix(targetBaseURL, "/"),
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   30 * time.Second,
+			Timeout:   ForwardTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
