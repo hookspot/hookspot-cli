@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -28,8 +29,10 @@ type Program struct {
 	stop    context.CancelFunc
 	exit    func(int)
 
-	program  *tea.Program
-	started  chan struct{}
+	program *tea.Program
+	started chan struct{}
+	// drawn closes once the first frame is on the screen.
+	drawn    chan struct{}
 	finished chan struct{}
 	// stopping is set by the first Ctrl-C or Stop; only the event loop uses it.
 	stopping bool
@@ -45,6 +48,7 @@ func NewProgram(input io.Reader, output io.Writer, stop context.CancelFunc) *Pro
 		stop:     stop,
 		exit:     os.Exit,
 		started:  make(chan struct{}),
+		drawn:    make(chan struct{}),
 		finished: make(chan struct{}),
 	}
 }
@@ -58,7 +62,7 @@ func (p *Program) Run(model tea.Model) (tea.Model, error) {
 		// main.go stays the only signal handler.
 		tea.WithoutSignalHandler(),
 		tea.WithInput(p.input),
-		tea.WithOutput(p.output),
+		tea.WithOutput(p.canvas()),
 		tea.WithColorProfile(p.profile),
 		// A terminal's own size replaces this; it's the width rule's fallback.
 		tea.WithWindowSize(cards.DefaultWidth, 24),
@@ -80,7 +84,14 @@ func (p *Program) Run(model tea.Model) (tea.Model, error) {
 // once the program stops reading, so this returns ErrClosed as soon as Run has
 // returned.
 func (p *Program) Println(text string) error {
-	<-p.started
+	// Until its first frame, tea's renderer takes the whole terminal as its
+	// own: a line printed then scrolls away what the terminal showed, the
+	// banner included, and the frame erases the rest.
+	select {
+	case <-p.drawn:
+	case <-p.finished:
+		return ErrClosed
+	}
 	// tea's Println erases right after each line, which in a terminal clears
 	// the last column of a line that fills whole rows, and it counts such a
 	// line a row longer. A space after the line makes both right.
@@ -106,6 +117,45 @@ func (p *Program) Println(text string) error {
 		return ErrClosed
 	}
 }
+
+// canvas is the output tea draws on, which closes drawn.
+func (p *Program) canvas() io.Writer {
+	c := &canvas{Writer: p.output, drawn: p.drawn}
+	if file, ok := p.output.(terminalFile); ok {
+		return terminalCanvas{c, file}
+	}
+	return c
+}
+
+// canvas closes drawn on its first write with text: tea writes only terminal
+// queries before its first frame.
+type canvas struct {
+	io.Writer
+	drawn chan struct{}
+	once  sync.Once
+}
+
+func (c *canvas) Write(b []byte) (int, error) {
+	n, err := c.Writer.Write(b)
+	if ansi.Strip(string(b)) != "" {
+		c.once.Do(func() { close(c.drawn) })
+	}
+	return n, err
+}
+
+// terminalFile is tea's term.File: tea sizes the terminal by its Fd.
+type terminalFile interface {
+	io.ReadWriteCloser
+	Fd() uintptr
+}
+
+// terminalCanvas is a canvas on a terminal file.
+type terminalCanvas struct {
+	*canvas
+	terminalFile
+}
+
+func (t terminalCanvas) Write(b []byte) (int, error) { return t.canvas.Write(b) }
 
 // Send hands msg to the model; once the program has exited it does nothing.
 func (p *Program) Send(msg tea.Msg) {

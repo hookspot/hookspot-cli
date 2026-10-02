@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -19,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"github.com/gorilla/websocket"
@@ -85,17 +85,23 @@ func TestTerminalFullscreenError(t *testing.T) {
 func TestTerminalModes(t *testing.T) {
 	status := regexp.MustCompile(`(?m)^● live · Acme \| Payments · \d+ requests?`)
 	prompt := regexp.MustCompile(`(?m)^› .*ctrl-c quit$`)
-	// The banner prints before the stream starts, which may scroll it away.
-	banner := func(run *terminalRun) bool {
-		return strings.Contains(ansi.Strip(run.written()), "╭─ Listening in Acme | Payments ")
-	}
+	banner := "╭─ Listening in Acme | Payments "
 
 	t.Run("stream", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
-		run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
-		run.waitFor("the banner, status line and prompt", func(screen string) bool {
-			return banner(run) && status.MatchString(screen) && prompt.MatchString(screen)
+		var earlier strings.Builder
+		for i := 1; i <= 25; i++ {
+			fmt.Fprintf(&earlier, "earlier output %d\r\n", i)
+		}
+		// The local join is instant, so the test hint is ready before the
+		// stream's first frame.
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, before: earlier.String()}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
+		screen := run.waitFor("the test hint, status line and prompt", func(screen string) bool {
+			return strings.Contains(screen, "No requests yet.") && status.MatchString(screen) && prompt.MatchString(screen)
 		})
+		if !strings.Contains(screen, "earlier output 25\n"+banner) {
+			t.Errorf("the banner or the output before it is gone:\n%s", screen)
+		}
 		if run.altScreen() {
 			t.Error("the stream is on the alt screen")
 		}
@@ -103,10 +109,20 @@ func TestTerminalModes(t *testing.T) {
 
 	t.Run("stdin not a terminal", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
-		run := startTerminal(t, terminalOptions{width: 100, height: 30, stdin: strings.NewReader("")}, developmentMetadata(hookspot.url), hookspot.listen()...)
-		quit := regexp.MustCompile(status.String() + ` +ctrl-c quit$`)
+		// A shell with history puts the banner's end, and so the stream's
+		// first frame, on the last row; a slow join leaves that frame up.
+		hookspot.holdJoins.Store(true)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, before: strings.Repeat("$\r\n", 30), stdin: strings.NewReader("")}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		run.waitForText("○ connecting… · Acme | Payments · 0 requests")
+		close(hookspot.release)
+		hookspot.deliver(t, terminalDelivery)
+		wholeBanner := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(banner) + `.*╮\n(│.*│\n)+╰─+╯$`)
+		end := regexp.MustCompile(`\n╰─+╯\n● live · Acme \| Payments · 1 request +ctrl-c quit$`)
+		screen := run.waitFor("the banner, card #1 and the status line below it", func(screen string) bool {
+			return wholeBanner.MatchString(screen) && wholeCard(screen, 100) && end.MatchString(screen) && !strings.Contains(screen, "connecting")
+		})
 		// The prompt would come in the same frame as the status line.
-		if screen := run.waitFor("the status line", quit.MatchString); prompt.MatchString(screen) || run.altScreen() {
+		if prompt.MatchString(screen) || run.altScreen() {
 			t.Fatalf("screen without a terminal on stdin:\n%s", screen)
 		}
 	})
@@ -147,7 +163,7 @@ func TestTerminalModes(t *testing.T) {
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"NO_COLOR": "1"}}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, terminalDelivery)
 		run.waitFor("the banner, card #1 and the status line", func(screen string) bool {
-			return banner(run) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
+			return strings.Contains(screen, banner) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
 				strings.Contains(screen, "● live · Acme | Payments · 1 request")
 		})
 		if color := terminalColor.FindString(run.written()); color != "" {
@@ -181,7 +197,10 @@ type terminalRun struct {
 
 type terminalOptions struct {
 	width, height int
-	environment   map[string]string
+	// before is on the screen when the command starts, as earlier shell
+	// output.
+	before      string
+	environment map[string]string
 	// stdin takes the terminal's place when set.
 	stdin io.Reader
 	// pipeStdout pipes stdout, read with piped, instead of the terminal.
@@ -228,6 +247,7 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	if options.pipeStdout {
 		command.Stdout = pipedStdout{r}
 	}
+	_, _ = r.screen.Write([]byte(options.before))
 	if err := pty.Start(command); err != nil {
 		t.Fatal(err)
 	}
@@ -425,6 +445,9 @@ type fakeHookspot struct {
 	// rejectJoins answers joins as a project that isn't found.
 	rejectJoins atomic.Bool
 	done        chan struct{}
+	// holdJoins holds each join's reply until release closes.
+	holdJoins atomic.Bool
+	release   chan struct{}
 }
 
 // hangUp, delivered, drops the websocket connection.
@@ -436,6 +459,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		config:     filepath.Join(t.TempDir(), "config.toml"),
 		deliveries: make(chan any),
 		joins:      make(chan []json.RawMessage, 1),
+		release:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 	if err := writeCommandFixture(hookspot.config, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
@@ -460,6 +484,13 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 			select {
 			case hookspot.joins <- join[2:]:
 			default:
+			}
+			if hookspot.holdJoins.Load() {
+				select {
+				case <-hookspot.release:
+				case <-hookspot.done:
+					return
+				}
 			}
 			if hookspot.rejectJoins.Load() {
 				_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}})
