@@ -21,8 +21,12 @@ func TestExportFixture(t *testing.T) {
 	d.Body = []byte{0, 0x1b, 0xff}
 	traversal := delivery("/orders")
 	traversal.RequestUID = "../../etc/passwd"
+	noRequest := delivery("/orders")
+	noRequest.RequestUID = ""
+	newRoute := delivery("/unmatched")
+	newRoute.RouteUID = "rte_new"
 	// Hookspot delivers one request to each route of its source.
-	for _, sent := range []ws.Delivery{d, delivery("/refunds"), delivery("/unmatched"), traversal} {
+	for _, sent := range []ws.Delivery{d, delivery("/refunds"), delivery("/unmatched"), traversal, noRequest, newRoute} {
 		if _, err := s.Handle(sent); err != nil {
 			t.Fatal(err)
 		}
@@ -75,8 +79,11 @@ func TestExportFixture(t *testing.T) {
 			2: "req_1_rte_refunds",
 			3: "req_1",
 			4: "entry-4",
+			5: "entry-5",
+			// A route the session doesn't know yet still tells it apart.
+			6: "req_1_rte_new",
 			// A replay replaces its original's files.
-			5: "req_1_rte_orders",
+			7: "req_1_rte_orders",
 		} {
 			fixture, err := s.ExportFixture(n, true)
 			if err != nil || fixture.JSON != filepath.Join(fixtures, want+".json") || fixture.Body != filepath.Join(fixtures, want+".body") {
