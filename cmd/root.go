@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"os"
 
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"hookspot/internal/config"
@@ -70,6 +72,11 @@ and proxies incoming webhook events to a local host and port.`,
 
 // ExecuteContext runs the root command with ctx.
 func ExecuteContext(ctx context.Context) error {
+	// A Windows console shows styled output's escape sequences as text unless
+	// VT processing is on. It stays on: bubbletea restores the mode it found,
+	// so the error printed after a full-screen run is styled too.
+	lipgloss.EnableLegacyWindowsANSI(os.Stdout)
+	lipgloss.EnableLegacyWindowsANSI(os.Stderr)
 	return rootCmd.ExecuteContext(ctx)
 }
 

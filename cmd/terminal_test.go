@@ -39,9 +39,7 @@ func TestTerminalFullscreenJourney(t *testing.T) {
 
 	row := regexp.MustCompile(`(?m)^│ › 1  \d\d:\d\d:\d\d  stripe  POST +/webhooks/stripe +200 `)
 	run.waitFor("the request's row", row.MatchString)
-	if !run.altScreen() {
-		t.Error("the request list is not on the alt screen")
-	}
+	run.requireAltScreen()
 	if !terminalColor.MatchString(run.written()) {
 		t.Error("no color in a terminal")
 	}
@@ -175,6 +173,9 @@ func TestTerminalModes(t *testing.T) {
 	})
 
 	t.Run("TERM=dumb", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("ConPTY sends conhost's own rendering of the console, which always has escape sequences")
+		}
 		hookspot := startFakeHookspot(t, listenStreamSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"TERM": "dumb"}}, developmentMetadata(hookspot.url), hookspot.listen()...)
 		hookspot.deliver(t, terminalDelivery)
@@ -243,6 +244,9 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	t.Helper()
 	if runtime.GOOS == "windows" && (options.stdin != nil || options.pipeStdout) {
 		t.Skip("ConPTY makes its console the command's stdin, stdout and stderr, so neither can be replaced")
+	}
+	if runtime.GOOS == "windows" && options.before != "" {
+		t.Skip("ConPTY clears the screen on its first paint, so no earlier output stays on it")
 	}
 	pty, err := xpty.NewPty(options.width, options.height)
 	if err != nil {
@@ -401,6 +405,16 @@ func (r *terminalRun) altScreen() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.screen.IsAltScreen()
+}
+
+// requireAltScreen fails unless the command is on the alt screen. Windows
+// isn't checked: conhost may keep the alt screen to itself and repaint it on
+// ConPTY's main screen.
+func (r *terminalRun) requireAltScreen() {
+	r.t.Helper()
+	if runtime.GOOS != "windows" && !r.altScreen() {
+		r.t.Errorf("not on the alt screen:\n%s", r.text())
+	}
 }
 
 // waitFor waits until condition holds for the screen's text, and returns
