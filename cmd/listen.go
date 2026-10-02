@@ -458,23 +458,23 @@ func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool
 		return writer.Reply(tui.CommandUsage(forwarding))
 	}
 	switch command.Key {
-	case "":
+	case tui.ReplayLastKey:
 		return replyToReplay(writer, sess.ReplayLast())
-	case "r":
+	case tui.ReplayKey:
 		return replyToReplay(writer, sess.Replay(command.N))
-	case "c":
+	case tui.CurlKey:
 		curl, err := sess.Curl(command.N, !showSensitiveHeaders)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
 		return writer.Print(cards.CurlNotes(command.N, curl, false) + "\n" + curl.Shown)
-	case "e":
+	case tui.ExportKey:
 		fixture, err := sess.ExportFixture(command.N, !showSensitiveHeaders)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
 		return writer.Reply(cards.Exported(command.N, fixture))
-	case "t":
+	case tui.TestKey:
 		// A test event that fails to send leaves listening as it was.
 		source, err := sess.SendTest(command.Source)
 		if err != nil {

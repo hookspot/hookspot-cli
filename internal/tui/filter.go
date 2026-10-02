@@ -15,13 +15,6 @@ import (
 	"hookspot/internal/session"
 )
 
-var (
-	filterKey = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
-	// escKey stops w's wait, else dismisses the alerts, else clears the
-	// filter.
-	escKey = key.NewBinding(key.WithKeys("esc"))
-)
-
 // filter narrows the list to the requests matching every term of its text.
 // It's typed on the filter line and applied with enter.
 type filter struct {
@@ -45,9 +38,9 @@ type term struct {
 func parseFilter(text string) []term {
 	var terms []term
 	for _, word := range strings.Fields(text) {
-		key, value, found := strings.Cut(word, ":")
-		if found && value != "" && (key == "status" || key == "source" || key == "path") {
-			terms = append(terms, term{key: key, value: value})
+		name, value, found := strings.Cut(word, ":")
+		if found && value != "" && (name == "status" || name == "source" || name == "path") {
+			terms = append(terms, term{key: name, value: value})
 		} else {
 			terms = append(terms, term{value: word})
 		}
@@ -133,29 +126,13 @@ func (f filter) shows(n int) bool {
 // editFilter takes keys while the filter line is open: enter applies it, esc
 // clears it.
 func (m Fullscreen) editFilter(msg tea.KeyPressMsg) Fullscreen {
-	switch msg.String() {
-	case "enter":
-		m.filter = m.filter.apply(m.entries, m.Listen)
-	case "esc":
-		m.filter = filter{}
-	case "backspace":
-		runes := []rune(m.filter.input)
-		m.filter.input = string(runes[:max(0, len(runes)-1)])
-	default:
-		m.filter.input += msg.Text
-	}
-	return m
-}
-
-// escape stops w's wait, else dismisses the alerts, else clears the filter.
-func (m Fullscreen) escape() Fullscreen {
 	switch {
-	case m.waiting():
-		m.wait = wait{id: m.wait.id}
-	case m.reconnected != nil || m.notFound != nil:
-		m.reconnected, m.notFound = nil, nil
-	default:
+	case msg.String() == "enter":
+		m.filter = m.filter.apply(m.entries, m.Listen)
+	case key.Matches(msg, keys.esc):
 		m.filter = filter{}
+	default:
+		m.filter.input = edited(m.filter.input, msg)
 	}
 	return m
 }

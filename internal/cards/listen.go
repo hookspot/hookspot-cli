@@ -52,7 +52,7 @@ func Banner(project string, routes []BannerRoute, hints []string, width int) str
 	fits := true
 	for i, route := range routes {
 		if i == 0 || routes[i-1].SourceUID != route.SourceUID {
-			leads[i] = pad(sourceStyle(route.SourceUID).Render(Line(route.Source)), nameWidth) + "  " + faintStyle.Render(Line(route.PublicURL))
+			leads[i] = Pad(SourceStyle(route.SourceUID).Render(Line(route.Source)), nameWidth) + "  " + faintStyle.Render(Line(route.PublicURL))
 		}
 		destination := "terminal only"
 		if route.Destination != "" {
@@ -70,7 +70,7 @@ func Banner(project string, routes []BannerRoute, hints []string, width int) str
 	for i := range routes {
 		switch {
 		case fits:
-			lines = append(lines, pad(leads[i], nameWidth+2+urlWidth)+"  "+targets[i])
+			lines = append(lines, Pad(leads[i], nameWidth+2+urlWidth)+"  "+targets[i])
 		case leads[i] != "":
 			lines = append(lines, leads[i], "  "+targets[i])
 		default:
@@ -79,7 +79,7 @@ func Banner(project string, routes []BannerRoute, hints []string, width int) str
 	}
 
 	title := "Listening in " + boldStyle.Render(Line(project))
-	label := faintStyle.Render(count(len(sources), "source") + " • " + count(len(routes), "route"))
+	label := faintStyle.Render(Count(len(sources), "source") + " • " + Count(len(routes), "route"))
 	footer := ""
 	if len(hints) > 0 {
 		footer = faintStyle.Render(strings.Join(hints, " · "))
@@ -136,7 +136,7 @@ type Status struct {
 // Line renders the status at width: state, project, counts and p50, then the
 // hints while they fit.
 func (s Status) Line(width int) string {
-	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), count(s.Totals.Count, "request")}
+	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
 		failed := strconv.Itoa(t.Failed) + " failed"
 		if t.Failed > 0 {
@@ -225,7 +225,7 @@ func TestHint(hint session.TestHint, commands bool) string {
 			keyWidth = max(keyWidth, lipgloss.Width(keys[i]))
 		}
 		for i, source := range hint.Sources {
-			lines = append(lines, "  "+pad(keys[i], keyWidth)+"  send a test event to "+boldStyle.Render(Line(source.Name)))
+			lines = append(lines, "  "+Pad(keys[i], keyWidth)+"  send a test event to "+boldStyle.Render(Line(source.Name)))
 		}
 		lines = append(lines, "", faintStyle.Render("  or from anywhere:"))
 	}
@@ -299,12 +299,12 @@ func (l Listen) row(e session.Entry, width int) string {
 	// Badges are padded, so one space sets them apart. Whoever posts to a
 	// source picks the method, so one longer than OPTIONS is cut.
 	const methodWidth, maxMethod = 6, len("OPTIONS")
-	left := pad(Badge(truncate(Line(session.Method(d)), maxMethod)), methodWidth) + " "
+	left := Pad(Badge(truncate(Line(session.Method(d)), maxMethod)), methodWidth) + " "
 	if e.Number > 0 {
 		left = faintStyle.Render(fmt.Sprintf("#%-3d", e.Number)) + left
 	}
 	right := ColorBadge(StatusColor(e.Response.Status), strconv.Itoa(e.Response.Status)) + " " +
-		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(e.Latency))+"  "+timestamp(e))
+		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(e.Latency))+"  "+Timestamp(e))
 	if marks := marks(e); marks != "" {
 		right = marks + " " + right
 	}
@@ -313,7 +313,7 @@ func (l Listen) row(e session.Entry, width int) string {
 	// source name gives way first.
 	const minPath, minSummary = 12, 8
 	sourceWidth := min(l.sourceWidth(), max(lipgloss.Width("unknown"), width-lipgloss.Width(left)-lipgloss.Width(right)-minPath-4))
-	left += pad(truncate(l.source(d.SourceUID), sourceWidth), sourceWidth) + "  "
+	left += Pad(truncate(l.Source(d.SourceUID), sourceWidth), sourceWidth) + "  "
 	room := max(minPath, width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	path, summary := Line(d.Path), l.Summary(d)
 	if summaryRoom := room - lipgloss.Width(path) - 2; lipgloss.Width(summary) <= summaryRoom || summaryRoom >= minSummary {
@@ -330,7 +330,7 @@ func (l Listen) httpFailure(e session.Entry, inner int) string {
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
 	return frame(border, inner, l.title(e), cardLabel(e), "",
-		section{lines: outcome(ColorBadge(StatusColor(response.Status), responseStatus(response.Status)), e, inner)},
+		section{lines: outcome(ColorBadge(StatusColor(response.Status), StatusText(response.Status)), e, inner)},
 		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
@@ -393,7 +393,7 @@ func (l Listen) replay(e session.Entry, width int) string {
 	summary := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + warnStyle.Render("↻") + " " + faintStyle.Render("#"+strconv.Itoa(c.Original)) + "  " +
 		result(c.Status, c.Failure) + faintStyle.Render(" → ") + result(e.Response.Status, e.Failure) + "  " +
 		faintStyle.Render(FormatLatency(c.Latency)+" → "+FormatLatency(e.Latency))
-	right := faintStyle.Render(timestamp(e))
+	right := faintStyle.Render(Timestamp(e))
 	const minTitle = 12
 	room := max(minTitle, width-lipgloss.Width(summary)-lipgloss.Width(right)-4)
 	// The title leaves out the number the summary opens with.
@@ -407,7 +407,7 @@ func (l Listen) replay(e session.Entry, width int) string {
 		lines = append(lines, truncate("  "+okStyle.Render("+ "+l.bodyLine(line)), width))
 	}
 	if c.More > 0 {
-		lines = append(lines, "  "+faintStyle.Render("… "+count(c.More, "more changed line")))
+		lines = append(lines, "  "+faintStyle.Render("… "+Count(c.More, "more changed line")))
 	}
 	if c.Binary {
 		lines = append(lines, "  "+faintStyle.Render("binary body "+formatBytes(c.Size)+" → "+formatBytes(len(e.Response.Body))))
@@ -432,7 +432,7 @@ func result(status int, failure *proxy.TransportFailure) string {
 
 // title names a card's request: number, source, method and path.
 func (l Listen) title(e session.Entry) string {
-	title := l.source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(session.Method(e.Delivery)) + " " + Line(e.Delivery.Path)
+	title := l.Source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(session.Method(e.Delivery)) + " " + Line(e.Delivery.Path)
 	if e.Number > 0 {
 		title = faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + title
 	}
@@ -447,7 +447,7 @@ func outcome(status string, e session.Entry, inner int) []string {
 
 // cardLabel ends a card's top border: its marks and the time it arrived.
 func cardLabel(e session.Entry) string {
-	label := faintStyle.Render(timestamp(e))
+	label := faintStyle.Render(Timestamp(e))
 	if marks := marks(e); marks != "" {
 		label = marks + "  " + label
 	}
@@ -461,11 +461,13 @@ func marks(e session.Entry) string {
 	return ""
 }
 
-func (l Listen) source(uid string) string {
-	return sourceStyle(uid).Render(Line(l.sourceName(uid)))
+// Source is a source's name in its color.
+func (l Listen) Source(uid string) string {
+	return SourceStyle(uid).Render(Line(l.SourceName(uid)))
 }
 
-func (l Listen) sourceName(uid string) string {
+// SourceName is a source's name, or unknown for one this run doesn't listen to.
+func (l Listen) SourceName(uid string) string {
 	if name := l.Sources[uid]; name != "" {
 		return name
 	}
@@ -481,7 +483,8 @@ func (l Listen) sourceWidth() int {
 	return width
 }
 
-func sourceStyle(uid string) lipgloss.Style {
+// SourceStyle colors text in uid's SourceColor.
+func SourceStyle(uid string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(SourceColor(uid))
 }
 
@@ -530,10 +533,10 @@ func (l Listen) Headers(headers http.Header) []string {
 			}
 			value = strings.Join(values, ", ")
 		}
-		lines = append(lines, pad(keyStyle.Render(strings.ToLower(Line(key))), nameWidth)+"  "+value)
+		lines = append(lines, Pad(keyStyle.Render(strings.ToLower(Line(key))), nameWidth)+"  "+value)
 	}
 	if omitted := len(headers) - len(keys); omitted > 0 {
-		lines = append(lines, faintStyle.Render("… "+count(omitted, "more header")))
+		lines = append(lines, faintStyle.Render("… "+Count(omitted, "more header")))
 	}
 	return lines
 }
@@ -551,7 +554,7 @@ func (l Listen) Body(body []byte, headers http.Header) []string {
 		out = append(out, line)
 	}
 	if omitted > 0 {
-		out = append(out, faintStyle.Render("… "+count(omitted, "more line")))
+		out = append(out, faintStyle.Render("… "+Count(omitted, "more line")))
 	}
 	return out
 }
@@ -686,19 +689,21 @@ func spread(left, right string, width int) []string {
 	}
 }
 
-// pad fills s, which may be styled, to width columns.
-func pad(s string, width int) string {
+// Pad fills s, which may be styled, to width columns.
+func Pad(s string, width int) string {
 	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
 }
 
-func count(n int, noun string) string {
+// Count is n of noun, plural unless n is 1.
+func Count(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
 	return strconv.Itoa(n) + " " + noun + "s"
 }
 
-func timestamp(e session.Entry) string {
+// Timestamp is when e arrived, to the millisecond.
+func Timestamp(e session.Entry) string {
 	return e.Received.Format("15:04:05.000")
 }
 
@@ -775,7 +780,8 @@ func textualMIME(mimeType string) bool {
 		mimeType == "application/graphql"
 }
 
-func responseStatus(status int) string {
+// StatusText is a status with its name, such as 500 Internal Server Error.
+func StatusText(status int) string {
 	if text := http.StatusText(status); text != "" {
 		return strconv.Itoa(status) + " " + text
 	}

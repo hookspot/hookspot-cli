@@ -68,7 +68,7 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 	case tea.PasteMsg:
 		if m.prompting() {
-			m.input += pasted(msg.Content)
+			m.input = edited(m.input, msg)
 		}
 	case tea.KeyPressMsg:
 		if m.prompting() {
@@ -122,27 +122,35 @@ func (c connection) follow(state cards.State, lost error) connection {
 	return c
 }
 
-// pasted is pasted text as typed: line breaks and other control characters
-// become spaces.
-func pasted(text string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
-			return ' '
+// edited is input after a key typed or text pasted into it. Pasted line
+// breaks and other control characters become spaces.
+func edited(input string, msg tea.Msg) string {
+	switch msg := msg.(type) {
+	case tea.PasteMsg:
+		return input + strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return ' '
+			}
+			return r
+		}, msg.Content)
+	case tea.KeyPressMsg:
+		if msg.String() == "backspace" {
+			runes := []rune(input)
+			return string(runes[:max(0, len(runes)-1)])
 		}
-		return r
-	}, text)
+		return input + msg.Text
+	}
+	return input
 }
 
 func (m Stream) prompting() bool {
 	return m.Prompt && m.state < cards.StateStopping
 }
 
-// commands are the prompt's commands; without --forward-to nothing replays.
+// commands are the prompt's commands; c and e don't fit beside the input at
+// 80 columns.
 func (m Stream) commands() []string {
-	if !m.Forwarding {
-		return []string{"t test event", "? help"}
-	}
-	return []string{"↵ replay last", "r N replay #N", "t test event", "? help"}
+	return hints(m.Forwarding, ReplayLastKey, ReplayKey, TestKey, HelpKey)
 }
 
 // statusHints are the keys the status line names; the prompt names its own.
@@ -157,17 +165,12 @@ func (m Stream) statusHints() []string {
 }
 
 func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch key.String() {
-	case "enter":
+	if key.String() == "enter" {
 		line := m.input
 		m.input = ""
 		return m.run(line)
-	case "backspace":
-		runes := []rune(m.input)
-		m.input = string(runes[:max(0, len(runes)-1)])
-	default:
-		m.input += key.Text
 	}
+	m.input = edited(m.input, key)
 	return m, nil
 }
 
@@ -182,15 +185,15 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 	}
 	requests := m.Requests
 	switch command.Key {
-	case "":
+	case ReplayLastKey:
 		return m.replay(requests.ReplayLast)
-	case "r":
+	case ReplayKey:
 		return m.replay(func() error { return requests.Replay(command.N) })
-	case "c":
+	case CurlKey:
 		return m, copyCurl(requests, command.N, !m.ShowSensitiveHeaders)
-	case "e":
+	case ExportKey:
 		return m, exportFixture(requests, command.N, !m.ShowSensitiveHeaders)
-	case "t":
+	case TestKey:
 		return m, sendTest(requests, command.Source)
 	}
 	m.reply = CommandHelp(m.Forwarding)

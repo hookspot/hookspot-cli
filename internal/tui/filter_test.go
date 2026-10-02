@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/x/exp/teatest/v2"
 
 	"hookspot/internal/session"
-	"hookspot/internal/ws"
 )
 
 var (
@@ -41,8 +40,7 @@ func typed(text string) []tea.Msg {
 func TestFilterMatches(t *testing.T) {
 	push := entry(4, "src_github", 404)
 	push.Delivery.Body = []byte(`{"action":"push"}`)
-	printed := entry(5, "src_stripe", 0)
-	printed.Target, printed.Response = "", ws.Response{}
+	printed := printedOnly(5, "src_stripe")
 	redirected := entry(6, "src_stripe", 302)
 	redirected.Delivery.Path = "/hooks/v2"
 	entries := []session.Entry{entry(1, "src_stripe", 200), entry(2, "src_github", 500), refused(3), push, printed, redirected}
