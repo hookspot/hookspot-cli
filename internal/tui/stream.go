@@ -89,8 +89,13 @@ func (m Stream) View() tea.View {
 	if m.prompting() {
 		lines = append(lines, cards.Prompt(m.input, append(m.commands(), "ctrl-c quit"), m.width))
 	}
-	// The renderer erases the frame's last line on exit, so it's left empty.
-	return tea.NewView(strings.Join(lines, "\n") + "\n")
+	// The renderer erases the frame's last line on exit, so the final frame
+	// ends with an empty one. Live frames don't: on the screen's last row the
+	// renderer leaves that line undrawn, and every print lands a row too high.
+	if m.state == cards.StateStopped {
+		lines = append(lines, "")
+	}
+	return tea.NewView(strings.Join(lines, "\n"))
 }
 
 // replyMsg answers a command; it shows above the status line until the next.

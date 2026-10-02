@@ -109,10 +109,20 @@ func TestTerminalModes(t *testing.T) {
 
 	t.Run("stdin not a terminal", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
-		run := startTerminal(t, terminalOptions{width: 100, height: 30, stdin: strings.NewReader("")}, developmentMetadata(hookspot.url), hookspot.listen()...)
-		quit := regexp.MustCompile(status.String() + ` +ctrl-c quit$`)
+		// A shell with history puts the banner's end, and so the stream's
+		// first frame, on the last row; a slow join leaves that frame up.
+		hookspot.holdJoins.Store(true)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, before: strings.Repeat("$\r\n", 30), stdin: strings.NewReader("")}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		run.waitForText("○ connecting… · Acme | Payments · 0 requests")
+		close(hookspot.release)
+		hookspot.deliver(t, terminalDelivery)
+		wholeBanner := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(banner) + `.*╮\n(│.*│\n)+╰─+╯$`)
+		end := regexp.MustCompile(`\n╰─+╯\n● live · Acme \| Payments · 1 request +ctrl-c quit$`)
+		screen := run.waitFor("the banner, card #1 and the status line below it", func(screen string) bool {
+			return wholeBanner.MatchString(screen) && wholeCard(screen, 100) && end.MatchString(screen) && !strings.Contains(screen, "connecting")
+		})
 		// The prompt would come in the same frame as the status line.
-		if screen := run.waitFor("the status line", quit.MatchString); prompt.MatchString(screen) || run.altScreen() {
+		if prompt.MatchString(screen) || run.altScreen() {
 			t.Fatalf("screen without a terminal on stdin:\n%s", screen)
 		}
 	})
@@ -435,6 +445,9 @@ type fakeHookspot struct {
 	// rejectJoins answers joins as a project that isn't found.
 	rejectJoins atomic.Bool
 	done        chan struct{}
+	// holdJoins holds each join's reply until release closes.
+	holdJoins atomic.Bool
+	release   chan struct{}
 }
 
 // hangUp, delivered, drops the websocket connection.
@@ -446,6 +459,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		config:     filepath.Join(t.TempDir(), "config.toml"),
 		deliveries: make(chan any),
 		joins:      make(chan []json.RawMessage, 1),
+		release:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
 	if err := writeCommandFixture(hookspot.config, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
@@ -470,6 +484,13 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 			select {
 			case hookspot.joins <- join[2:]:
 			default:
+			}
+			if hookspot.holdJoins.Load() {
+				select {
+				case <-hookspot.release:
+				case <-hookspot.done:
+					return
+				}
 			}
 			if hookspot.rejectJoins.Load() {
 				_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}})
