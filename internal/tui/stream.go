@@ -85,7 +85,7 @@ func (m Stream) View() tea.View {
 		// paths and warnings that must show whole.
 		lines = wrap(m.width, strings.Split(m.reply, "\n"))
 	}
-	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}.Line(m.width))
+	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}.Render(m.width))
 	if m.prompting() {
 		lines = append(lines, cards.Prompt(m.input, append(m.commands(), "ctrl-c quit"), m.width))
 	}

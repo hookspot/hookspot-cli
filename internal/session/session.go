@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,7 +20,7 @@ import (
 
 const maxLocalResponseBodyBytes = 16 * 1024 * 1024
 
-var errLocalResponseBodyTooLarge = errors.New("local response body exceeds 16 MiB limit")
+var errLocalResponseBodyTooLarge = fmt.Errorf("local response body exceeds %d MiB limit", maxLocalResponseBodyBytes/1024/1024)
 
 // ErrNoTarget refuses a replay in inspect mode, where nothing local answers.
 var ErrNoTarget = errors.New("nothing to replay without --forward-to")
@@ -174,9 +175,7 @@ func (s *Session) Replay(n int) error {
 	if s.forwarder == nil {
 		return ErrNoTarget
 	}
-	s.mu.Lock()
-	original, err := s.history.get(n)
-	s.mu.Unlock()
+	original, err := s.entry(n)
 	if err != nil {
 		return err
 	}
@@ -235,8 +234,6 @@ func (s *Session) forward(entry Entry) (Entry, error) {
 	return entry, nil
 }
 
-// record numbers entry, updates the stats and emits it, then the root hint
-// when entry earns it.
 func (s *Session) record(entry Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -266,6 +263,12 @@ func (s *Session) record(entry Entry) error {
 	}
 	s.rootHinted = true
 	return s.sink.Emit(RootNotFound{Root: entry.Target, Status: status})
+}
+
+func (s *Session) entry(n int) (Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.history.get(n)
 }
 
 func (s *Session) route(uid string) *stats {

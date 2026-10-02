@@ -28,7 +28,7 @@ type Comparison struct {
 	Latency  time.Duration
 	Size     int
 	// Removed and Added are the original's and the replay's response body
-	// lines between the first and last lines both share, at most six
+	// lines between the first and last lines both share, at most maxDiffLines
 	// together; More counts the rest. Bodies compare only when both requests
 	// got a response.
 	Removed, Added []string
@@ -57,7 +57,7 @@ func Compare(original, replay Entry) Comparison {
 		return c
 	}
 
-	removed, added := bodyLines(before), bodyLines(after)
+	removed, added := diffLines(before), diffLines(after)
 	for len(removed) > 0 && len(added) > 0 && removed[0] == added[0] {
 		removed, added = removed[1:], added[1:]
 	}
@@ -72,8 +72,8 @@ func Compare(original, replay Entry) Comparison {
 	return c
 }
 
-// bodyLines splits a body as listen shows it.
-func bodyLines(body []byte) []string {
+// diffLines splits a body as listen shows it.
+func diffLines(body []byte) []string {
 	if len(body) == 0 {
 		return nil
 	}

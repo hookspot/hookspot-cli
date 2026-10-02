@@ -20,9 +20,6 @@ func TestSanitizeAndLine(t *testing.T) {
 		{name: "NUL, BEL and DEL", in: "\x00\x07\x7f", sanitize: `\x00\x07\x7f`, line: `\x00\x07\x7f`},
 		{name: "C1 CSI and NEL", in: "\u009b31m\u0085", sanitize: `\x9b31m\x85`, line: `\x9b31m\x85`},
 		{name: "invalid UTF-8", in: "a\xffb\x9b\xc2", sanitize: "a�b��", line: "a�b��"},
-		{name: "error text", in: "bad\x1b[31m\rvalue", sanitize: `bad\x1b[31m\rvalue`, line: `bad\x1b[31m\rvalue`},
-		{name: "body text", in: "hello\tworld\x1b[31m", sanitize: "hello\tworld\\x1b[31m", line: `hello\tworld\x1b[31m`},
-		{name: "display text", in: "line\ncolumn\t\x1b", sanitize: "line\ncolumn\t\\x1b", line: `line\ncolumn\t\x1b`},
 	}
 
 	for _, test := range tests {

@@ -344,7 +344,7 @@ func TestStats(t *testing.T) {
 		Count: 6, OK: 3, Failed: 3,
 		P50: 40 * time.Millisecond, P95: 100 * time.Millisecond, Max: 100 * time.Millisecond,
 		Outcomes:  map[Outcome]int{{Status: http.StatusOK}: 3, {Failure: proxy.TransportTimeout}: 1, {Failure: proxy.TransportOther}: 1, {Status: http.StatusInternalServerError}: 1},
-		PerMinute: [statsMinutes]int{12: 6},
+		PerMinute: [StatsMinutes]int{12: 6},
 		Minute:    minute,
 		Last:      Entry{Number: 6},
 	}
@@ -355,7 +355,7 @@ func TestStats(t *testing.T) {
 		Count: 7, OK: 4, Failed: 3,
 		P50: 30 * time.Millisecond, P95: 100 * time.Millisecond, Max: 100 * time.Millisecond,
 		Outcomes:  map[Outcome]int{{Status: http.StatusOK}: 4, {Failure: proxy.TransportTimeout}: 1, {Failure: proxy.TransportOther}: 1, {Status: http.StatusInternalServerError}: 1},
-		PerMinute: [statsMinutes]int{12: 6, 14: 1},
+		PerMinute: [StatsMinutes]int{12: 6, 14: 1},
 		Minute:    minute,
 		Last:      Entry{Number: 7},
 	}
@@ -384,10 +384,10 @@ func TestPerMinuteWindowDropsOldMinutes(t *testing.T) {
 	for _, offset := range []time.Duration{0, time.Minute, 3 * time.Minute, 20 * time.Minute, 21 * time.Minute} {
 		s.add(Entry{Received: start.Add(offset)})
 	}
-	if got, want := s.snapshot(start.Add(22*time.Minute)).PerMinute, [statsMinutes]int{12: 1, 13: 1}; got != want {
+	if got, want := s.snapshot(start.Add(22*time.Minute)).PerMinute, [StatsMinutes]int{12: 1, 13: 1}; got != want {
 		t.Fatalf("per minute = %v, want %v", got, want)
 	}
-	if got := s.snapshot(start.Add(time.Hour)).PerMinute; got != [statsMinutes]int{} {
+	if got := s.snapshot(start.Add(time.Hour)).PerMinute; got != [StatsMinutes]int{} {
 		t.Fatalf("per minute an hour later = %v, want none", got)
 	}
 }
@@ -398,7 +398,7 @@ func TestPerMinuteAtMovesAnOldSnapshotOn(t *testing.T) {
 	s.add(Entry{Received: start})
 	s.add(Entry{Received: start.Add(time.Minute)})
 	snapshot := s.snapshot(start.Add(time.Minute))
-	if got, want := snapshot.PerMinuteAt(start.Add(3*time.Minute)), [statsMinutes]int{11: 1, 12: 1}; got != want {
+	if got, want := snapshot.PerMinuteAt(start.Add(3*time.Minute)), [StatsMinutes]int{11: 1, 12: 1}; got != want {
 		t.Fatalf("per minute 2 minutes on = %v, want %v", got, want)
 	}
 	if got := snapshot.PerMinuteAt(start); got != snapshot.PerMinute {

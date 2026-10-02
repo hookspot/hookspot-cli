@@ -215,7 +215,7 @@ func TestSourcesScrollsToTheSelectedRoute(t *testing.T) {
 }
 
 func TestSparklineShowsAnyRequest(t *testing.T) {
-	if got, want := sparkline([15]int{1: 1, 2: 50, 14: 100}), "▁▂▅▁▁▁▁▁▁▁▁▁▁▁█"; got != want {
+	if got, want := sparkline([session.StatsMinutes]int{1: 1, 2: 50, 14: 100}), "▁▂▅▁▁▁▁▁▁▁▁▁▁▁█"; got != want {
 		t.Fatalf("sparkline = %s, want %s", got, want)
 	}
 }

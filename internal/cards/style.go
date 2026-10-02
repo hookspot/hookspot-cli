@@ -1,3 +1,6 @@
+// Package cards renders what the CLI prints: listen's banner, requests,
+// status and notices, and the other commands' boxes. Text from the server or
+// a delivery goes through Sanitize or Line first.
 package cards
 
 import (
@@ -7,6 +10,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"golang.org/x/term"
+
+	"hookspot/internal/session"
 )
 
 // The palette sticks to the 16 ANSI colors so cards follow the terminal's own
@@ -30,6 +35,8 @@ var (
 	keyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Blue)
 	stringStyle  = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
 	literalStyle = lipgloss.NewStyle().Foreground(lipgloss.Magenta)
+
+	cursorStyle = lipgloss.NewStyle().Reverse(true)
 )
 
 // DefaultWidth is the card width when the output isn't a terminal or its size
@@ -47,7 +54,7 @@ func SourceColor(uid string) color.Color {
 // a transport failure (0), is a failure.
 func StatusColor(status int) color.Color {
 	switch {
-	case status >= 200 && status < 300:
+	case session.Success(status):
 		return lipgloss.Green
 	case status >= 300 && status < 400:
 		return lipgloss.Yellow

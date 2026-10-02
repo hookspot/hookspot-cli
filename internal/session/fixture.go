@@ -66,20 +66,29 @@ func (s *Session) ExportFixture(n int, redact bool) (Fixture, error) {
 	return fixture, nil
 }
 
+// sensitiveHeaders carry credentials, in lower case.
+var sensitiveHeaders = []string{
+	"authorization", "proxy-authorization", "cookie", "set-cookie",
+	"x-cli-key", "x-api-key", "api-key", "x-hookspot-cli-key",
+}
+
 // SensitiveHeader reports whether a header carries credentials, whose values
 // stay hidden unless --show-sensitive-headers.
 func SensitiveHeader(name string) bool {
-	switch strings.ToLower(name) {
-	case "authorization", "proxy-authorization", "cookie", "set-cookie",
-		"x-cli-key", "x-api-key", "api-key", "x-hookspot-cli-key":
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(sensitiveHeaders, strings.ToLower(name))
 }
 
-// redactHeaders returns headers with sensitive values replaced when redact is
-// set, and whether any were.
+// HeaderValue is the first value of the header called name in any case:
+// senders and Hookspot may change a header name's case.
+func HeaderValue(headers http.Header, name string) string {
+	for key, values := range headers {
+		if strings.EqualFold(key, name) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
+}
+
 func redactHeaders(headers http.Header, redact bool) (http.Header, bool) {
 	out := make(http.Header, len(headers))
 	redacted := false

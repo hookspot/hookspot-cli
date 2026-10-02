@@ -1,13 +1,14 @@
 package cards
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,7 @@ type BannerRoute struct {
 // doesn't fit on one line, every route moves below its source. Connection
 // state follows the box rather than living in it.
 func Banner(project string, routes []BannerRoute, hints []string, width int) string {
-	inner := max(1, width-4)
+	inner := innerWidth(width)
 	sources := map[string]bool{}
 	nameWidth, urlWidth := 0, 0
 	for _, route := range routes {
@@ -52,7 +53,7 @@ func Banner(project string, routes []BannerRoute, hints []string, width int) str
 	fits := true
 	for i, route := range routes {
 		if i == 0 || routes[i-1].SourceUID != route.SourceUID {
-			leads[i] = pad(sourceStyle(route.SourceUID).Render(Line(route.Source)), nameWidth) + "  " + faintStyle.Render(Line(route.PublicURL))
+			leads[i] = pad(SourceStyle(route.SourceUID).Render(Line(route.Source)), nameWidth) + "  " + faintStyle.Render(Line(route.PublicURL))
 		}
 		destination := "terminal only"
 		if route.Destination != "" {
@@ -133,9 +134,9 @@ type Status struct {
 	Hints   []string
 }
 
-// Line renders the status at width: state, project, counts and p50, then the
+// Render draws the status at width: state, project, counts and p50, then the
 // hints while they fit.
-func (s Status) Line(width int) string {
+func (s Status) Render(width int) string {
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
 		failed := strconv.Itoa(t.Failed) + " failed"
@@ -168,8 +169,6 @@ func (s Status) state() string {
 		return faintStyle.Render("○ connecting…")
 	}
 }
-
-var cursorStyle = lipgloss.NewStyle().Reverse(true)
 
 // Prompt is the › prompt with the typed input and a block cursor, then hints
 // at the right end while they fit.
@@ -249,6 +248,41 @@ func PathWorks(target string, failure *proxy.TransportFailure, width int) string
 	return truncate(okStyle.Render("✓")+" path works: "+path, width)
 }
 
+// ClipboardNote says where copying to the clipboard works.
+const ClipboardNote = "copying needs a terminal with OSC 52 (Terminal.app has none)"
+
+// CurlNotes says what request n's cURL command does and what it leaves out;
+// copied is set when the full command went to the clipboard.
+func CurlNotes(n int, c session.Curl, copied bool) string {
+	note := "#" + strconv.Itoa(n) + " as cURL"
+	if copied {
+		note = "copied " + note
+	}
+	if c.Resend {
+		note += ", which resends it through Hookspot"
+	}
+	notes := []string{note}
+	if copied {
+		notes = append(notes, ClipboardNote)
+	}
+	if c.Redacted {
+		notes = append(notes, "sensitive headers are hidden; --show-sensitive-headers shows the full command")
+	}
+	if c.HeadersFile != "" {
+		notes = append(notes, Line(c.HeadersFile)+" holds unredacted headers, which may contain credentials")
+	}
+	return strings.Join(notes, "\n")
+}
+
+// Exported confirms request n's export as a fixture.
+func Exported(n int, f session.Fixture) string {
+	exported := "exported #" + strconv.Itoa(n) + " to " + Line(f.JSON) + " and " + Line(f.Body)
+	if f.Redacted {
+		exported += " · sensitive headers redacted"
+	}
+	return exported
+}
+
 // Limits caps what request cards print; zero means unlimited.
 type Limits struct {
 	MaxBodyLines  int
@@ -279,7 +313,7 @@ func (l Listen) Entry(e session.Entry, width int) string {
 }
 
 func (l Listen) render(e session.Entry, width int) string {
-	inner := max(1, width-4)
+	inner := innerWidth(width)
 	switch {
 	case e.Replay != nil:
 		return l.replay(e, width)
@@ -287,7 +321,7 @@ func (l Listen) render(e session.Entry, width int) string {
 		return l.inspect(e, inner)
 	case e.Failure != nil:
 		return l.transportFailure(e, inner)
-	case e.Response.Status >= 200 && e.Response.Status < 300:
+	case !e.Failed():
 		return l.row(e, width)
 	default:
 		return l.httpFailure(e, inner)
@@ -305,14 +339,14 @@ func (l Listen) row(e session.Entry, width int) string {
 	}
 	right := ColorBadge(StatusColor(e.Response.Status), strconv.Itoa(e.Response.Status)) + " " +
 		faintStyle.Render(fmt.Sprintf("%5s", FormatLatency(e.Latency))+"  "+timestamp(e))
-	if marks := marks(e); marks != "" {
-		right = marks + " " + right
+	if badge := marks(e); badge != "" {
+		right = badge + " " + right
 	}
 
 	// The path keeps a few columns even when that overflows width; a long
 	// source name gives way first.
 	const minPath, minSummary = 12, 8
-	sourceWidth := min(l.sourceWidth(), max(lipgloss.Width("unknown"), width-lipgloss.Width(left)-lipgloss.Width(right)-minPath-4))
+	sourceWidth := min(l.sourceWidth(), max(lipgloss.Width(unknownSource), width-lipgloss.Width(left)-lipgloss.Width(right)-minPath-4))
 	left += pad(truncate(l.source(d.SourceUID), sourceWidth), sourceWidth) + "  "
 	room := max(minPath, width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	path, summary := Line(d.Path), l.Summary(d)
@@ -330,7 +364,7 @@ func (l Listen) httpFailure(e session.Entry, inner int) string {
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
 	return frame(border, inner, l.title(e), cardLabel(e), "",
-		section{lines: outcome(ColorBadge(StatusColor(response.Status), responseStatus(response.Status)), e, inner)},
+		section{lines: outcome(ColorBadge(StatusColor(response.Status), session.StatusText(response.Status)), e, inner)},
 		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
@@ -345,7 +379,7 @@ func (l Listen) transportFailure(e session.Entry, inner int) string {
 // RedirectHint follows a 3xx response that names a Location: webhook senders
 // stop there.
 func RedirectHint(response ws.Response) []string {
-	location := headerGet(response.Headers, "Location")
+	location := session.HeaderValue(response.Headers, "Location")
 	if response.Status < 300 || response.Status >= 400 || location == "" {
 		return nil
 	}
@@ -448,8 +482,8 @@ func outcome(status string, e session.Entry, inner int) []string {
 // cardLabel ends a card's top border: its marks and the time it arrived.
 func cardLabel(e session.Entry) string {
 	label := faintStyle.Render(timestamp(e))
-	if marks := marks(e); marks != "" {
-		label = marks + "  " + label
+	if badge := marks(e); badge != "" {
+		label = badge + "  " + label
 	}
 	return label
 }
@@ -461,27 +495,32 @@ func marks(e session.Entry) string {
 	return ""
 }
 
+// unknownSource names a source this run doesn't listen to.
+const unknownSource = "unknown"
+
 func (l Listen) source(uid string) string {
-	return sourceStyle(uid).Render(Line(l.sourceName(uid)))
+	return SourceStyle(uid).Render(Line(l.SourceName(uid)))
 }
 
-func (l Listen) sourceName(uid string) string {
+// SourceName names source uid; callers escape it with Line.
+func (l Listen) SourceName(uid string) string {
 	if name := l.Sources[uid]; name != "" {
 		return name
 	}
-	return "unknown"
+	return unknownSource
 }
 
 // sourceWidth aligns the rows' source column.
 func (l Listen) sourceWidth() int {
-	width := lipgloss.Width("unknown")
+	width := lipgloss.Width(unknownSource)
 	for _, name := range l.Sources {
 		width = max(width, lipgloss.Width(Line(name)))
 	}
 	return width
 }
 
-func sourceStyle(uid string) lipgloss.Style {
+// SourceStyle colors a source's name.
+func SourceStyle(uid string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(SourceColor(uid))
 }
 
@@ -503,16 +542,8 @@ func (l Listen) Summary(d ws.Delivery) string {
 // Headers lists headers sorted by name, redacting sensitive values unless
 // ShowSensitiveHeaders and applying --max-headers.
 func (l Listen) Headers(headers http.Header) []string {
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		left, right := strings.ToLower(keys[i]), strings.ToLower(keys[j])
-		if left == right {
-			return keys[i] < keys[j]
-		}
-		return left < right
+	keys := slices.SortedFunc(maps.Keys(headers), func(a, b string) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a), strings.ToLower(b)), strings.Compare(a, b))
 	})
 	keys = keys[:limit(len(keys), l.Limits.MaxHeaders)]
 
@@ -563,7 +594,7 @@ func (l Listen) bodyLine(line string) string {
 	if most := l.Limits.MaxValueChars; most > 0 {
 		line, _ = runePrefix(line, most+1)
 	}
-	return strings.ReplaceAll(l.value(Sanitize(line)), "\t", "    ")
+	return expandTabs(l.value(Sanitize(line)))
 }
 
 func (l Listen) query(raw string) string {
@@ -584,7 +615,7 @@ func (l Listen) transportHint(target string, failure *proxy.TransportFailure) st
 	case proxy.TransportConnectionRefused:
 		return target + " is not reachable — is your server running?"
 	case proxy.TransportTimeout:
-		return target + " timed out — check that your server responds within 30s"
+		return target + " timed out — check that your server responds within " + proxy.ForwardTimeout.String()
 	case proxy.TransportDNS:
 		host := "the hostname"
 		if parsed, err := url.Parse(target); err == nil && parsed.Hostname() != "" {
@@ -691,6 +722,11 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", max(0, width-lipgloss.Width(s)))
 }
 
+// expandTabs turns tabs into spaces, since a tab would break a box's width.
+func expandTabs(s string) string {
+	return strings.ReplaceAll(s, "\t", "    ")
+}
+
 func count(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
@@ -716,7 +752,7 @@ func BodyTitle(body []byte, headers http.Header) string {
 }
 
 func bodyMIME(headers http.Header, body []byte) string {
-	contentType := headerGet(headers, "Content-Type")
+	contentType := session.HeaderValue(headers, "Content-Type")
 	if contentType != "" {
 		if mediaType, _, err := mime.ParseMediaType(contentType); err == nil {
 			return strings.ToLower(mediaType)
@@ -732,15 +768,6 @@ func bodyMIME(headers http.Header, body []byte) string {
 		}
 	}
 	return "application/octet-stream"
-}
-
-func headerGet(headers http.Header, wanted string) string {
-	for key, values := range headers {
-		if strings.EqualFold(key, wanted) && len(values) > 0 {
-			return values[0]
-		}
-	}
-	return ""
 }
 
 // bodyLines splits a body for display, up to most lines (0 for all) and a
@@ -773,13 +800,6 @@ func textualMIME(mimeType string) bool {
 		strings.Contains(mimeType, "yaml") ||
 		mimeType == "application/x-www-form-urlencoded" ||
 		mimeType == "application/graphql"
-}
-
-func responseStatus(status int) string {
-	if text := http.StatusText(status); text != "" {
-		return strconv.Itoa(status) + " " + text
-	}
-	return strconv.Itoa(status)
 }
 
 // TransportLabel names a transport failure.

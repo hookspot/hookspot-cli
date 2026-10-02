@@ -3,6 +3,8 @@ package session
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
 	"time"
 
 	"hookspot/internal/proxy"
@@ -11,7 +13,7 @@ import (
 
 const (
 	maxHistoryEntries = 1000
-	maxHistoryBytes   = 64 << 20
+	maxHistoryBytes   = 64 * 1024 * 1024
 )
 
 var (
@@ -48,7 +50,20 @@ func (e Entry) forwarded() bool { return e.Target != "" }
 
 // Failed reports whether the entry was forwarded and got no 2xx.
 func (e Entry) Failed() bool {
-	return e.forwarded() && (e.Failure != nil || e.Response.Status < 200 || e.Response.Status >= 300)
+	return e.forwarded() && (e.Failure != nil || !Success(e.Response.Status))
+}
+
+// Success reports whether status is 2xx.
+func Success(status int) bool {
+	return status >= 200 && status < 300
+}
+
+// StatusText is status with its name, such as 500 Internal Server Error.
+func StatusText(status int) string {
+	if text := http.StatusText(status); text != "" {
+		return strconv.Itoa(status) + " " + text
+	}
+	return strconv.Itoa(status)
 }
 
 // Timed reports whether Latency is how long the target took: transport
@@ -67,8 +82,7 @@ type history struct {
 	last    int
 }
 
-// add numbers entry and evicts the oldest entries beyond the caps, never the
-// new one. It returns the numbered entry and the evicted numbers.
+// add never evicts the new entry, even one over the caps on its own.
 func (h *history) add(entry Entry) (Entry, []int) {
 	h.last++
 	entry.Number = h.last

@@ -49,8 +49,8 @@ func (m Fullscreen) detail(width, height int) []string {
 		content = append(content[:rows-1:rows-1], more)
 	}
 	lines := append(m.tabs(), content...)
-	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + sourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.sourceName(e.Delivery.SourceUID))) +
-		faintStyle.Render(" · ") + cards.Line(method(e)) + " " + cards.Line(e.Delivery.Path)
+	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + cards.SourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.Listen.SourceName(e.Delivery.SourceUID))) +
+		faintStyle.Render(" · ") + cards.Line(session.Method(e.Delivery)) + " " + cards.Line(e.Delivery.Path)
 	label := ""
 	if e.Delivery.RequestUID != "" {
 		label = faintStyle.Render(cards.Line(e.Delivery.RequestUID))
@@ -146,7 +146,7 @@ func (m Fullscreen) overview(e session.Entry, width int) []string {
 		lines = append(lines, m.failure(e, width)...)
 	}
 	lines = append(lines, "",
-		field("source", sourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.sourceName(e.Delivery.SourceUID)))),
+		field("source", cards.SourceStyle(e.Delivery.SourceUID).Render(cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)))),
 		field("route", m.route(e.RouteUID)),
 		field("received", e.Received.Format(time.TimeOnly+".000")),
 	)
@@ -184,7 +184,7 @@ func (m Fullscreen) request(e session.Entry) []string {
 	if d.Query != "" {
 		target += "?" + cards.Line(d.Query)
 	}
-	lines := []string{boldStyle.Render(cards.Line(method(e))) + " " + target}
+	lines := []string{boldStyle.Render(cards.Line(session.Method(e.Delivery))) + " " + target}
 	return append(lines, m.message(d.Headers, d.Body)...)
 }
 
@@ -248,15 +248,7 @@ func outcomeBadge(e session.Entry) string {
 	if e.Failure != nil {
 		return cards.ColorBadge(cards.StatusColor(0), "✗ "+cards.TransportLabel(e.Failure.Kind))
 	}
-	return cards.ColorBadge(cards.StatusColor(e.Response.Status), statusText(e.Response.Status))
-}
-
-// statusText is a status with its name, such as 500 Internal Server Error.
-func statusText(status int) string {
-	if text := http.StatusText(status); text != "" {
-		return strconv.Itoa(status) + " " + text
-	}
-	return strconv.Itoa(status)
+	return cards.ColorBadge(cards.StatusColor(e.Response.Status), session.StatusText(e.Response.Status))
 }
 
 // failure says what happened to failed e, then what to do: replay now or,

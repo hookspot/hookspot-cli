@@ -77,7 +77,7 @@ func Projects(projects []api.Project, activeUID string, width int) string {
 	for i, row := range rows {
 		cells := make([]string, len(row))
 		for column, cell := range row {
-			cells[column] = cell + strings.Repeat(" ", widths[column]-lipgloss.Width(cell))
+			cells[column] = pad(cell, widths[column])
 		}
 		lines[i] = strings.Join(cells, "  ")
 	}
@@ -110,7 +110,7 @@ func Error(message, hint string, width int) string {
 // textLines splits sanitized multi-line text for a box, whose width a tab
 // would break.
 func textLines(text string) []string {
-	return strings.Split(strings.ReplaceAll(Sanitize(text), "\t", "    "), "\n")
+	return strings.Split(expandTabs(Sanitize(text)), "\n")
 }
 
 // box frames sections, split by rules, with title in the top border and an
@@ -129,13 +129,19 @@ func box(title, label string, border lipgloss.Style, width int, sections ...[]st
 			inner = max(inner, lipgloss.Width(line))
 		}
 	}
-	return frame(border, max(1, min(inner, width-4)), title, label, "", parts...)
+	return frame(border, min(inner, innerWidth(width)), title, label, "", parts...)
 }
 
 // section is a run of box lines; its title sits in the rule above it.
 type section struct {
 	title string
 	lines []string
+}
+
+// innerWidth is the inner width of a frame width columns wide, inside its
+// borders and padding.
+func innerWidth(width int) int {
+	return max(1, width-4)
 }
 
 // frame draws a box inner columns wide. title and label sit at the ends of

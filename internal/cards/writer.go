@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/charmbracelet/colorprofile"
@@ -84,41 +82,6 @@ func (w *Writer) Reply(text string) error {
 // command to paste.
 func (w *Writer) Print(text string) error {
 	return w.write(w.errOut, Sanitize(text))
-}
-
-// ClipboardNote says where copying to the clipboard works.
-const ClipboardNote = "copying needs a terminal with OSC 52 (Terminal.app has none)"
-
-// CurlNotes says what request n's cURL command does and what it leaves out;
-// copied is set when the full command went to the clipboard.
-func CurlNotes(n int, c session.Curl, copied bool) string {
-	note := "#" + strconv.Itoa(n) + " as cURL"
-	if copied {
-		note = "copied " + note
-	}
-	if c.Resend {
-		note += ", which resends it through Hookspot"
-	}
-	notes := []string{note}
-	if copied {
-		notes = append(notes, ClipboardNote)
-	}
-	if c.Redacted {
-		notes = append(notes, "sensitive headers are hidden; --show-sensitive-headers shows the full command")
-	}
-	if c.HeadersFile != "" {
-		notes = append(notes, Line(c.HeadersFile)+" holds unredacted headers, which may contain credentials")
-	}
-	return strings.Join(notes, "\n")
-}
-
-// Exported confirms request n's export as a fixture.
-func Exported(n int, f session.Fixture) string {
-	exported := "exported #" + strconv.Itoa(n) + " to " + Line(f.JSON) + " and " + Line(f.Body)
-	if f.Redacted {
-		exported += " · sensitive headers redacted"
-	}
-	return exported
 }
 
 func (w *Writer) write(s stream, text string) error {
