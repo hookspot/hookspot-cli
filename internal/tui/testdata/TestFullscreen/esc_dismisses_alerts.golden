@@ -1,24 +1,24 @@
-● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
-Reconnected after 5s offline. Requests that arrived meanwhile were not
-delivered; retry them from https://hookspot.test/acme/payments/requests · esc
-dismisses
+● live · Acme | Payments · 2 requests · 1 ok · 1 failed · p50 7ms
 ● stripe   ● github   following newest
-╭─ Requests ─────────────────────────────────────────────────────────────── 2 ─╮
+/ source:github                                             1 match · esc clears
+╭─ Requests · source:github ────────────────────────────────────────── 1 of 2 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
-│   1  14:02:01  stripe  POST    /hooks                 200          7ms       │
-│ › 2  14:02:02  stripe  POST    /hooks                 200         14ms  ↻    │
+│ › 2  14:02:02  github  POST    /github                200         14ms       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ #2 stripe · POST /hooks ──────────────────────────────────────────── req_2 ─╮
+╭─ #2 github · POST /github ─────────────────────────────────────────── req_2 ─╮
 │ Overview   Request   Response   Timing                                       │
 │ ━━━━━━━━                                                                     │
-│ #2 ↻ #1  200 → 200  7ms → 14ms  stripe · POST /hooks            14:02:02.000 │
+│  200 OK  14ms  → http://localhost:3000/github                                │
 │                                                                              │
-│ source    stripe                                                             │
-│ route     payments → http://localhost:3000/hooks                             │
+│ source    github                                                             │
+│ route     /github → http://localhost:3000/github                             │
 │ received  14:02:02.000                                                       │
 │                                                                              │
 │ replays are local: they never change the delivery's status in Hookspot       │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-replayed #1 as #2
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …
