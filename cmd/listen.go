@@ -135,7 +135,9 @@ var listenCmd = &cobra.Command{
 		}
 		projectName := projectDisplayName(*project)
 
-		if cards.Terminal(cmd.OutOrStdout()) {
+		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
+		// for the full-screen or stream view.
+		if cards.Terminal(cmd.OutOrStdout()) && os.Getenv("TERM") != "dumb" {
 			var input io.Reader
 			if cards.Terminal(cmd.InOrStdin()) {
 				input = cmd.InOrStdin()
@@ -167,7 +169,7 @@ var listenCmd = &cobra.Command{
 		}
 
 		sess := session.New(listenContext, sources, local, writer)
-		commandsEnabled := cards.Terminal(cmd.InOrStdin())
+		commandsEnabled := cards.Terminal(cmd.InOrStdin()) && foreground(cmd.InOrStdin())
 		writer.Commands = commandsEnabled
 		hints := []string{"ctrl-c quit"}
 		if commandsEnabled {

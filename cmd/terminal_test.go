@@ -86,6 +86,7 @@ func TestTerminalModes(t *testing.T) {
 	status := regexp.MustCompile(`(?m)^● live · Acme \| Payments · \d+ requests?`)
 	prompt := regexp.MustCompile(`(?m)^› .*ctrl-c quit$`)
 	banner := "╭─ Listening in Acme | Payments "
+	card := "╭─ #1 stripe · POST /webhooks/stripe "
 
 	t.Run("stream", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
@@ -158,12 +159,37 @@ func TestTerminalModes(t *testing.T) {
 		}
 	})
 
+	t.Run("background job", func(t *testing.T) {
+		hookspot := startFakeHookspot(t, listenStreamSources)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true, background: true}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		// Reading the terminal from the background would stop the job.
+		hookspot.deliver(t, terminalDelivery)
+		run.waitFor("card #1 on stdout", func(string) bool { return strings.Contains(run.piped(), card) })
+		hookspot.end(t)
+		if code := run.wait(); code != 1 {
+			t.Fatalf("exit code = %d, want 1 for the invalid delivery; screen:\n%s", code, run.text())
+		}
+		if stdout := run.piped(); strings.Contains(stdout, "c N cURL") {
+			t.Errorf("a background job offers line commands:\n%s", stdout)
+		}
+	})
+
+	t.Run("TERM=dumb", func(t *testing.T) {
+		hookspot := startFakeHookspot(t, listenStreamSources)
+		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"TERM": "dumb"}}, developmentMetadata(hookspot.url), hookspot.listen()...)
+		hookspot.deliver(t, terminalDelivery)
+		run.waitForText(card)
+		if written := run.written(); strings.ContainsRune(written, '\x1b') {
+			t.Errorf("a dumb terminal got escape sequences: %q", written)
+		}
+	})
+
 	t.Run("NO_COLOR", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, listenStreamSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"NO_COLOR": "1"}}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, terminalDelivery)
 		run.waitFor("the banner, card #1 and the status line", func(screen string) bool {
-			return strings.Contains(screen, banner) && strings.Contains(screen, "╭─ #1 stripe · POST /webhooks/stripe ") &&
+			return strings.Contains(screen, banner) && strings.Contains(screen, card) &&
 				strings.Contains(screen, "● live · Acme | Payments · 1 request")
 		})
 		if color := terminalColor.FindString(run.written()); color != "" {
@@ -205,6 +231,9 @@ type terminalOptions struct {
 	stdin io.Reader
 	// pipeStdout pipes stdout, read with piped, instead of the terminal.
 	pipeStdout bool
+	// background runs the command as a job control shell's background job,
+	// in a process group that doesn't own the terminal.
+	background bool
 }
 
 // startTerminal runs the command on a pseudo-terminal of the given size, with
@@ -223,6 +252,14 @@ func startTerminal(t *testing.T, options terminalOptions, metadata map[string]st
 	environment := map[string]string{"TERM": "xterm-256color", "TZ": "UTC"}
 	maps.Copy(environment, options.environment)
 	command := commandProcess(t, metadata, environment, args...)
+	if options.background {
+		shell, err := exec.LookPath("sh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		command.Path = shell
+		command.Args = append([]string{"sh", "-c", `set -m; "$@" & wait $!`, "sh"}, command.Args...)
+	}
 	command.Stdin = options.stdin
 	// The first standard file on the terminal makes it the controlling one.
 	controlling := 0
