@@ -65,14 +65,15 @@ func matches(e session.Entry, terms []term, l cards.Listen) bool {
 	return true
 }
 
-// matches compares sources ignoring case and paths by prefix; free text is
-// looked for in the path and the summary, ignoring case.
+// matches compares source names and paths by prefix, names ignoring case,
+// since a word can't hold a name with spaces; free text is looked for in the
+// path and the summary, ignoring case.
 func (t term) matches(e session.Entry, l cards.Listen) bool {
 	switch t.key {
 	case "status":
 		return statusMatches(e, t.value)
 	case "source":
-		return strings.EqualFold(l.Sources[e.Delivery.SourceUID], t.value)
+		return strings.HasPrefix(strings.ToLower(l.Sources[e.Delivery.SourceUID]), strings.ToLower(t.value))
 	case "path":
 		return strings.HasPrefix(e.Delivery.Path, t.value)
 	}
