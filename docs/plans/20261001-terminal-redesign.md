@@ -204,9 +204,9 @@
     - `t` test event;
     - `esc` or `s` goes back.
 - **cURL (POSIX shell only):**
-  - The command is `curl -X <method> '<URL + query>'` with every header except hop-by-hop headers, `Host` and `Content-Length`.
+  - The command is `curl -g -X <method> '<URL + query>'` (`-g` keeps `[]{}` in queries literal) with every header except hop-by-hop headers, `Host` and `Content-Length`. A body without a `Content-Type` gets `-H 'Content-Type:'`, so curl doesn't add one.
   - The URL is the forwarded-to URL. In inspect mode (no `--forward-to`) it's the source's public URL, labelled "resends through Hookspot".
-  - A body goes inline (`--data-binary '<escaped>'`) only when it's valid UTF-8 with no control characters other than `\t\n\r`. Any other body is written to the fixture's `.body` file and passed as `--data-binary @<absolute path>`.
+  - A body goes inline (`--data-binary '<escaped>'`) only when it's valid UTF-8, at most 64 KiB, and has no control characters other than `\n`. Any other body is written to the fixture's `.body` file and passed as `--data-binary @<absolute path>`.
   - Headers with any control character are written to `<name>.headers` and passed as `-H @<absolute path>` (curl ≥ 7.55). The file holds unredacted values, so it's created with mode `0600` and the toast says it contains credentials. The command never contains raw control bytes, so pasting it can't end bracketed paste or break argv.
   - **The displayed or printed command** redacts sensitive headers (unless `--show-sensitive-headers`) and passes through `cards.Sanitize`.
   - **The full command** goes only to the clipboard, through `tea.SetClipboard` (OSC 52) in the terminal modes. The toast says the copy needs a terminal with OSC 52 support (Terminal.app has none), and that `--show-sensitive-headers` shows the full command.
@@ -216,8 +216,8 @@
   - `c`, `e` and `t` work.
 - **Fixture:**
   - Written as `hookspot-fixtures/<name>.json` (`{method, path, query, headers}`) plus `hookspot-fixtures/<name>.body` (raw bytes).
-  - `<name>` is the `request_uid` when it matches `^[A-Za-z0-9_-]+$`, otherwise `entry-<N>`.
-  - An existing file for the same name is overwritten; same `request_uid` means the same request.
+  - `<name>` is `<request_uid>_<route_uid>` (just the `request_uid` when no route is known) when it matches `^[A-Za-z0-9_-]+$`, otherwise `entry-<N>`. The route keeps one request's fan-out deliveries apart.
+  - An existing file for the same name is overwritten; the same name means the same delivery.
   - Sensitive header values are redacted unless `--show-sensitive-headers`, and the confirmation line says when they were.
 - **Test event:**
   - A `POST` to the source's public URL with body `{"type":"hookspot.test","sent_at":…}` and the header `X-Hookspot-Test: <random id>`.
@@ -583,7 +583,7 @@
 
 ### Task 18: [Final] Update documentation
 - [x] README: `listen` modes (full-screen default, `--stream`, piped), keys and commands, fixtures (redaction, file names), test event, Sources page
-- [ ] move this plan to `docs/plans/completed/`
+- [x] move this plan to `docs/plans/completed/`
 - ⚠️ the README also documents replay and copy as cURL, which the keys and commands rely on; the prerequisite's `listen` messages (`Ready`, reconnect, forwarding hints) stay with its own Task 11. The review later documented them, since this branch ships them
 
 ### Task 19: End-to-end terminal tests
