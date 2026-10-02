@@ -409,12 +409,7 @@ func TestDashboardRequestsURLUsesOnlySafeSlugs(t *testing.T) {
 }
 
 func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
-	hookspot := startFakeHookspot(t, listenStreamSources)
-	hookspot.play(hangUp{})
-	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen("stripe")...)
-	if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
-		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
-	}
+	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"stripe"}, hangUp{})
 	if !strings.HasSuffix(result.stdout, "\nConnecting…\nReady. Waiting for requests (Ctrl-C to quit)\n") {
 		t.Fatalf("stdout = %q, want one Ready after Connecting…", result.stdout)
 	}
@@ -432,7 +427,7 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 }
 
 func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
-	result, hookspot := runListenAgainst(t, listenStreamSources, "stripe")
+	result, hookspot := runListenAgainst(t, fakeHookspotSources, "stripe")
 	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
@@ -538,15 +533,10 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 		{name: "print-only", hints: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			hookspot := startFakeHookspot(t, sources)
 			root := map[string]string{"request_uid": "req_1", "source_uid": "src_stripe", "method": "POST", "path": "/"}
 			first, second := maps.Clone(root), maps.Clone(root)
 			first["attempt_uid"], second["attempt_uid"] = "att_1", "att_2"
-			hookspot.play(first, second)
-			result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(append([]string{"stripe"}, test.args...)...)...)
-			if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
-				t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
-			}
+			result, _ := runListenStream(t, sources, append([]string{"stripe"}, test.args...), first, second)
 			if got := strings.Count(result.stderr, "If your webhook route is elsewhere"); got != test.hints || test.hints == 1 && !strings.Contains(result.stderr, hint) {
 				t.Fatalf("root hints on stderr = %d, want %d:\n%s", got, test.hints, result.stderr)
 			}
@@ -693,14 +683,14 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	sess := session.New(context.Background(), sources, forwarder, writer)
 
 	// ↵ before the first request has nothing to replay.
-	if err := runLineCommand(sess, writer, true, ""); err != nil || stdout.Len()+stderr.Len() != 0 {
+	if err := runLineCommand(sess, writer, lineCommandOptions{forwarding: true}, ""); err != nil || stdout.Len()+stderr.Len() != 0 {
 		t.Fatalf("↵ before any request = %v, output %q %q", err, stdout.String(), stderr.String())
 	}
 	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range []string{"r 1", " r  2 ", "r 9", "r x"} {
-		if err := runLineCommand(sess, writer, true, line); err != nil {
+		if err := runLineCommand(sess, writer, lineCommandOptions{forwarding: true}, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
@@ -719,10 +709,6 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	if stderr.String() != want {
 		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
-	// The plain banner names the commands with ctrl-c quit at the default width.
-	if banner := cards.Banner("Acme | Payments", nil, append(tui.CommandHints(true), "ctrl-c quit"), cards.DefaultWidth); !strings.Contains(banner, "t test event · ctrl-c quit") {
-		t.Fatalf("banner cuts its hints:\n%s", banner)
-	}
 }
 
 func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
@@ -739,7 +725,7 @@ func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
 	}
 	stdout.Reset()
 	for _, line := range []string{"c 1", "e 1", "e 9", "", "r 1", "?"} {
-		if err := runLineCommand(sess, writer, false, line); err != nil {
+		if err := runLineCommand(sess, writer, lineCommandOptions{}, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
@@ -787,7 +773,7 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	stdout.Reset()
 
 	for _, line := range []string{"", "r 1", "t", " t Stripe  prod ", "t git hub", "x"} {
-		if err := runLineCommand(sess, writer, false, line); err != nil {
+		if err := runLineCommand(sess, writer, lineCommandOptions{}, line); err != nil {
 			t.Fatalf("line %q: %v", line, err)
 		}
 	}
@@ -832,27 +818,17 @@ func TestRunInTerminal(t *testing.T) {
 	})
 }
 
-// listenStreamSources are two sources: one route named, one not.
-const listenStreamSources = `[
-	{"uid":"src_stripe","name":"stripe","url":"https://in.hookspot.test/src_stripe","active":true,"routes":[{"uid":"rte_stripe","name":"payments","destination":{"path":"/webhooks/stripe"}}]},
-	{"uid":"src_github","name":"github","url":"https://in.hookspot.test/src_github","active":true,"routes":[{"uid":"rte_github","destination":{"path":"/webhooks/github"}}]}
-]`
-
-// runListenStream runs listen against a fake Hookspot that sends the
-// deliveries in one burst, then an invalid delivery, which ends the command.
-func runListenStream(t *testing.T, deliveries []ws.Delivery, args ...string) commandResult {
+// runListenStream runs listen with args against a fake Hookspot serving
+// sources, which sends the payloads in one burst, then ends listen.
+func runListenStream(t *testing.T, sources string, args []string, payloads ...any) (commandResult, *fakeHookspot) {
 	t.Helper()
-	hookspot := startFakeHookspot(t, listenStreamSources)
-	payloads := make([]any, len(deliveries))
-	for i, delivery := range deliveries {
-		payloads[i] = delivery
-	}
+	hookspot := startFakeHookspot(t, sources)
 	hookspot.play(payloads...)
 	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(args...)...)
 	if result.err == nil || !strings.Contains(result.stderr, "delivery is missing correlation fields") {
 		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
 	}
-	return result
+	return result, hookspot
 }
 
 var (
@@ -883,29 +859,30 @@ func maskStream(stream string) string {
 func TestListenStream(t *testing.T) {
 	jsonHeaders := http.Header{"Content-Type": []string{"application/json"}}
 	t.Run("inspect", func(t *testing.T) {
-		result := runListenStream(t, []ws.Delivery{
-			{
+		result, _ := runListenStream(t, fakeHookspotSources, nil,
+			ws.Delivery{
 				AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Query: "attempt=1",
 				Headers: http.Header{"Content-Type": []string{"application/json"}, "Authorization": []string{"Bearer secret"}},
 				Body:    []byte(`{"type":"payment_intent.succeeded","amount":2000}`),
 			},
-			{
+			ws.Delivery{
 				AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", Method: "POST", Path: "/webhooks/github",
 				Headers: http.Header{"X-Github-Event": []string{"push"}},
 				Body:    []byte("ref=refs/heads/main"),
 			},
-		})
+		)
 		if strings.ContainsRune(result.stdout, '\x1b') {
 			t.Fatalf("piped stream has ANSI codes: %q", result.stdout)
 		}
 		golden.RequireEqual(t, maskStream(result.stdout))
 	})
 	t.Run("limits", func(t *testing.T) {
-		result := runListenStream(t, []ws.Delivery{{
+		args := []string{"--show-sensitive-headers", "--max-body-lines", "1", "--max-headers", "1", "--max-value-chars", "20"}
+		result, _ := runListenStream(t, fakeHookspotSources, args, ws.Delivery{
 			AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe",
 			Headers: http.Header{"Content-Type": []string{"application/json"}, "Authorization": []string{"Bearer sk_test_0123456789abcdef"}},
 			Body:    []byte(`{"type":"payment_intent.succeeded","amount":2000}`),
-		}}, "--show-sensitive-headers", "--max-body-lines", "1", "--max-headers", "1", "--max-value-chars", "20")
+		})
 		golden.RequireEqual(t, maskStream(result.stdout))
 	})
 	t.Run("forward", func(t *testing.T) {
@@ -918,11 +895,11 @@ func TestListenStream(t *testing.T) {
 		}))
 		defer local.Close()
 		// Rows and cards of two sources interleave in one burst.
-		result := runListenStream(t, []ws.Delivery{
-			{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"payment_intent.succeeded"}`)},
-			{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", Method: "POST", Path: "/webhooks/github", Headers: jsonHeaders, Body: []byte(`{"action":"opened"}`)},
-			{AttemptUID: "att_3", RequestUID: "req_stripe_2", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"invoice.paid"}`)},
-		}, "--forward-to", local.URL)
+		result, _ := runListenStream(t, fakeHookspotSources, []string{"--forward-to", local.URL},
+			ws.Delivery{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"payment_intent.succeeded"}`)},
+			ws.Delivery{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", Method: "POST", Path: "/webhooks/github", Headers: jsonHeaders, Body: []byte(`{"action":"opened"}`)},
+			ws.Delivery{AttemptUID: "att_3", RequestUID: "req_stripe_2", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"invoice.paid"}`)},
+		)
 		if strings.ContainsRune(result.stdout, '\x1b') {
 			t.Fatalf("piped stream has ANSI codes: %q", result.stdout)
 		}

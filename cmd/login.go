@@ -84,7 +84,9 @@ func runKeyLogin(ctx context.Context, cliKey string, in io.Reader, out io.Writer
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	lipgloss.Fprintln(out, cards.Done("Logged in as", user.Email))
+	if _, err := lipgloss.Fprintln(out, cards.Done("Logged in as", user.Email)); err != nil {
+		return fmt.Errorf("write login: %w", err)
+	}
 	return nil
 }
 

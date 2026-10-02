@@ -91,11 +91,11 @@ func TestLaterInterruptForcesExitDuringBlockedCleanup(t *testing.T) {
 			err := fixture.waitErr
 			var exitErr *exec.ExitError
 			if !errors.As(err, &exitErr) {
-				t.Fatalf("blocked fixture exit = %v, want signal exit", err)
+				t.Fatalf("fixture exit = %v, want signal exit", err)
 			}
 			status, ok := exitErr.Sys().(syscall.WaitStatus)
 			if !ok || !status.Signaled() || status.Signal() != syscall.SIGINT {
-				t.Fatalf("blocked fixture status = %#v, want SIGINT", exitErr.Sys())
+				t.Fatalf("fixture status = %#v, want SIGINT", exitErr.Sys())
 			}
 		})
 	}

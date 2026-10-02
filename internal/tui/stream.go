@@ -87,7 +87,7 @@ func (m Stream) View() tea.View {
 	}
 	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}.Line(m.width))
 	if m.prompting() {
-		lines = append(lines, cards.Prompt(m.input, append(m.commands(), "ctrl-c quit"), m.width))
+		lines = append(lines, cards.Prompt(m.input, append(m.commands(), QuitHint), m.width))
 	}
 	// The renderer erases the frame's last line on exit, so the final frame
 	// ends with an empty one. Live frames don't: on the screen's last row the
@@ -153,7 +153,7 @@ func (m Stream) statusHints() []string {
 	case m.Prompt:
 		return []string{"ctrl-c force quit"}
 	}
-	return []string{"ctrl-c quit"}
+	return []string{QuitHint}
 }
 
 func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {

@@ -41,9 +41,9 @@ jobs:
       - run: npm pack --dry-run
         working-directory: npm
 
-  # The terminal tests on each platform's own pseudo-terminal (ConPTY on
-  # Windows); make test runs them on Linux. Pull requests and main only, since
-  # the macOS and Windows runners cost more.
+  # Runs the terminal tests on each platform's own pseudo-terminal (ConPTY on
+  # Windows); make test covers Linux. Pull requests and main only, since the
+  # macOS and Windows runners cost more.
   terminal:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     strategy:

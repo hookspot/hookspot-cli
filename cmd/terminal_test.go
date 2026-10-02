@@ -19,7 +19,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"github.com/gorilla/websocket"
@@ -33,7 +35,7 @@ import (
 func TestTerminalFullscreenJourney(t *testing.T) {
 	local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer local.Close()
-	hookspot := startFakeHookspot(t, listenStreamSources)
+	hookspot := startFakeHookspot(t, fakeHookspotSources)
 	run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 	hookspot.deliver(t, terminalDelivery)
 
@@ -57,7 +59,7 @@ func TestTerminalFullscreenJourney(t *testing.T) {
 // screen shows the source warning its stderr copy hid and the --forward-to
 // URL as typed; the error prints once the alt screen is gone.
 func TestTerminalFullscreenError(t *testing.T) {
-	disabled := strings.Replace(listenStreamSources, `src_github","active":true`, `src_github","active":false`, 1)
+	disabled := strings.Replace(fakeHookspotSources, `src_github","active":true`, `src_github","active":false`, 1)
 	hookspot := startFakeHookspot(t, disabled)
 	run := startTerminal(t, terminalOptions{width: 100, height: 30}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", "3000/hooks/")...)
 	header := regexp.MustCompile(`(?m)^● live · .*→ http://localhost:3000/hooks/ · \d\d:\d\d:\d\d$`)
@@ -87,7 +89,7 @@ func TestTerminalModes(t *testing.T) {
 	card := "╭─ #1 stripe · POST /webhooks/stripe "
 
 	t.Run("stream", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		var earlier strings.Builder
 		for i := 1; i <= 25; i++ {
 			fmt.Fprintf(&earlier, "earlier output %d\r\n", i)
@@ -107,7 +109,7 @@ func TestTerminalModes(t *testing.T) {
 	})
 
 	t.Run("stdin not a terminal", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		// A shell with history puts the banner's end, and so the stream's
 		// first frame, on the last row; a slow join leaves that frame up.
 		hookspot.holdJoins.Store(true)
@@ -129,7 +131,7 @@ func TestTerminalModes(t *testing.T) {
 	t.Run("stdout piped", func(t *testing.T) {
 		local := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 		defer local.Close()
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true}, developmentMetadata(hookspot.url), hookspot.listen("--forward-to", local.URL)...)
 		hookspot.deliver(t, terminalDelivery)
 		row := regexp.MustCompile(`(?m)^#1 +POST +stripe +/webhooks/stripe `)
@@ -158,7 +160,7 @@ func TestTerminalModes(t *testing.T) {
 	})
 
 	t.Run("background job", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, pipeStdout: true, background: true}, developmentMetadata(hookspot.url), hookspot.listen()...)
 		// Reading the terminal from the background would stop the job.
 		hookspot.deliver(t, terminalDelivery)
@@ -176,7 +178,7 @@ func TestTerminalModes(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("ConPTY sends conhost's own rendering of the console, which always has escape sequences")
 		}
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"TERM": "dumb"}}, developmentMetadata(hookspot.url), hookspot.listen()...)
 		hookspot.deliver(t, terminalDelivery)
 		run.waitForText(card)
@@ -186,7 +188,7 @@ func TestTerminalModes(t *testing.T) {
 	})
 
 	t.Run("NO_COLOR", func(t *testing.T) {
-		hookspot := startFakeHookspot(t, listenStreamSources)
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
 		run := startTerminal(t, terminalOptions{width: 100, height: 30, environment: map[string]string{"NO_COLOR": "1"}}, developmentMetadata(hookspot.url), hookspot.listen("--stream")...)
 		hookspot.deliver(t, terminalDelivery)
 		run.waitFor("the banner, card #1 and the status line", func(screen string) bool {
@@ -484,6 +486,33 @@ func closed(done <-chan struct{}) bool {
 	}
 }
 
+// boxEdges pairs each box-drawing character that starts a line with the one
+// that must end it.
+var boxEdges = map[rune]rune{'╭': '╮', '│': '│', '├': '┤', '╰': '╯'}
+
+// wholeBoxes reports whether every line of screen that starts a box ends it
+// in column width: nothing in a box wrapped, spilled over or was cut.
+func wholeBoxes(screen string, width int) bool {
+	for _, line := range strings.Split(screen, "\n") {
+		first, _ := utf8.DecodeRuneInString(line)
+		last, _ := utf8.DecodeLastRuneInString(line)
+		if end, box := boxEdges[first]; box && (last != end || ansi.StringWidth(line) != width) {
+			return false
+		}
+	}
+	return true
+}
+
+// firstCard is the stream's card #1, from its top border to its bottom one.
+var firstCard = regexp.MustCompile(`(?ms)^╭─ #1 .*?^╰[^\n]*`)
+
+// wholeCard reports whether the stream shows card #1 whole in a terminal
+// width columns wide. Cards leave the last column free.
+func wholeCard(screen string, width int) bool {
+	card := firstCard.FindString(screen)
+	return card != "" && wholeBoxes(card, width-1)
+}
+
 // fakeHookspot serves the Acme | Payments project and its sources, and a
 // websocket that accepts the join, then sends each payload given to deliver.
 // It serves one run: with two connected, either may take a delivery.
@@ -504,6 +533,19 @@ type fakeHookspot struct {
 // hangUp, delivered, drops the websocket connection.
 type hangUp struct{}
 
+// endListen, delivered, has no correlation fields, so listen ends with an
+// error.
+var endListen = map[string]string{}
+
+// fakeHookspotConfig signs in and selects the fake project.
+const fakeHookspotConfig = "schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n"
+
+// fakeHookspotSources are two sources: one route named, one not.
+const fakeHookspotSources = `[
+	{"uid":"src_stripe","name":"stripe","url":"https://in.hookspot.test/src_stripe","active":true,"routes":[{"uid":"rte_stripe","name":"payments","destination":{"path":"/webhooks/stripe"}}]},
+	{"uid":"src_github","name":"github","url":"https://in.hookspot.test/src_github","active":true,"routes":[{"uid":"rte_github","destination":{"path":"/webhooks/github"}}]}
+]`
+
 func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 	t.Helper()
 	hookspot := &fakeHookspot{
@@ -513,7 +555,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		release:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}
-	if err := writeCommandFixture(hookspot.config, []byte("schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n")); err != nil {
+	if err := writeCommandFixture(hookspot.config, []byte(fakeHookspotConfig)); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -583,7 +625,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 // listen exits.
 func (h *fakeHookspot) play(payloads ...any) {
 	go func() {
-		for _, payload := range append(payloads, map[string]string{}) {
+		for _, payload := range append(payloads, endListen) {
 			select {
 			case h.deliveries <- payload:
 			case <-h.done:
@@ -609,11 +651,10 @@ func (h *fakeHookspot) deliver(t *testing.T, payload any) {
 	}
 }
 
-// end sends a delivery without correlation fields, which ends listen with an
-// error.
+// end ends listen once it has joined.
 func (h *fakeHookspot) end(t *testing.T) {
 	t.Helper()
-	h.deliver(t, map[string]string{})
+	h.deliver(t, endListen)
 }
 
 // terminalDelivery is a POST of payment_intent.succeeded to stripe.

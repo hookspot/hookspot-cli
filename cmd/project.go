@@ -46,8 +46,10 @@ var projectListCmd = &cobra.Command{
 		}
 
 		out := cmd.OutOrStdout()
-		_, err = lipgloss.Fprintln(out, cards.Projects(projects, store.SavedProject(), cards.Width(out)))
-		return err
+		if _, err := lipgloss.Fprintln(out, cards.Projects(projects, store.SavedProject(), cards.Width(out))); err != nil {
+			return fmt.Errorf("write project list: %w", err)
+		}
+		return nil
 	},
 }
 

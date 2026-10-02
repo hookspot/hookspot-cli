@@ -20,7 +20,7 @@ func TestTerminalCtrlC(t *testing.T) {
 		{name: "stream", stream: true},
 	} {
 		start := func(t *testing.T) *terminalRun {
-			hookspot := startFakeHookspot(t, listenStreamSources)
+			hookspot := startFakeHookspot(t, fakeHookspotSources)
 			args := hookspot.listen()
 			if mode.stream {
 				args = hookspot.listen("--stream")

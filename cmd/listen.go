@@ -122,77 +122,135 @@ var listenCmd = &cobra.Command{
 			local = forwarder
 		}
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs)
-		listen := func(sess *session.Session) error {
-			if err := sess.Emit(session.Connecting{}); err != nil {
-				return err
-			}
-			notices := newConnectionNotices(sess.Emit)
-			wsClient.OnJoined = notices.joined
-			return superviseListen(listenContext, notices, wsClient, sess.Handle, reconnectPolicy{
-				Delay:              reconnectDelay,
-				MaxInitialAttempts: maxInitialConnectAttempts,
-			})
+		setup := listenSetup{
+			ctx:         listenContext,
+			stop:        stopListening,
+			sources:     sources,
+			local:       local,
+			listenCards: listenCards,
+			writer:      writer,
+			project:     projectDisplayName(*project),
+			routes:      routes,
+			requestsURL: requestsURL,
+			listen: func(sess *session.Session) error {
+				if err := sess.Emit(session.Connecting{}); err != nil {
+					return err
+				}
+				notices := newConnectionNotices(sess.Emit)
+				wsClient.OnJoined = notices.joined
+				return superviseListen(listenContext, notices, wsClient, sess.Handle, reconnectPolicy{
+					Delay:              reconnectDelay,
+					MaxInitialAttempts: maxInitialConnectAttempts,
+				})
+			},
 		}
-		projectName := projectDisplayName(*project)
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		if cards.Terminal(cmd.OutOrStdout()) && os.Getenv("TERM") != "dumb" {
-			var input io.Reader
-			if cards.Terminal(cmd.InOrStdin()) {
-				input = cmd.InOrStdin()
-			}
-			program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
-			if input != nil && !streamOutput {
-				sess := session.New(listenContext, sources, local, program.FullscreenSink())
-				screen := tui.Fullscreen{Requests: sess, Listen: listenCards, Project: projectName, Routes: routes, RequestsURL: requestsURL, ShowSensitiveHeaders: showSensitiveHeaders}
-				if forwarder != nil {
-					screen.Target = forwarder.String()
-				}
-				return runInTerminal(program, screen, func() error {
-					// The alt screen hides the warnings printed before it.
-					for _, warning := range warnings {
-						if err := sess.Emit(warning); err != nil {
-							return err
-						}
-					}
-					return listen(sess)
-				})
-			}
-			// The status line carries the hints.
-			if err := writer.Banner(projectName, routes, nil); err != nil {
+		if !cards.Terminal(cmd.OutOrStdout()) || os.Getenv("TERM") == "dumb" {
+			return runPlain(setup, cmd.InOrStdin())
+		}
+		var input io.Reader
+		if cards.Terminal(cmd.InOrStdin()) {
+			input = cmd.InOrStdin()
+		}
+		program := tui.NewProgram(input, cmd.OutOrStdout(), stopListening)
+		if input != nil && !streamOutput {
+			return runFullscreen(setup, program, warnings)
+		}
+		return runStream(setup, program, input != nil)
+	},
+}
+
+// listenSetup is what listen's full-screen, stream and plain views share.
+type listenSetup struct {
+	ctx     context.Context
+	stop    context.CancelFunc
+	sources []api.Source
+	// local is nil in inspect mode.
+	local       session.Forwarder
+	listenCards cards.Listen
+	writer      *cards.Writer
+	project     string
+	routes      []cards.BannerRoute
+	requestsURL string
+	// listen runs the connection, reporting to sess, until listening stops.
+	listen func(sess *session.Session) error
+}
+
+func runFullscreen(setup listenSetup, program *tui.Program, warnings []session.Event) error {
+	sess := session.New(setup.ctx, setup.sources, setup.local, program.FullscreenSink())
+	screen := tui.Fullscreen{
+		Requests:             sess,
+		Listen:               setup.listenCards,
+		Project:              setup.project,
+		Routes:               setup.routes,
+		RequestsURL:          setup.requestsURL,
+		ShowSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
+	}
+	if setup.local != nil {
+		screen.Target = setup.local.String()
+	}
+	return runInTerminal(program, screen, func() error {
+		// The alt screen hides the warnings printed before it.
+		for _, warning := range warnings {
+			if err := sess.Emit(warning); err != nil {
 				return err
 			}
-			sess := session.New(listenContext, sources, local, program.StreamSink(listenCards, requestsURL))
-			stream := tui.Stream{Requests: sess, Println: program.Println, Project: projectName, Forwarding: forwarder != nil, Prompt: input != nil, ShowSensitiveHeaders: showSensitiveHeaders}
-			return runInTerminal(program, stream, func() error { return listen(sess) })
 		}
+		return setup.listen(sess)
+	})
+}
 
-		sess := session.New(listenContext, sources, local, writer)
-		commandsEnabled := cards.Terminal(cmd.InOrStdin()) && foreground(cmd.InOrStdin())
-		writer.Commands = commandsEnabled
-		hints := []string{"ctrl-c quit"}
-		if commandsEnabled {
-			hints = append(tui.CommandHints(forwarder != nil), hints...)
+// runStream prompts for commands when prompt is set.
+func runStream(setup listenSetup, program *tui.Program, prompt bool) error {
+	// The status line carries the hints.
+	if err := setup.writer.Banner(setup.project, setup.routes, nil); err != nil {
+		return err
+	}
+	sess := session.New(setup.ctx, setup.sources, setup.local, program.StreamSink(setup.listenCards, setup.requestsURL))
+	stream := tui.Stream{
+		Requests:             sess,
+		Println:              program.Println,
+		Project:              setup.project,
+		Forwarding:           setup.local != nil,
+		Prompt:               prompt,
+		ShowSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
+	}
+	return runInTerminal(program, stream, func() error { return setup.listen(sess) })
+}
+
+// runPlain takes line commands from input when it is a terminal and listen
+// runs in its foreground.
+func runPlain(setup listenSetup, input io.Reader) error {
+	sess := session.New(setup.ctx, setup.sources, setup.local, setup.writer)
+	commandsEnabled := cards.Terminal(input) && foreground(input)
+	setup.writer.Commands = commandsEnabled
+	hints := []string{tui.QuitHint}
+	if commandsEnabled {
+		hints = append(tui.CommandHints(setup.local != nil), hints...)
+	}
+	if err := setup.writer.Banner(setup.project, setup.routes, hints); err != nil {
+		return err
+	}
+	var commands *lineCommandReader
+	if commandsEnabled {
+		options := lineCommandOptions{
+			forwarding:           setup.local != nil,
+			showSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
 		}
-		if err := writer.Banner(projectName, routes, hints); err != nil {
-			return err
+		commands = startLineCommands(setup.ctx, input, func(line string) error {
+			return runLineCommand(sess, setup.writer, options, line)
+		}, setup.stop)
+	}
+	listenErr := setup.listen(sess)
+	setup.stop()
+	if commands != nil {
+		if err := commands.Stop(); err != nil {
+			return fmt.Errorf("line commands: %w", err)
 		}
-		var commands *lineCommandReader
-		if commandsEnabled {
-			commands = startLineCommands(listenContext, cmd.InOrStdin(), func(line string) error {
-				return runLineCommand(sess, writer, forwarder != nil, line)
-			}, stopListening)
-		}
-		listenErr := listen(sess)
-		stopListening()
-		if commands != nil {
-			if err := commands.Stop(); err != nil {
-				return fmt.Errorf("line commands: %w", err)
-			}
-		}
-		return listenErr
-	},
+	}
+	return listenErr
 }
 
 // runInTerminal runs listen under program: listen ending quits the program,
@@ -428,7 +486,14 @@ func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.Ban
 	var routes []cards.BannerRoute
 	for _, source := range sources {
 		for _, route := range source.Routes {
-			banner := cards.BannerRoute{SourceUID: source.UID, Source: source.Name, PublicURL: source.URL, RouteUID: route.UID, Path: route.Destination.Path, Label: session.RouteLabel(route)}
+			banner := cards.BannerRoute{
+				SourceUID: source.UID,
+				Source:    source.Name,
+				PublicURL: source.URL,
+				RouteUID:  route.UID,
+				Path:      route.Destination.Path,
+				Label:     session.RouteLabel(route),
+			}
 			if forwarder != nil {
 				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
 				if err != nil {
@@ -452,10 +517,10 @@ func runningInContainer() bool {
 // request, r N replays #N, c N prints #N as a cURL command, e N exports it as
 // a fixture, t [source] sends a test event, ? prints help, and anything else
 // gets the command list.
-func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool, line string) error {
+func runLineCommand(sess *session.Session, writer *cards.Writer, options lineCommandOptions, line string) error {
 	command, ok := tui.ParseCommand(line)
 	if !ok {
-		return writer.Reply(tui.CommandUsage(forwarding))
+		return writer.Reply(tui.CommandUsage(options.forwarding))
 	}
 	switch command.Key {
 	case "":
@@ -463,13 +528,13 @@ func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool
 	case "r":
 		return replyToReplay(writer, sess.Replay(command.N))
 	case "c":
-		curl, err := sess.Curl(command.N, !showSensitiveHeaders)
+		curl, err := sess.Curl(command.N, !options.showSensitiveHeaders)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
 		return writer.Print(cards.CurlNotes(command.N, curl, false) + "\n" + curl.Shown)
 	case "e":
-		fixture, err := sess.ExportFixture(command.N, !showSensitiveHeaders)
+		fixture, err := sess.ExportFixture(command.N, !options.showSensitiveHeaders)
 		if err != nil {
 			return writer.Reply(err.Error())
 		}
@@ -482,7 +547,13 @@ func runLineCommand(sess *session.Session, writer *cards.Writer, forwarding bool
 		}
 		return writer.Reply("test event sent to " + source)
 	}
-	return writer.Print(tui.CommandHelp(forwarding))
+	return writer.Print(tui.CommandHelp(options.forwarding))
+}
+
+// lineCommandOptions are the listen flags line commands follow.
+type lineCommandOptions struct {
+	forwarding           bool
+	showSensitiveHeaders bool
 }
 
 // replyToReplay answers a replay this run can't make: a number it never
