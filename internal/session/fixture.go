@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -94,13 +95,13 @@ func redactHeaders(headers http.Header, redact bool) (http.Header, bool) {
 // fixtureName names entry's files after its request UID and route, so
 // exporting a request or its replay again replaces its files, while the
 // deliveries of one request to a source's other routes keep theirs. It is
-// entry-<N> when that isn't a safe file name.
+// entry-<N> without a request UID or when the name isn't a safe file name.
 func fixtureName(entry Entry) string {
 	name := entry.Delivery.RequestUID
-	if entry.RouteUID != "" {
-		name += "_" + entry.RouteUID
+	if route := cmp.Or(entry.RouteUID, entry.Delivery.RouteUID); route != "" {
+		name += "_" + route
 	}
-	if plainName.MatchString(name) {
+	if entry.Delivery.RequestUID != "" && plainName.MatchString(name) {
 		return name
 	}
 	return "entry-" + strconv.Itoa(entry.Number)
