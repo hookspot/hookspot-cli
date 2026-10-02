@@ -147,8 +147,9 @@ var listenCmd = &cobra.Command{
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		if !cards.Terminal(cmd.OutOrStdout()) || os.Getenv("TERM") == "dumb" {
-			return runPlain(setup, cmd.InOrStdin())
+		piped := !cards.Terminal(cmd.OutOrStdout())
+		if piped || os.Getenv("TERM") == "dumb" {
+			return runPlain(setup, cmd.InOrStdin(), piped)
 		}
 		var input io.Reader
 		if cards.Terminal(cmd.InOrStdin()) {
@@ -221,10 +222,12 @@ func runStream(setup listenSetup, program *tui.Program, prompt bool) error {
 }
 
 // runPlain takes line commands from input when it is a terminal and listen
-// runs in its foreground.
-func runPlain(setup listenSetup, input io.Reader) error {
+// runs in its foreground. With stdout piped, only forwarding takes them: a
+// pager reading the pipe shares the terminal, and replays are what commands
+// in `listen | tee log` are for.
+func runPlain(setup listenSetup, input io.Reader, piped bool) error {
 	sess := session.New(setup.ctx, setup.sources, setup.local, setup.writer)
-	commandsEnabled := cards.Terminal(input) && foreground(input)
+	commandsEnabled := cards.Terminal(input) && foreground(input) && (setup.local != nil || !piped)
 	setup.writer.Commands = commandsEnabled
 	hints := []string{tui.QuitHint}
 	if commandsEnabled {
