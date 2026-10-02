@@ -17,7 +17,8 @@ import (
 
 var (
 	filterKey = key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter"))
-	// escKey stops w's wait, else clears the filter.
+	// escKey stops w's wait, else dismisses the alerts, else clears the
+	// filter.
 	escKey = key.NewBinding(key.WithKeys("esc"))
 )
 
@@ -145,11 +146,14 @@ func (m Fullscreen) editFilter(msg tea.KeyPressMsg) Fullscreen {
 	return m
 }
 
-// escape stops w's wait, else clears the filter.
+// escape stops w's wait, else dismisses the alerts, else clears the filter.
 func (m Fullscreen) escape() Fullscreen {
-	if m.waiting() {
+	switch {
+	case m.waiting():
 		m.wait = wait{id: m.wait.id}
-	} else {
+	case m.reconnected != nil || m.notFound != nil:
+		m.reconnected, m.notFound = nil, nil
+	default:
 		m.filter = filter{}
 	}
 	return m

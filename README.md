@@ -123,9 +123,10 @@ Django's `APPEND_SLASH`). The local hop ignores `HTTP_PROXY` and
 In plain mode, `listen` prints `Ready. Waiting for requests (Ctrl-C to quit)`
 once deliveries can flow; scripts should wait for it. When a dropped
 connection comes back, `Reconnected after <time> offline` says requests from
-the gap were not delivered and links to the dashboard to retry them. Plain
-mode writes `Ready` and request blocks to stdout; connection notices, source
-warnings, and the root-404 and test hints go to stderr.
+the gap were not delivered and links to the dashboard to retry them;
+full-screen keeps it, and the root-404 hint, under the header until `esc`.
+Plain mode writes `Ready` and request blocks to stdout; connection notices,
+source warnings, and the root-404 and test hints go to stderr.
 
 The first response from the local server is reported as-is, including a
 redirect, and redirects are not followed; a 3xx shows its `Location`, since

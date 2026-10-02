@@ -83,6 +83,11 @@ type Fullscreen struct {
 	// notices are the source warnings, shown until a request arrives.
 	notices []string
 	hint    *session.TestHint
+	// reconnected and notFound stay under the header until esc, since a
+	// toast could pass unseen; reconnected sums the outages until then.
+	reconnected *session.Reconnected
+	notFound    *session.RootNotFound
+
 	sources sourcesPage
 	toast   string
 	toastID int
@@ -118,7 +123,10 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		m.connection = m.follow(cards.StateLive, nil)
 	case session.Reconnected:
 		m.connection = m.follow(cards.StateLive, nil)
-		return m.show(cards.Reconnected(msg.Offline, m.RequestsURL))
+		if m.reconnected != nil {
+			msg.Offline += m.reconnected.Offline
+		}
+		m.reconnected = &msg
 	case session.ConnectionLost:
 		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.DisabledSource:
@@ -128,7 +136,7 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 	case session.TestHint:
 		m.hint = &msg
 	case session.RootNotFound:
-		return m.show(cards.RootNotFound(msg.Root, msg.Status))
+		m.notFound = &msg
 	case session.Recorded:
 		return m.record(msg)
 	case stoppingMsg:
@@ -332,8 +340,9 @@ type layout struct {
 func (m Fullscreen) layout() layout {
 	width, height := m.size()
 	l := layout{split: width >= splitWidth}
-	// The header, source line and filter come first; toasts and keys last.
-	l.panes = max(0, height-2-len(m.filterLines(width))-len(m.toastLines(width))-len(m.footer(width)))
+	// The header, alerts, source line and filter come first; toasts and keys
+	// last.
+	l.panes = max(0, height-2-len(m.alertLines(width))-len(m.filterLines(width))-len(m.toastLines(width))-len(m.footer(width)))
 	if l.split {
 		l.listWidth, l.listHeight = listWidth, l.panes
 		l.detailWidth, l.detailHeight = width-listWidth-1, l.panes
@@ -360,7 +369,8 @@ func (m Fullscreen) View() tea.View {
 	}
 	width, height := m.size()
 	l := m.layout()
-	lines := []string{m.header(width), m.sourceLine()}
+	lines := append([]string{m.header(width)}, m.alertLines(width)...)
+	lines = append(lines, m.sourceLine())
 	lines = append(lines, m.filterLines(width)...)
 	switch {
 	case len(m.entries) == 0:
@@ -441,6 +451,22 @@ func (m Fullscreen) empty(width int) []string {
 		}
 	}
 	return lines
+}
+
+// alertLines are the reconnect notice and the root-404 hint.
+func (m Fullscreen) alertLines(width int) []string {
+	var alerts []string
+	if m.reconnected != nil {
+		alerts = append(alerts, cards.Reconnected(m.reconnected.Offline, m.RequestsURL))
+	}
+	if m.notFound != nil {
+		alerts = append(alerts, cards.RootNotFound(m.notFound.Root, m.notFound.Status))
+	}
+	if len(alerts) == 0 {
+		return nil
+	}
+	alerts[len(alerts)-1] += faintStyle.Render(" · esc dismisses")
+	return wrap(width, alerts)
 }
 
 func (m Fullscreen) toastLines(width int) []string {

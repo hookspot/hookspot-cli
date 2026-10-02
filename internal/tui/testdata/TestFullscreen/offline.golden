@@ -1,4 +1,7 @@
 ○ reconnecting · Acme | Payments · 1 request · 0 ok · 1 failed · p50 4ms · dial…
+http://localhost:3000/ returned 404. If your webhook route is elsewhere, include
+it in --forward-to, e.g. --forward-to http://localhost:3000/webhooks · esc
+dismisses
 ● stripe   ● github   following newest
 ╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
 │   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
@@ -16,9 +19,6 @@
 │                                                                              │
 │ source    stripe                                                             │
 │ route     payments → http://localhost:3000/hooks                             │
-│ received  14:02:01.000                                                       │
-│ … 4 more lines · pgdn scrolls                                                │
+│ … 5 more lines · pgdn scrolls                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-http://localhost:3000/ returned 404. If your webhook route is elsewhere, include
-it in --forward-to, e.g. --forward-to http://localhost:3000/webhooks
 ? help  q quit  ↑↓ select  ←→ tabs  f follow  / filter  r replay  c curl …

@@ -241,11 +241,28 @@ func TestFullscreen(t *testing.T) {
 			}
 		}},
 		{name: "reconnected", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			lost := session.ConnectionLost{Err: errors.New("dial tcp: connection refused"), RetryIn: 2 * time.Second}
+			replay := entry(2, "src_stripe", 200)
+			replay.ReplayOf = 1
+			replay.Replay = &session.Comparison{Original: 1, Status: 200, Latency: 7 * time.Millisecond}
+			// The notice sums both outages, and the replay's toast leaves it.
 			return []tea.Msg{
 				session.Ready{}, r.recorded(entry(1, "src_stripe", 200)),
+				lost, session.Reconnected{Offline: 3 * time.Second},
+				lost, session.Reconnected{Offline: 2 * time.Second},
+				r.recorded(replay),
+			}
+		}},
+		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			msgs := []tea.Msg{
+				session.Ready{}, r.recorded(entry(1, "src_stripe", 404)), r.recorded(entry(2, "src_github", 200)),
+				session.RootNotFound{Root: "http://localhost:3000/", Status: 404},
 				session.ConnectionLost{Err: errors.New("dial tcp: connection refused"), RetryIn: 2 * time.Second},
 				session.Reconnected{Offline: 3 * time.Second},
+				letter('/'),
 			}
+			// esc dismisses the alerts first, keeping the filter.
+			return append(append(msgs, typed("source:github")...), enter, esc)
 		}},
 	}
 	for _, test := range tests {
