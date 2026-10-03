@@ -1,5 +1,5 @@
 {
-  "name": "hookspot",
+  "name": "@hookspot/cli",
   "version": "0.0.0",
   "description": "Receive and forward Hookspot webhooks to a local server",
   "license": "MIT",

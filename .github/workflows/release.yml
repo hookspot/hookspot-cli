@@ -62,7 +62,7 @@ jobs:
       # re-run skips a version that already reached the registry, so the smoke
       # job still runs.
       - run: |
-          if [ -n "$(npm view "hookspot@${GITHUB_REF_NAME#v}" version 2>/dev/null)" ]; then
+          if [ -n "$(npm view "@hookspot/cli@${GITHUB_REF_NAME#v}" version 2>/dev/null)" ]; then
             exit 0
           fi
           case "$GITHUB_REF_NAME" in
@@ -100,7 +100,7 @@ jobs:
       - run: |
           attempts=5
           for attempt in $(seq "$attempts"); do
-            npm install -g "hookspot@$VERSION" && break
+            npm install -g "@hookspot/cli@$VERSION" && break
             [ "$attempt" -lt "$attempts" ] || exit 1
             sleep 30
           done

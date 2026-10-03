@@ -7,7 +7,7 @@ This package bundles prebuilt binaries for macOS, Linux, and Windows (amd64 and
 arm64) and a launcher that runs the one matching your platform.
 
 ```sh
-npm install -g hookspot
+npm install -g @hookspot/cli
 hookspot version --json
 hookspot login
 ```

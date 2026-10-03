@@ -21,7 +21,7 @@ Windows on amd64 and arm64; a small launcher runs the one matching your
 platform.
 
 ```sh
-npm install -g hookspot
+npm install -g @hookspot/cli
 ```
 
 ## Homebrew
@@ -219,7 +219,7 @@ archive.
 Update through the channel you installed from:
 
 ```sh
-npm install -g hookspot@latest
+npm install -g @hookspot/cli@latest
 brew upgrade hookspot-cli
 docker pull hookspot/hookspot-cli
 ```
@@ -235,7 +235,7 @@ configuration.
 Remove the executable through the channel you installed from:
 
 ```sh
-npm uninstall -g hookspot
+npm uninstall -g @hookspot/cli
 brew uninstall hookspot-cli
 docker rmi hookspot/hookspot-cli
 rm "$HOME/.local/bin/hookspot"

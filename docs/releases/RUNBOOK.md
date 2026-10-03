@@ -17,7 +17,7 @@ Check that the version is unused on every channel before tagging:
 
 ```sh
 gh release list --repo hookspot/hookspot-cli
-npm view hookspot versions
+npm view @hookspot/cli versions
 ```
 
 ## Prerequisites
@@ -29,7 +29,7 @@ Before the first release, and worth re-checking when a release fails early:
 - The Docker Hub repository `hookspot/hookspot-cli` exists and is public.
 - The `HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN`
   Actions secrets are set (see Secrets below).
-- The npm package `hookspot` exists and trusts `release.yml` (see Secrets below).
+- The npm package `@hookspot/cli` exists and trusts `release.yml` (see Secrets below).
 - The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
   clutter the release list, and the newest reachable one is what
   `make release-snapshot` names in its formula (see Local snapshot); delete
@@ -73,7 +73,7 @@ gh run watch
 `smoke` (needs `release`; ubuntu, macOS, and Windows; `contents: read`):
 `scripts/smoke.sh <version>` downloads the runner's archive from the release,
 verifies its checksum, and asserts `hookspot version --json` reports the
-version as a release build; then `npm install -g hookspot@<version>`
+version as a release build; then `npm install -g @hookspot/cli@<version>`
 (retried for registry propagation) and the same assertion; on ubuntu also
 `docker run --rm hookspot/hookspot-cli:<version>` and the same assertion; on
 macOS also `brew install hookspot/hookspot/hookspot-cli` and the same
@@ -96,7 +96,7 @@ is the workflow's built-in token.
 npm takes no secret: the workflow publishes through npm trusted publishing
 (GitHub OIDC), since npm stops accepting direct publishes from tokens in
 January 2027. npm trusts only an existing package, so the first version is
-published by hand; the package's trusted publisher (npmjs.com, `hookspot`,
+published by hand; the package's trusted publisher (npmjs.com, `@hookspot/cli`,
 Settings) is GitHub Actions, `hookspot/hookspot-cli`, workflow `release.yml`.
 
 The workflow checks the Docker Hub secrets first, and `make release-publish` refuses to
@@ -130,8 +130,8 @@ npm cannot unpublish a version most users can already have, so deprecate it;
 `npm install` then warns and `latest` moves back to the previous version:
 
 ```sh
-npm deprecate hookspot@1.2.3 "Broken release, use 1.2.4"
-npm dist-tag add hookspot@1.2.2 latest
+npm deprecate @hookspot/cli@1.2.3 "Broken release, use 1.2.4"
+npm dist-tag add @hookspot/cli@1.2.2 latest
 ```
 
 Homebrew: revert the formula commit in `hookspot/homebrew-hookspot` so

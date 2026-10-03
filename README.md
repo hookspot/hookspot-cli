@@ -13,7 +13,7 @@ again.
    your app:
 
    ```sh
-   npm install -g hookspot
+   npm install -g @hookspot/cli
    hookspot login
    hookspot listen --forward-to http://localhost:3000
    ```
@@ -26,7 +26,7 @@ again.
 npm (Node 18 or newer):
 
 ```sh
-npm install -g hookspot
+npm install -g @hookspot/cli
 ```
 
 Homebrew on macOS or Linux:
@@ -48,7 +48,7 @@ from the [latest release](https://github.com/hookspot/hookspot-cli/releases/late
 and follow its [`INSTALL.md`](docs/releases/INSTALL.md).
 
 `hookspot version` tells you when a newer release is out. Update with
-`npm install -g hookspot@latest`, `brew upgrade hookspot-cli`, or
+`npm install -g @hookspot/cli@latest`, `brew upgrade hookspot-cli`, or
 `docker pull hookspot/hookspot-cli`.
 
 ## Usage
