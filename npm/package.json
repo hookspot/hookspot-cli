@@ -2,7 +2,7 @@
   "name": "hookspot",
   "version": "0.0.0",
   "description": "Receive and forward Hookspot webhooks to a local server",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "homepage": "https://github.com/hookspot/hookspot-cli#readme",
   "repository": {
     "type": "git",

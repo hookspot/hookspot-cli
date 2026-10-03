@@ -66,6 +66,7 @@ archives:
     builds_info:
       mode: 0755
     files:
+      - LICENSE
       - README.md
       - src: docs/releases/INSTALL.md
         strip_parent: true
@@ -104,6 +105,7 @@ brews:
     directory: Formula
     homepage: https://hookspot.dev
     description: Receive and forward Hookspot webhooks to a local server
+    license: MIT
     skip_upload: auto # no formula for pre-release tags
     install: bin.install "hookspot"
     test: system "#{bin}/hookspot", "version", "--json"
