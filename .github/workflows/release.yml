@@ -108,7 +108,7 @@ jobs:
         shell: bash
 
       - if: matrix.os == 'ubuntu-latest'
-        run: scripts/smoke.sh "$VERSION" docker run --rm "hookspot/hookspot-cli:$VERSION"
+        run: scripts/smoke.sh "$VERSION" docker run --rm "hookspot/cli:$VERSION"
         shell: bash
 
       # Pre-release tags publish no formula (brews.skip_upload: auto).

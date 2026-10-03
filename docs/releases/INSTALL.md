@@ -37,12 +37,12 @@ brew install hookspot/hookspot/hookspot-cli
 
 ## Docker
 
-The `hookspot/hookspot-cli` image runs on `linux/amd64` and `linux/arm64` as a
+The `hookspot/cli` image runs on `linux/amd64` and `linux/arm64` as a
 non-root user. Each release is tagged with its version, and `latest` points to
 the newest release.
 
 ```sh
-docker run --rm hookspot/hookspot-cli version --json
+docker run --rm hookspot/cli version --json
 ```
 
 A new container has no saved login, so pass a CLI key and the project through
@@ -52,7 +52,7 @@ the `--add-host` flag defines it on Linux, where Docker does not.
 ```sh
 docker run --rm -it --add-host=host.docker.internal:host-gateway \
   -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG \
-  hookspot/hookspot-cli listen --forward-to http://host.docker.internal:3000
+  hookspot/cli listen --forward-to http://host.docker.internal:3000
 ```
 
 ## GitHub release archive
@@ -221,7 +221,7 @@ Update through the channel you installed from:
 ```sh
 npm install -g @hookspot/cli@latest
 brew upgrade hookspot-cli
-docker pull hookspot/hookspot-cli
+docker pull hookspot/cli
 ```
 
 For an archive install, download the new release's matching archive and
@@ -237,7 +237,7 @@ Remove the executable through the channel you installed from:
 ```sh
 npm uninstall -g @hookspot/cli
 brew uninstall hookspot-cli
-docker rmi hookspot/hookspot-cli
+docker rmi hookspot/cli
 rm "$HOME/.local/bin/hookspot"
 ```
 

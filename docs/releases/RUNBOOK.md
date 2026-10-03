@@ -26,7 +26,7 @@ Before the first release, and worth re-checking when a release fails early:
 
 - `hookspot/homebrew-hookspot` exists, is public, and has a `Formula/`
   directory; GoReleaser pushes `Formula/hookspot-cli.rb` into it.
-- The Docker Hub repository `hookspot/hookspot-cli` exists and is public.
+- The Docker Hub repository `hookspot/cli` exists and is public.
 - The `HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN`
   Actions secrets are set (see Secrets below).
 - The npm package `@hookspot/cli` exists and trusts `release.yml` (see Secrets below).
@@ -64,7 +64,7 @@ gh run watch
    `hookspot/homebrew-hookspot`.
 4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
    `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and
-   pushes `hookspot/hookspot-cli:<version>`, plus `latest` for a non-pre-release
+   pushes `hookspot/cli:<version>`, plus `latest` for a non-pre-release
    version. It runs before npm because image tags can be pushed again and npm
    versions cannot.
 5. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
@@ -75,7 +75,7 @@ gh run watch
 verifies its checksum, and asserts `hookspot version --json` reports the
 version as a release build; then `npm install -g @hookspot/cli@<version>`
 (retried for registry propagation) and the same assertion; on ubuntu also
-`docker run --rm hookspot/hookspot-cli:<version>` and the same assertion; on
+`docker run --rm hookspot/cli:<version>` and the same assertion; on
 macOS also `brew install hookspot/hookspot/hookspot-cli` and the same
 assertion, skipped for pre-release tags. This matrix is the acceptance test for the release.
 
@@ -90,7 +90,7 @@ is the workflow's built-in token.
 - `HOMEBREW_TAP_TOKEN`: a fine-grained personal access token scoped to
   `hookspot/homebrew-hookspot` with Contents read/write; pushes the formula.
 - `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: a Docker Hub user with push
-  access to `hookspot/hookspot-cli`, and a personal access token of that user
+  access to `hookspot/cli`, and a personal access token of that user
   with Read & Write scope; pushes the image.
 
 npm takes no secret: the workflow publishes through npm trusted publishing
@@ -145,7 +145,7 @@ Docker Hub: point `latest` back at the previous version. The broken version's
 own tag stays, like the npm version:
 
 ```sh
-docker buildx imagetools create -t hookspot/hookspot-cli:latest hookspot/hookspot-cli:1.2.2
+docker buildx imagetools create -t hookspot/cli:latest hookspot/cli:1.2.2
 ```
 
 GitHub Release: mark it as a pre-release so `releases/latest` and the CLI's

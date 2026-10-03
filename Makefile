@@ -5,7 +5,7 @@ RUN := $(DOCKER_RUN) $(GO_IMAGE)
 RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG -e HOOKSPOT_CONFIG_FILE
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
-IMAGE := hookspot/hookspot-cli
+IMAGE := hookspot/cli
 IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target release --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
