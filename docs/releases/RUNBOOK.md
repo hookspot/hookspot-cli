@@ -27,10 +27,9 @@ Before the first release, and worth re-checking when a release fails early:
 - `hookspot/homebrew-hookspot` exists, is public, and has a `Formula/`
   directory; GoReleaser pushes `Formula/hookspot-cli.rb` into it.
 - The Docker Hub repository `hookspot/hookspot-cli` exists and is public.
-- The `HOMEBREW_TAP_TOKEN`, `NPM_TOKEN`, `DOCKERHUB_USERNAME`, and
-  `DOCKERHUB_TOKEN` Actions secrets are set (see Secrets below).
-- The npm package name `hookspot` is owned by the publishing account, or still
-  free for the first publish.
+- The `HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN`
+  Actions secrets are set (see Secrets below).
+- The npm package `hookspot` exists and trusts `release.yml` (see Secrets below).
 - The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
   clutter the release list, and the newest reachable one is what
   `make release-snapshot` names in its formula (see Local snapshot); delete
@@ -49,7 +48,7 @@ gh run watch
 
 `release` (ubuntu, `contents: write`, `id-token: write`):
 
-1. Checks that `NPM_TOKEN` and the Docker Hub secrets are set, then runs
+1. Checks that the Docker Hub secrets are set, then runs
    `make test`, so a missing secret or a failing test stops the job before
    anything is published.
 2. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
@@ -82,24 +81,25 @@ assertion, skipped for pre-release tags. This matrix is the acceptance test for 
 
 ## Secrets
 
-`HOMEBREW_TAP_TOKEN`, `NPM_TOKEN`, `DOCKERHUB_USERNAME`, and
-`DOCKERHUB_TOKEN` are Actions secrets on
-`hookspot/hookspot-cli` (Settings, Secrets and variables, Actions; or
-`gh secret set NAME --repo hookspot/hookspot-cli`); `GITHUB_TOKEN` is the
-workflow's built-in token.
+`HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN` are
+Actions secrets on `hookspot/hookspot-cli` (Settings, Secrets and variables,
+Actions; or `gh secret set NAME --repo hookspot/hookspot-cli`); `GITHUB_TOKEN`
+is the workflow's built-in token.
 
 - `GITHUB_TOKEN`: creates the GitHub Release and uploads the assets.
 - `HOMEBREW_TAP_TOKEN`: a fine-grained personal access token scoped to
   `hookspot/homebrew-hookspot` with Contents read/write; pushes the formula.
-- `NPM_TOKEN`: an npm granular access token with publish permission and 2FA
-  bypass for CI; used as `NODE_AUTH_TOKEN`. npm can scope a granular token to
-  a package only once the package exists, so the token for the first publish
-  must cover all packages; replace it with one scoped to `hookspot` afterwards.
 - `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: a Docker Hub user with push
   access to `hookspot/hookspot-cli`, and a personal access token of that user
   with Read & Write scope; pushes the image.
 
-The workflow checks `NPM_TOKEN` and the Docker Hub secrets first, and `make release-publish` refuses to
+npm takes no secret: the workflow publishes through npm trusted publishing
+(GitHub OIDC), since npm stops accepting direct publishes from tokens in
+January 2027. npm trusts only an existing package, so the first version is
+published by hand; the package's trusted publisher (npmjs.com, `hookspot`,
+Settings) is GitHub Actions, `hookspot/hookspot-cli`, workflow `release.yml`.
+
+The workflow checks the Docker Hub secrets first, and `make release-publish` refuses to
 start without `GITHUB_TOKEN` and `HOMEBREW_TAP_TOKEN`, so a missing secret
 stops the job before anything is published.
 

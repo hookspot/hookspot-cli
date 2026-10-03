@@ -18,9 +18,8 @@ jobs:
       id-token: write
     steps:
       # Fail before anything is published.
-      - run: test -n "$NPM_TOKEN" && test -n "$DOCKERHUB_USERNAME" && test -n "$DOCKERHUB_TOKEN"
+      - run: test -n "$DOCKERHUB_USERNAME" && test -n "$DOCKERHUB_TOKEN"
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
@@ -50,9 +49,10 @@ jobs:
       # Before npm, which cannot take a version back; a re-run pushes the same tags again.
       - run: make release-image-publish VERSION="${GITHUB_REF_NAME#v}"
 
+      # npm trusted publishing (OIDC) needs npm 11.5.1+, which Node 22 does not ship.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
@@ -71,8 +71,6 @@ jobs:
           esac
           npm publish --provenance --access public --tag "$npm_tag"
         working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # The acceptance test: each channel installs on each platform and reports the
   # released version. A red matrix means yank; see docs/releases/RUNBOOK.md.
