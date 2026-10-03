@@ -1,12 +1,30 @@
 # Hookspot CLI
 
-Hookspot CLI connects to a Hookspot project, prints incoming webhook requests,
-and can forward them to a local HTTP server.
+Get webhooks on your laptop. [Hookspot](https://hookspot.dev) gives you a
+webhook URL. While `hookspot listen` runs, each webhook reaches the app on your
+machine, and you can see what arrived, what your app answered, and send it
+again.
 
-Service URLs are embedded during release builds. Development or `.invalid`
-example endpoints are not live Hookspot services.
+## Quickstart
 
-## Install
+1. Sign up at [hookspot.dev](https://hookspot.dev) and create a route. You get
+   a webhook URL to paste into the service that sends webhooks.
+2. Install the CLI, approve the login in your browser, then start forwarding to
+   your app:
+
+   ```sh
+   npm install -g hookspot
+   hookspot login
+   hookspot listen --forward-to http://localhost:3000
+   ```
+
+3. Click **Send test request** in the app, or press `t` in the CLI. The webhook
+   shows up there and in your terminal.
+
+The [documentation](https://hookspot.dev/docs/) covers routes, retries, and
+every CLI command.
+
+## Installation
 
 Every release is published to npm, Homebrew, and GitHub Releases from one
 build, so all three channels install the same `hookspot` binary.
@@ -46,11 +64,13 @@ the newest release with a 5-second timeout and prints an upgrade notice when
 there is one (an offline machine sees no notice and no error). `--version` and
 `-v` print only the version.
 
+Update with `npm install -g hookspot@latest` or `brew upgrade hookspot`.
+
 ## Log in and select a project
 
 `hookspot login` opens your browser, where you confirm the printed code and
 choose an organization and project. The CLI saves both the CLI key and the
-selected project:
+active project:
 
 ```sh
 hookspot login
@@ -62,7 +82,7 @@ manually. To paste a key instead, run `hookspot login -i` (piping a key on
 stdin requires `-i`). For CI, pass `HOOKSPOT_CLI_KEY` or `--cli-key` and skip
 login. Browser login requires a Hookspot server with browser login support.
 
-To change the selected project, run `hookspot project use`. With one accessible
+To change the active project, run `hookspot project use`. With one accessible
 project it selects it immediately; with more than one it opens an arrow-key
 picker in an interactive terminal and marks the saved project as the default.
 Scripts and other noninteractive callers must use an unambiguous form:
@@ -91,7 +111,7 @@ export HOOKSPOT_PROJECT_SLUG='payments'
 ```
 
 Organization and project slug variables must be set together. A saved CLI key
-and selected project are stored separately for each config prefix. To listen on
+and active project are stored separately for each config prefix. To listen on
 another project for one run, pass `--project PROJECT_UID`; it overrides the
 slug variables and the saved project.
 
@@ -288,7 +308,7 @@ error for ordinary commands, while login may create a new file at an unused
 selected path.
 
 Use `project use --local` to create or update the current directory's complete
-record. It stores the selected project and may copy the
+record. It stores the active project and may copy the
 CLI key already persisted in the global record; flag and environment keys are
 never copied. The local file contains plaintext credentials when a persisted
 key is available and is ignored by this repository's `.gitignore`. `--local`
@@ -327,6 +347,9 @@ pipe can still block graceful completion. After normal signal handling is
 restored, a later Ctrl-C can force exit and may interrupt cleanup.
 
 ## Development
+
+Service URLs are embedded during release builds. Development or `.invalid`
+example endpoints are not live Hookspot services.
 
 The `make` targets run Go in the pinned Docker toolchain:
 
@@ -402,3 +425,7 @@ make release-snapshot
 
 The [release runbook](https://github.com/hookspot/hookspot-cli/blob/main/docs/releases/RUNBOOK.md)
 covers version choice, secrets, re-running a failed job, and yanking a release.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
