@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -23,9 +24,11 @@ import (
 	"hookspot/internal/ws"
 )
 
-const reconnectDelay = 2 * time.Second
-
-const maxInitialConnectAttempts = 10
+const (
+	firstReconnectCeiling     = time.Second
+	maxReconnectCeiling       = 30 * time.Second
+	maxInitialConnectAttempts = 10
+)
 
 var (
 	forwardTo            string
@@ -279,7 +282,9 @@ type websocketListener interface {
 }
 
 type reconnectPolicy struct {
-	Delay              time.Duration
+	// Delay picks the wait before reconnecting from the count of sessions
+	// failed since the last join.
+	Delay              func(failures int) time.Duration
 	MaxInitialAttempts int
 }
 
@@ -288,7 +293,7 @@ type reconnectPolicy struct {
 // fatal; an initial connection is bounded, while a session that connected once
 // retries until cancellation.
 func superviseListen(ctx context.Context, notices *connectionNotices, listener websocketListener, handler ws.Handler, policy reconnectPolicy) error {
-	initialAttempts := 0
+	failures := 0
 	connectedOnce := false
 
 	for {
@@ -304,28 +309,27 @@ func superviseListen(ctx context.Context, notices *connectionNotices, listener w
 		if errors.As(err, &sessionErr) {
 			if sessionErr.Connected {
 				connectedOnce = true
-				initialAttempts = 0
+				failures = 0
 			}
 			if !sessionErr.Retryable() {
 				return fmt.Errorf("listen: %w", err)
 			}
 		}
 
-		if !connectedOnce {
-			initialAttempts++
-			if policy.MaxInitialAttempts > 0 && initialAttempts >= policy.MaxInitialAttempts {
-				return wrapCommandError(
-					fmt.Sprintf("could not connect to Hookspot after %d attempts", initialAttempts),
-					"Check your network connection and the Hookspot server URL, then try again.",
-					err,
-				)
-			}
+		failures++
+		if !connectedOnce && policy.MaxInitialAttempts > 0 && failures >= policy.MaxInitialAttempts {
+			return wrapCommandError(
+				fmt.Sprintf("could not connect to Hookspot after %d attempts", failures),
+				"Check your network connection and the Hookspot server URL, then try again.",
+				err,
+			)
 		}
 
-		if err := notices.lost(err, policy.Delay); err != nil {
+		delay := policy.Delay(failures)
+		if err := notices.lost(err, delay); err != nil {
 			return fmt.Errorf("write reconnect notice: %w", err)
 		}
-		if !waitForReconnect(ctx, policy.Delay) {
+		if !waitForReconnect(ctx, delay) {
 			return nil
 		}
 	}
@@ -388,6 +392,20 @@ func dashboardURL(base endpoint.Base, project *api.Project, page string) string 
 		return u.String()
 	}
 	return ""
+}
+
+// reconnectDelay draws a full-jitter wait, so the CLIs a deploy disconnects
+// together don't all reconnect at once.
+func reconnectDelay(failures int) time.Duration {
+	return rand.N(reconnectCeiling(failures))
+}
+
+func reconnectCeiling(failures int) time.Duration {
+	ceiling := firstReconnectCeiling
+	for i := 1; i < failures && ceiling < maxReconnectCeiling; i++ {
+		ceiling *= 2
+	}
+	return min(ceiling, maxReconnectCeiling)
 }
 
 func waitForReconnect(ctx context.Context, delay time.Duration) bool {

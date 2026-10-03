@@ -103,7 +103,7 @@ func Ready() string {
 
 // ConnectionLost reports a failed session and the coming retry.
 func ConnectionLost(err error, retryIn time.Duration) string {
-	return warnStyle.Render("connection lost:") + " " + Line(err.Error()) + faintStyle.Render(fmt.Sprintf("; reconnecting in %s...", retryIn))
+	return warnStyle.Render("connection lost:") + " " + Line(err.Error()) + faintStyle.Render(fmt.Sprintf("; reconnecting in %s...", retryIn.Round(100*time.Millisecond)))
 }
 
 // Reconnected follows every join after the first. Requests that arrived while
