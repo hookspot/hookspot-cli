@@ -4,10 +4,20 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// makePrivateTestDirs creates dir as the store does: os.MkdirAll leaves
+// inherited access, which the store rejects on a managed directory.
+func makePrivateTestDirs(dir string) error { return createPrivateDirectories(dir) }
+
+// effectiveTestDir is dir as the store reports it: absolute and otherwise as
+// given. The store rejects reparse points instead of resolving them, and
+// resolving would expand 8.3 short names in %TEMP%.
+func effectiveTestDir(dir string) (string, error) { return filepath.Abs(dir) }
 
 func writePrivateTestFile(path string, contents []byte) error {
 	token, err := windows.OpenCurrentProcessToken()

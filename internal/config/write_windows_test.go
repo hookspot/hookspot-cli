@@ -90,7 +90,7 @@ func TestWindowsDescriptorRejectsForeignOwnerAndUntrustedMutation(t *testing.T) 
 		},
 		{
 			name:       "untrusted directory mutation",
-			descriptor: "O:" + user.String() + "D:P(A;;FA;;;SY)(A;;FA;;;" + user.String() + ")(A;;DC;;;WD)",
+			descriptor: "O:" + user.String() + "D:P(A;;FA;;;SY)(A;;FA;;;" + user.String() + ")(A;;0x40;;;WD)",
 			file:       false,
 		},
 	}

@@ -30,7 +30,7 @@ func clearConfigEnvironment(t *testing.T) {
 
 func writeConfigFixture(t *testing.T, path, contents string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := makePrivateTestDirs(filepath.Dir(path)); err != nil {
 		t.Fatal(err)
 	}
 	if err := writePrivateTestFile(path, []byte(contents)); err != nil {
@@ -67,7 +67,7 @@ func setWorkingDirectory(t *testing.T, path string) {
 
 func canonicalTestPath(t *testing.T, path string) string {
 	t.Helper()
-	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	parent, err := effectiveTestDir(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestNewLocalCopiesOnlyPersistedGlobalKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effectiveWorking, err := filepath.EvalSymlinks(working)
+	effectiveWorking, err := effectiveTestDir(working)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestNewSelectsDefaultAndOverridePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	effectiveHome, err := filepath.EvalSymlinks(home)
+	effectiveHome, err := effectiveTestDir(home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestPrefixStoresRemainIndependent(t *testing.T) {
 	if string(prodAfter) != string(prodBefore) {
 		t.Fatal("dev or stage mutation changed prod config")
 	}
-	effectiveHome, err := filepath.EvalSymlinks(home)
+	effectiveHome, err := effectiveTestDir(home)
 	if err != nil {
 		t.Fatal(err)
 	}
