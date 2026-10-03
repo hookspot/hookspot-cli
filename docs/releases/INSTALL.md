@@ -1,8 +1,8 @@
 # Install Hookspot CLI
 
-Every release is published to npm, Homebrew, and GitHub Releases from one
-build, so all three channels install the same `hookspot` binary. None of them
-needs Go, Docker, or a compiler; the Homebrew and archive installs need no
+Every release is published to npm, Homebrew, Docker Hub, and GitHub Releases
+from one build, so every channel installs the same `hookspot` binary. None of
+them needs Go or a compiler; the Homebrew and archive installs need no
 administrator access either, while `npm install -g` depends on your Node
 prefix. After installing, confirm the binary before logging in:
 
@@ -33,6 +33,26 @@ the first run.
 
 ```sh
 brew install hookspot/hookspot/hookspot-cli
+```
+
+## Docker
+
+The `hookspot/hookspot-cli` image runs on `linux/amd64` and `linux/arm64` as a
+non-root user. Each release is tagged with its version, and `latest` points to
+the newest release.
+
+```sh
+docker run --rm hookspot/hookspot-cli version --json
+```
+
+A new container has no saved login, so pass a CLI key and the project through
+the environment. Inside the container, `host.docker.internal` is your machine;
+the `--add-host` flag defines it on Linux, where Docker does not.
+
+```sh
+docker run --rm -it --add-host=host.docker.internal:host-gateway \
+  -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG \
+  hookspot/hookspot-cli listen --forward-to http://host.docker.internal:3000
 ```
 
 ## GitHub release archive
@@ -201,6 +221,7 @@ Update through the channel you installed from:
 ```sh
 npm install -g hookspot@latest
 brew upgrade hookspot-cli
+docker pull hookspot/hookspot-cli
 ```
 
 For an archive install, download the new release's matching archive and
@@ -216,6 +237,7 @@ Remove the executable through the channel you installed from:
 ```sh
 npm uninstall -g hookspot
 brew uninstall hookspot-cli
+docker rmi hookspot/hookspot-cli
 rm "$HOME/.local/bin/hookspot"
 ```
 

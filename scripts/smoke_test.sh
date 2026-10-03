@@ -72,6 +72,7 @@ expect "archive missing from the checksum file fails" 1 env SMOKE_ASSETS_DIR="$w
 
 stub "$work/installed" "$version" release
 expect "installed command passes" 0 "$smoke" "$version" "$work/installed"
+expect "installed command with arguments passes" 0 "$smoke" "$version" env "$work/installed"
 
 stub "$work/snapshot" 0.0.0-snapshot.0123456 snapshot
 expect "installed snapshot build fails" 1 "$smoke" "$version" "$work/snapshot"

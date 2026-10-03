@@ -3,11 +3,11 @@
 # Windows (Git Bash). Downloads this machine's archive from the GitHub Release,
 # verifies its SHA-256, and asserts the extracted binary reports VERSION as a
 # release build. With COMMAND, only asserts that an already installed command
-# (npm, Homebrew) reports the same.
+# (npm, Homebrew, or `docker run --rm IMAGE`) reports the same.
 set -euo pipefail
 
 usage() {
-  echo "usage: scripts/smoke.sh VERSION [COMMAND]" >&2
+  echo "usage: scripts/smoke.sh VERSION [COMMAND [ARG...]]" >&2
   exit 2
 }
 
@@ -18,18 +18,19 @@ fail() {
 
 assert_version() {
   local output
-  output=$("$1" version --json) || fail "$1 version --json failed"
+  output=$("$@" version --json) || fail "$* version --json failed"
   echo "$output"
   jq -e --arg version "$version" \
     '.version == $version and .build_kind == "release"' \
-    <<<"$output" >/dev/null || fail "$1 does not report $version as a release build"
+    <<<"$output" >/dev/null || fail "$* does not report $version as a release build"
 }
 
-[ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
+[ "$#" -ge 1 ] || usage
 version=$1
+shift
 
-if [ "$#" -eq 2 ]; then
-  assert_version "$2"
+if [ "$#" -gt 0 ]; then
+  assert_version "$@"
   exit 0
 fi
 

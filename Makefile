@@ -5,6 +5,8 @@ RUN := $(DOCKER_RUN) $(GO_IMAGE)
 RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG -e HOOKSPOT_CONFIG_FILE
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
+IMAGE := hookspot/hookspot-cli
+IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target release --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
@@ -13,7 +15,7 @@ LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 
-.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot local-build release-publish
+.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
 
 tidy:
 	$(RUN) go mod tidy
@@ -91,3 +93,15 @@ ifndef HOMEBREW_TAP_TOKEN
 endif
 	$(call require-clean-tree,release-publish)
 	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN $(RELEASE_IMAGE) release --clean
+
+# Multi-arch image of the Linux binaries that release-snapshot or
+# release-publish staged in npm/binaries/. Builds without pushing.
+release-image:
+	$(IMAGE_BUILD) .
+
+# CI only: pushes the image. Pre-release versions (1.2.3-rc.1) never move `latest`.
+release-image-publish:
+ifndef VERSION
+	$(error VERSION is required, e.g. make release-image-publish VERSION=1.2.3)
+endif
+	$(IMAGE_BUILD) -t $(IMAGE):$(VERSION) $(if $(findstring -,$(VERSION)),,-t $(IMAGE):latest) --push .

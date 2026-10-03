@@ -35,12 +35,21 @@ Homebrew on macOS or Linux:
 brew install hookspot/hookspot/hookspot-cli
 ```
 
-Without Node.js or Homebrew, download the archive for your system from the
-[latest release](https://github.com/hookspot/hookspot-cli/releases/latest) and
-follow its [`INSTALL.md`](docs/releases/INSTALL.md).
+Docker, with a CLI key instead of `hookspot login`:
+
+```sh
+docker run --rm -it --add-host=host.docker.internal:host-gateway \
+  -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG \
+  hookspot/hookspot-cli listen --forward-to http://host.docker.internal:3000
+```
+
+Without Node.js, Homebrew, or Docker, download the archive for your system
+from the [latest release](https://github.com/hookspot/hookspot-cli/releases/latest)
+and follow its [`INSTALL.md`](docs/releases/INSTALL.md).
 
 `hookspot version` tells you when a newer release is out. Update with
-`npm install -g hookspot@latest` or `brew upgrade hookspot-cli`.
+`npm install -g hookspot@latest`, `brew upgrade hookspot-cli`, or
+`docker pull hookspot/hookspot-cli`.
 
 ## Usage
 

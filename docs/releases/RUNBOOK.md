@@ -1,7 +1,7 @@
 # Release runbook
 
-A pushed `v*` tag publishes a release to GitHub Releases, Homebrew, and npm
-through `.github/workflows/release.yml`. Nothing is published from a local
+A pushed `v*` tag publishes a release to GitHub Releases, Homebrew, Docker
+Hub, and npm through `.github/workflows/release.yml`. Nothing is published from a local
 machine.
 
 ## Choose a version
@@ -9,8 +9,9 @@ machine.
 Versions are semantic: `vX.Y.Z`. Tag on `main` after CI is green for the
 commit. A pre-release tag such as `v1.2.3-rc.1` takes a reduced path: the
 GitHub Release is marked as a pre-release (so `releases/latest` and the CLI's
-upgrade check ignore it), no Homebrew formula is pushed, and npm publishes
-under the `next` dist-tag instead of `latest`.
+upgrade check ignore it), no Homebrew formula is pushed, the Docker image gets
+its version tag but not `latest`, and npm publishes under the `next` dist-tag
+instead of `latest`.
 
 Check that the version is unused on every channel before tagging:
 
@@ -25,8 +26,9 @@ Before the first release, and worth re-checking when a release fails early:
 
 - `hookspot/homebrew-hookspot` exists, is public, and has a `Formula/`
   directory; GoReleaser pushes `Formula/hookspot-cli.rb` into it.
-- The `HOMEBREW_TAP_TOKEN` and `NPM_TOKEN` Actions secrets are set (see
-  Secrets below).
+- The Docker Hub repository `hookspot/hookspot-cli` exists and is public.
+- The `HOMEBREW_TAP_TOKEN`, `NPM_TOKEN`, `DOCKERHUB_USERNAME`, and
+  `DOCKERHUB_TOKEN` Actions secrets are set (see Secrets below).
 - The npm package name `hookspot` is owned by the publishing account, or still
   free for the first publish.
 - The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
@@ -47,8 +49,9 @@ gh run watch
 
 `release` (ubuntu, `contents: write`, `id-token: write`):
 
-1. Checks that `NPM_TOKEN` is set, then runs `make test`, so a missing secret
-   or a failing test stops the job before anything is published.
+1. Checks that `NPM_TOKEN` and the Docker Hub secrets are set, then runs
+   `make test`, so a missing secret or a failing test stops the job before
+   anything is published.
 2. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
    `Dockerfile.release` (digests in `release/toolchain.env`).
 3. `make release-publish` runs `goreleaser release --clean` in that image. The
@@ -60,20 +63,27 @@ gh run watch
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
    seven assets, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
-4. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
+4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
+   `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and
+   pushes `hookspot/hookspot-cli:<version>`, plus `latest` for a non-pre-release
+   version. It runs before npm because image tags can be pushed again and npm
+   versions cannot.
+5. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
    package bundling the binaries from step 3.
 
 `smoke` (needs `release`; ubuntu, macOS, and Windows; `contents: read`):
 `scripts/smoke.sh <version>` downloads the runner's archive from the release,
 verifies its checksum, and asserts `hookspot version --json` reports the
 version as a release build; then `npm install -g hookspot@<version>`
-(retried for registry propagation) and the same assertion; on macOS also
-`brew install hookspot/hookspot/hookspot-cli` and the same assertion, skipped for
-pre-release tags. This matrix is the acceptance test for the release.
+(retried for registry propagation) and the same assertion; on ubuntu also
+`docker run --rm hookspot/hookspot-cli:<version>` and the same assertion; on
+macOS also `brew install hookspot/hookspot/hookspot-cli` and the same
+assertion, skipped for pre-release tags. This matrix is the acceptance test for the release.
 
 ## Secrets
 
-`HOMEBREW_TAP_TOKEN` and `NPM_TOKEN` are Actions secrets on
+`HOMEBREW_TAP_TOKEN`, `NPM_TOKEN`, `DOCKERHUB_USERNAME`, and
+`DOCKERHUB_TOKEN` are Actions secrets on
 `hookspot/hookspot-cli` (Settings, Secrets and variables, Actions; or
 `gh secret set NAME --repo hookspot/hookspot-cli`); `GITHUB_TOKEN` is the
 workflow's built-in token.
@@ -85,8 +95,11 @@ workflow's built-in token.
   bypass for CI; used as `NODE_AUTH_TOKEN`. npm can scope a granular token to
   a package only once the package exists, so the token for the first publish
   must cover all packages; replace it with one scoped to `hookspot` afterwards.
+- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`: a Docker Hub user with push
+  access to `hookspot/hookspot-cli`, and a personal access token of that user
+  with Read & Write scope; pushes the image.
 
-The workflow checks `NPM_TOKEN` first, and `make release-publish` refuses to
+The workflow checks `NPM_TOKEN` and the Docker Hub secrets first, and `make release-publish` refuses to
 start without `GITHUB_TOKEN` and `HOMEBREW_TAP_TOKEN`, so a missing secret
 stops the job before anything is published.
 
@@ -100,9 +113,10 @@ workflow change means a new patch version; never move a tag.
   release is created if missing, existing assets are replaced
   (`replace_existing_artifacts: true`, `mode: keep-existing`), and the formula
   is written again with the same content.
-- `release` failed at the npm step: re-running repeats the GoReleaser step as
-  above, then publishes, skipping npm when the version already reached the
-  registry, so `smoke` runs afterwards.
+- `release` failed at the Docker or npm step: re-running repeats the
+  GoReleaser step as above, pushes the same image tags again, then publishes,
+  skipping npm when the version already reached the registry, so `smoke` runs
+  afterwards.
 - `smoke` failed: re-running repeats only the smoke matrix. A transient
   failure (registry propagation, a runner outage) passes on re-run. A
   reproducible failure means the release is broken; yank it.
@@ -127,6 +141,13 @@ Homebrew: revert the formula commit in `hookspot/homebrew-hookspot` so
 git -C homebrew-hookspot revert HEAD && git -C homebrew-hookspot push
 ```
 
+Docker Hub: point `latest` back at the previous version. The broken version's
+own tag stays, like the npm version:
+
+```sh
+docker buildx imagetools create -t hookspot/hookspot-cli:latest hookspot/hookspot-cli:1.2.2
+```
+
 GitHub Release: mark it as a pre-release so `releases/latest` and the CLI's
 upgrade check skip it, or delete it outright when the assets must not be
 downloadable at all:
@@ -147,6 +168,11 @@ working tree because the build embeds VCS metadata; a before hook clears
 where the bind mount leaves those files root-owned. The snapshot formula in
 `dist/homebrew/` names the newest reachable tag in its download URLs
 (`v0.0.0-stage.1` today); a real `v*` tag push fills in the right one.
+
+`make release-image` then builds the image from those binaries for both
+platforms without pushing. It needs a Buildx builder that supports
+multi-platform builds: a `docker-container` builder, or Docker's containerd
+image store.
 
 `make release-check` validates `.goreleaser.yaml`; exit code 2 is GoReleaser's
 deprecation notice for the `brews` section, which is used deliberately (a
