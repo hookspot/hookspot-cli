@@ -84,6 +84,11 @@ func TestWindowsDescriptorRejectsForeignOwnerAndUntrustedMutation(t *testing.T) 
 			file:       true,
 		},
 		{
+			name:       "servicing file owner",
+			descriptor: "O:" + trustedInstallerSID + "D:P(A;;FA;;;SY)(A;;FA;;;" + user.String() + ")",
+			file:       true,
+		},
+		{
 			name:       "untrusted directory mutation",
 			descriptor: "O:" + user.String() + "D:P(A;;FA;;;SY)(A;;FA;;;" + user.String() + ")(A;;DC;;;WD)",
 			file:       false,
@@ -104,18 +109,16 @@ func TestWindowsDescriptorRejectsForeignOwnerAndUntrustedMutation(t *testing.T) 
 	}
 }
 
-func TestWindowsDescriptorAllowsCreateOnlyAncestorRights(t *testing.T) {
-	user, _, _, err := trustedWindowsSIDs()
-	if err != nil {
-		t.Fatal(err)
-	}
+// The default system drive root: owned by TrustedInstaller, and Authenticated
+// Users may create folders in it.
+func TestWindowsDescriptorAllowsSystemDriveRoot(t *testing.T) {
 	descriptor, err := windows.SecurityDescriptorFromString(
-		"O:" + user.String() + "D:P(A;;FA;;;SY)(A;;FA;;;" + user.String() + ")(A;;0x00000006;;;WD)",
+		"O:" + trustedInstallerSID + "D:PAI(A;;0x4;;;AU)(A;OICIIO;0xe0010000;;;AU)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := validateWindowsDescriptor(descriptor, false, false); err != nil {
-		t.Fatalf("create-only ancestor rejected: %v", err)
+		t.Fatalf("system drive root rejected: %v", err)
 	}
 }

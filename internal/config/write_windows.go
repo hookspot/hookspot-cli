@@ -17,6 +17,11 @@ import (
 
 const fileDeleteChild windows.ACCESS_MASK = 0x00000040
 
+// NT SERVICE\TrustedInstaller, the Windows servicing account. It owns the
+// system drive root on a default install, so every config path's chain ends
+// in a directory it owns.
+const trustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+
 func validateConfigFileType(path string, _ os.FileInfo) error {
 	attributes, err := windows.GetFileAttributes(mustUTF16(path))
 	if err != nil {
@@ -254,12 +259,19 @@ func validateWindowsDescriptor(descriptor *windows.SECURITY_DESCRIPTOR, requireP
 	if err != nil {
 		return err
 	}
+	trustedInstaller, err := windows.StringToSid(trustedInstallerSID)
+	if err != nil {
+		return err
+	}
+	trustedSID := func(sid *windows.SID) bool {
+		return sid.Equals(user) || sid.Equals(system) ||
+			!file && (sid.Equals(administrators) || sid.Equals(trustedInstaller))
+	}
 	owner, _, err := descriptor.Owner()
 	if err != nil || owner == nil {
 		return errors.New("config owner is missing")
 	}
-	trustedOwner := owner.Equals(user) || owner.Equals(system) || !file && owner.Equals(administrators)
-	if !trustedOwner {
+	if !trustedSID(owner) {
 		return errors.New("config is not owned by a trusted account")
 	}
 	// Creating a sibling does not let another principal replace an existing
@@ -283,8 +295,7 @@ func validateWindowsDescriptor(descriptor *windows.SECURITY_DESCRIPTOR, requireP
 			return errors.New("config access list contains an unsupported allow entry")
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		trusted := sid.Equals(user) || sid.Equals(system) || !file && sid.Equals(administrators)
-		if !trusted && (file || ace.Mask&unsafeDirectoryRights != 0) {
+		if !trustedSID(sid) && (file || ace.Mask&unsafeDirectoryRights != 0) {
 			return errors.New("config access list grants untrusted access")
 		}
 	}
