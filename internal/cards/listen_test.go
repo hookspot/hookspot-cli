@@ -88,12 +88,13 @@ func TestBanner(t *testing.T) {
 }
 
 // cmd's tests pin the notices' wording; these pin escaping and rounding.
-func TestNoticesEscapeServerTextAndRoundTheOutage(t *testing.T) {
+func TestNoticesEscapeServerTextAndRoundDurations(t *testing.T) {
 	for _, test := range []struct {
 		got, want string
 	}{
 		{got: DisabledSource("stripe\x1b[31m"), want: `⚠ stripe\x1b[31m is disabled`},
 		{got: SkippedSource("github\n"), want: `⚠ github\n has no route`},
+		{got: ConnectionLost(errors.New("dropped"), 12345*time.Millisecond), want: "connection lost: dropped; reconnecting in 12.3s..."},
 		{got: Reconnected(91400*time.Millisecond, "https://hookspot.test/requests"), want: "Reconnected after 1m31s offline."},
 	} {
 		if got := noColor(t, test.got); !strings.HasPrefix(got, test.want) {

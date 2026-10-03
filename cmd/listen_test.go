@@ -173,6 +173,8 @@ func (l *scriptedWebSocketListener) Listen(context.Context, ws.Handler) error {
 	return err
 }
 
+func noDelay(int) time.Duration { return 0 }
+
 func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
 	finalCause := errors.New("offline 3")
 	listener := &scriptedWebSocketListener{errors: []error{
@@ -183,7 +185,7 @@ func TestSuperviseListenStopsAfterInitialConnectionLimit(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	err := superviseListen(context.Background(), plainNotices(&stdout, &stderr, ""), listener, nil, reconnectPolicy{
-		Delay:              0,
+		Delay:              noDelay,
 		MaxInitialAttempts: 3,
 	})
 	if err == nil {
@@ -227,7 +229,7 @@ func TestSuperviseListenStopsWhenReconnectNoticeFails(t *testing.T) {
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")},
 				&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not retry")},
 			}}
-			err := superviseListen(context.Background(), plainNotices(io.Discard, test.writer, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+			err := superviseListen(context.Background(), plainNotices(io.Discard, test.writer, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 3})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("superviseListen error = %v, want %v", err, test.want)
 			}
@@ -247,7 +249,7 @@ func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
 	var stderr bytes.Buffer
 
 	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{
-		Delay:              0,
+		Delay:              noDelay,
 		MaxInitialAttempts: 1,
 	})
 	var sessionErr *ws.SessionError
@@ -262,6 +264,70 @@ func TestSuperviseListenRetriesIndefinitelyAfterConnection(t *testing.T) {
 	}
 }
 
+func TestSuperviseListenResetsBackoffAfterJoin(t *testing.T) {
+	offline := &ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("offline")}
+	stop := &ws.SessionError{Kind: ws.SessionHandler, Connected: true, Err: errors.New("stop")}
+	listener := &scriptedWebSocketListener{errors: []error{
+		offline,
+		offline,
+		&ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped")},
+		offline,
+		offline,
+		stop,
+	}}
+	var retries []time.Duration
+	notices := newConnectionNotices(func(event session.Event) error {
+		if lost, ok := event.(session.ConnectionLost); ok {
+			retries = append(retries, lost.RetryIn)
+		}
+		return nil
+	})
+	// A nanosecond per failure shows the failure count in each notice.
+	delay := func(failures int) time.Duration { return time.Duration(failures) }
+
+	err := superviseListen(context.Background(), notices, listener, nil, reconnectPolicy{Delay: delay})
+	if !errors.Is(err, stop) {
+		t.Fatalf("superviseListen error = %v, want the fatal session error", err)
+	}
+	if want := []time.Duration{1, 2, 1, 2, 3}; !reflect.DeepEqual(retries, want) {
+		t.Fatalf("retry delays = %v, want %v", retries, want)
+	}
+}
+
+func TestReconnectCeilingDoublesFromOneSecondToThirty(t *testing.T) {
+	for failures, want := range map[int]time.Duration{
+		1:    time.Second,
+		2:    2 * time.Second,
+		3:    4 * time.Second,
+		4:    8 * time.Second,
+		5:    16 * time.Second,
+		6:    30 * time.Second,
+		1000: 30 * time.Second,
+	} {
+		if got := reconnectCeiling(failures); got != want {
+			t.Errorf("reconnectCeiling(%d) = %v, want %v", failures, got, want)
+		}
+	}
+}
+
+// Full jitter draws from the whole range below the ceiling, not just near it.
+func TestReconnectDelayIsFullJitter(t *testing.T) {
+	for _, failures := range []int{1, 6} {
+		ceiling := reconnectCeiling(failures)
+		var low, high bool
+		for range 1000 {
+			delay := reconnectDelay(failures)
+			if delay < 0 || delay >= ceiling {
+				t.Fatalf("reconnectDelay(%d) = %v, want within [0, %v)", failures, delay, ceiling)
+			}
+			low, high = low || delay < ceiling/2, high || delay >= ceiling/2
+		}
+		if !low || !high {
+			t.Fatalf("1000 delays after %d failures all fell in one half of [0, %v)", failures, ceiling)
+		}
+	}
+}
+
 func TestSuperviseListenEscapesReconnectErrorControls(t *testing.T) {
 	listener := &scriptedWebSocketListener{errors: []error{
 		&ws.SessionError{Kind: ws.SessionDisconnected, Connected: true, Err: errors.New("dropped\nInjected\t\x1b")},
@@ -269,7 +335,7 @@ func TestSuperviseListenEscapesReconnectErrorControls(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 1})
 	if err == nil {
 		t.Fatal("superviseListen returned nil")
 	}
@@ -289,7 +355,7 @@ func TestSuperviseListenDoesNotRetryFatalSessionError(t *testing.T) {
 	var stderr bytes.Buffer
 
 	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{
-		Delay:              0,
+		Delay:              noDelay,
 		MaxInitialAttempts: 10,
 	})
 	var sessionErr *ws.SessionError
@@ -312,7 +378,7 @@ func TestSuperviseListenStopsWhenProjectNotFoundAfterReconnect(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 1})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 1})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionNotFound {
 		t.Fatalf("error = %#v, want not-found session error", err)
@@ -372,7 +438,7 @@ func TestSuperviseListenPrintsReadyOnceAndTimesEachOutage(t *testing.T) {
 		joinThen(3*time.Second, stop),
 	}
 
-	err := superviseListen(context.Background(), notices, &sessions, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 3})
+	err := superviseListen(context.Background(), notices, &sessions, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 3})
 	if !errors.Is(err, stop) {
 		t.Fatalf("superviseListen error = %v, want the fatal session error", err)
 	}
@@ -508,7 +574,7 @@ func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
 	}}
 	var stderr bytes.Buffer
 
-	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: 0, MaxInitialAttempts: 10})
+	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 10})
 	var sessionErr *ws.SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
 		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
