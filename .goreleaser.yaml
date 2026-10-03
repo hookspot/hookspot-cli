@@ -95,7 +95,7 @@ release:
 # A formula rather than a cask: casks quarantine the unsigned binary and do not
 # work on Linux. GoReleaser reports the section as deprecated (`check` exits 2).
 brews:
-  - name: hookspot
+  - name: hookspot-cli
     ids:
       - cli
     repository:

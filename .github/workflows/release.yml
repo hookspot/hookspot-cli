@@ -97,6 +97,6 @@ jobs:
       # Pre-release tags publish no formula (brews.skip_upload: auto).
       - if: matrix.os == 'macos-latest' && !contains(github.ref_name, '-')
         run: |
-          brew install hookspot/hookspot/hookspot
+          brew install hookspot/hookspot/hookspot-cli
           scripts/smoke.sh "$VERSION" "$(brew --prefix)/bin/hookspot"
         shell: bash

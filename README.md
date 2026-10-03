@@ -32,7 +32,7 @@ npm install -g hookspot
 Homebrew on macOS or Linux:
 
 ```sh
-brew install hookspot/hookspot/hookspot
+brew install hookspot/hookspot/hookspot-cli
 ```
 
 Without Node.js or Homebrew, download the archive for your system from the
@@ -40,7 +40,7 @@ Without Node.js or Homebrew, download the archive for your system from the
 follow its [`INSTALL.md`](docs/releases/INSTALL.md).
 
 `hookspot version` tells you when a newer release is out. Update with
-`npm install -g hookspot@latest` or `brew upgrade hookspot`.
+`npm install -g hookspot@latest` or `brew upgrade hookspot-cli`.
 
 ## Usage
 

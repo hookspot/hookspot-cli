@@ -32,7 +32,7 @@ SHA-256. Homebrew does not quarantine the binary, so macOS does not warn before
 the first run.
 
 ```sh
-brew install hookspot/hookspot/hookspot
+brew install hookspot/hookspot/hookspot-cli
 ```
 
 ## GitHub release archive
@@ -200,7 +200,7 @@ Update through the channel you installed from:
 
 ```sh
 npm install -g hookspot@latest
-brew upgrade hookspot
+brew upgrade hookspot-cli
 ```
 
 For an archive install, download the new release's matching archive and
@@ -215,7 +215,7 @@ Remove the executable through the channel you installed from:
 
 ```sh
 npm uninstall -g hookspot
-brew uninstall hookspot
+brew uninstall hookspot-cli
 rm "$HOME/.local/bin/hookspot"
 ```
 

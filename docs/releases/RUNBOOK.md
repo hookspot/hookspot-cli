@@ -24,7 +24,7 @@ npm view hookspot versions
 Before the first release, and worth re-checking when a release fails early:
 
 - `hookspot/homebrew-hookspot` exists, is public, and has a `Formula/`
-  directory; GoReleaser pushes `Formula/hookspot.rb` into it.
+  directory; GoReleaser pushes `Formula/hookspot-cli.rb` into it.
 - The `HOMEBREW_TAP_TOKEN` and `NPM_TOKEN` Actions secrets are set (see
   Secrets below).
 - The npm package name `hookspot` is owned by the publishing account, or still
@@ -58,7 +58,7 @@ gh run watch
    `npm/binaries/<os>-<arch>/`, packs
    `hookspot_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) plus
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
-   seven assets, and pushes `Formula/hookspot.rb` to
+   seven assets, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
 4. `npm version <version>` in `npm/`, then `npm publish --provenance` of the
    package bundling the binaries from step 3.
@@ -68,7 +68,7 @@ gh run watch
 verifies its checksum, and asserts `hookspot version --json` reports the
 version as a release build; then `npm install -g hookspot@<version>`
 (retried for registry propagation) and the same assertion; on macOS also
-`brew install hookspot/hookspot/hookspot` and the same assertion, skipped for
+`brew install hookspot/hookspot/hookspot-cli` and the same assertion, skipped for
 pre-release tags. This matrix is the acceptance test for the release.
 
 ## Secrets
