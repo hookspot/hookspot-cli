@@ -133,10 +133,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		return m, tick()
 	case session.Ready:
 		m.connection = m.follow(cards.StateLive, nil)
-		m.noticeAlert = cards.NoticeAlert(msg.Notice)
 	case session.Reconnected:
 		m.connection = m.follow(cards.StateLive, nil)
-		m.noticeAlert = cards.NoticeAlert(msg.Notice)
 		if m.reconnected != nil {
 			msg.Offline += m.reconnected.Offline
 		}
@@ -153,6 +151,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		m.notFound = &msg
 	case session.UpdateAvailable:
 		m.updateAlert = cards.UpdateAlert(msg)
+	case session.Notice:
+		m.noticeAlert = cards.NoticeAlert(msg.Text)
 	case session.Recorded:
 		return m.record(msg)
 	case stoppingMsg:

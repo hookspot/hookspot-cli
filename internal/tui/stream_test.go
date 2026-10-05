@@ -300,7 +300,8 @@ func TestStreamStatusLine(t *testing.T) {
 			})
 		}},
 		{name: "notice", events: func(t *testing.T, h *harness, _ func(string)) {
-			h.emit(t, session.Ready{Notice: deprecation})
+			h.emit(t, session.Notice{Text: deprecation})
+			h.emit(t, session.Ready{})
 			h.emit(t, updateAvailable)
 		}},
 		{name: "stopping with a prompt", prompt: true, events: func(t *testing.T, h *harness, typeKeys func(string)) {

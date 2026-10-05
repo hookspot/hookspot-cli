@@ -555,8 +555,12 @@ type hangUp struct{}
 // error.
 var endListen = map[string]string{}
 
-// notFoundReply refuses a join as a project that isn't found.
-var notFoundReply = map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}
+var (
+	// acceptedReply accepts a join, as the fake does when none is queued.
+	acceptedReply = map[string]any{"status": "ok", "response": map[string]any{}}
+	// notFoundReply refuses a join as a project that isn't found.
+	notFoundReply = map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}
+)
 
 // fakeHookspotConfig signs in and selects the fake project.
 const fakeHookspotConfig = "schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n"
@@ -573,7 +577,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		config:      filepath.Join(t.TempDir(), "config.toml"),
 		deliveries:  make(chan any),
 		joins:       make(chan []json.RawMessage, 2),
-		joinReplies: make(chan map[string]any, 2),
+		joinReplies: make(chan map[string]any, 3),
 		userAgents:  make(chan string, 8),
 		release:     make(chan struct{}),
 		done:        make(chan struct{}),
@@ -612,7 +616,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 					return
 				}
 			}
-			reply := map[string]any{"status": "ok", "response": map[string]any{}}
+			reply := acceptedReply
 			select {
 			case reply = <-hookspot.joinReplies:
 			default:

@@ -40,18 +40,14 @@ type Sink interface {
 }
 
 // Event is a Connecting, Ready, ConnectionLost, Reconnected, DisabledSource,
-// SkippedSource, RootNotFound, UpdateAvailable, Recorded or TestHint.
+// SkippedSource, RootNotFound, UpdateAvailable, Notice, Recorded or TestHint.
 type Event interface{ event() }
 
 // Connecting precedes the first join.
 type Connecting struct{}
 
 // Ready follows the first join.
-type Ready struct {
-	// Notice is the join's warning, such as the date this release stops
-	// working; "" when there is none.
-	Notice string
-}
+type Ready struct{}
 
 // ConnectionLost reports a failed session and the coming retry.
 type ConnectionLost struct {
@@ -63,8 +59,13 @@ type ConnectionLost struct {
 // offline are never retried.
 type Reconnected struct {
 	Offline time.Duration
-	// Notice is the join's, as Ready's.
-	Notice string
+}
+
+// Notice is each join's warning, such as the date this release stops
+// working; "" when there is none. It comes before the join's Ready or
+// Reconnected.
+type Notice struct {
+	Text string
 }
 
 // DisabledSource warns that a listened source rejects its requests.
@@ -110,6 +111,7 @@ func (DisabledSource) event()  {}
 func (SkippedSource) event()   {}
 func (RootNotFound) event()    {}
 func (UpdateAvailable) event() {}
+func (Notice) event()          {}
 func (Recorded) event()        {}
 
 // Session is one listen run. Recording an entry and emitting it happen under

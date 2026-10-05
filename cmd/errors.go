@@ -16,10 +16,6 @@ import (
 	"hookspot/internal/ws"
 )
 
-// cliOutdated is the reason the server refuses a release below its minimum
-// CLI version with.
-const cliOutdated = "cli_outdated"
-
 // commandError carries user-facing recovery guidance through wrapped errors.
 // Commands return it; only HandleError decides how it is presented.
 type commandError struct {
@@ -87,10 +83,9 @@ func fatalErrorMessage(err error) (string, string) {
 
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
-		if apiErr.Reason == cliOutdated {
-			return apiErr.Message, upgradeCommand()
-		}
 		switch {
+		case apiErr.Outdated:
+			return apiErr.Message, upgradeCommand()
 		case apiErr.StatusCode >= 300 && apiErr.StatusCode < 400:
 			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
 				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release."

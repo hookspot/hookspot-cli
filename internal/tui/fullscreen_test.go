@@ -270,7 +270,7 @@ func TestFullscreen(t *testing.T) {
 		}},
 		{name: "notice", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			// The notice, over the update alert, is cut to fit.
-			return []tea.Msg{session.Ready{Notice: deprecation}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
+			return []tea.Msg{session.Notice{Text: deprecation}, session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{
@@ -296,6 +296,18 @@ func TestFullscreen(t *testing.T) {
 			}
 			golden.RequireEqual(t, final(t, tm))
 		})
+	}
+}
+
+// TestFullscreenNoticeFollowsTheLatestJoin covers a rejoin whose reply
+// carries no notice: it clears the last one.
+func TestFullscreenNoticeFollowsTheLatestJoin(t *testing.T) {
+	model := tea.Model(screen())
+	for _, notice := range []string{deprecation, ""} {
+		model, _ = model.Update(session.Notice{Text: notice})
+	}
+	if view := ansi.Strip(model.View().Content); strings.Contains(view, "⚠") {
+		t.Fatalf("a rejoin without a notice kept the last one:\n%s", view)
 	}
 }
 

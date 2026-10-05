@@ -11,12 +11,17 @@ import (
 )
 
 const (
+	// outdatedMessage is the server's refusal of a release below its minimum
+	// CLI version.
 	outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
-	deprecation     = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
+	// deprecation is its notice to a release below its deprecated version.
+	deprecation = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
 )
 
 var (
-	outdatedReply  = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
+	// outdatedReply refuses a join with outdatedMessage.
+	outdatedReply = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
+	// deprecatedJoin accepts a join with the deprecation notice.
 	deprecatedJoin = map[string]any{"status": "ok", "response": map[string]string{"notice": deprecation}}
 )
 
@@ -79,14 +84,9 @@ func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 
 	t.Run("rejoin", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, fakeHookspotSources)
-		go func() {
-			// The first join is in once the server takes a delivery.
-			select {
-			case hookspot.deliveries <- hangUp{}:
-				hookspot.joinReplies <- outdatedReply
-			case <-hookspot.done:
-			}
-		}()
+		hookspot.joinReplies <- acceptedReply
+		hookspot.joinReplies <- outdatedReply
+		hookspot.play(hangUp{})
 		result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
 		if result.err == nil || !strings.HasSuffix(result.stderr, "\n"+refused) || len(hookspot.joins) != 2 {
 			t.Fatalf("listen = %v after %d joins, stderr %q", result.err, len(hookspot.joins), result.stderr)
@@ -97,15 +97,16 @@ func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 	})
 }
 
-// TestListenPrintsTheJoinsNoticeOnce covers plain mode: the notice follows
-// Ready, and a rejoin's doesn't repeat it.
+// TestListenPrintsTheJoinsNoticeOnce covers plain mode: a notice first
+// sent at a rejoin prints, and the next rejoin's same notice doesn't.
 func TestListenPrintsTheJoinsNoticeOnce(t *testing.T) {
 	hookspot := startFakeHookspot(t, fakeHookspotSources)
+	hookspot.joinReplies <- acceptedReply
 	hookspot.joinReplies <- deprecatedJoin
 	hookspot.joinReplies <- deprecatedJoin
-	hookspot.play(hangUp{})
+	hookspot.play(hangUp{}, hangUp{})
 	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
-	if got := strings.Count(result.stderr, "⚠ "+deprecation+"\n"); got != 1 || len(hookspot.joins) != 2 {
-		t.Fatalf("notices = %d after %d joins, want 1 after 2:\n%s", got, len(hookspot.joins), result.stderr)
+	if got := strings.Count(result.stderr, "⚠ "+deprecation+"\n"); got != 1 || strings.Count(result.stderr, "Reconnected after") != 2 {
+		t.Fatalf("notices = %d, want 1 over 3 joins:\n%s", got, result.stderr)
 	}
 }

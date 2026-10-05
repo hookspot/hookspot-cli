@@ -26,8 +26,9 @@ type Error struct {
 	Method     string
 	URL        string
 	Message    string
-	// Reason is the server's code for the error, such as cli_outdated.
-	Reason string
+	// Outdated is set when the server refused this release as below its
+	// minimum CLI version.
+	Outdated bool
 }
 
 func (e *Error) Error() string {
@@ -289,23 +290,22 @@ func decodeErrorResponse(req *http.Request, resp *http.Response) error {
 		return fmt.Errorf("read Hookspot API error response: %w", readErr)
 	}
 
-	var payload struct {
-		Reason string `json:"reason"`
-	}
-	_ = json.Unmarshal(body, &payload)
+	message, reason := apiErrorMessage(body)
 	return &Error{
 		StatusCode: resp.StatusCode,
 		Method:     req.Method,
 		URL:        req.URL.String(),
-		Message:    apiErrorMessage(body),
-		Reason:     payload.Reason,
+		Message:    message,
+		Outdated:   strings.EqualFold(reason, "cli_outdated"),
 	}
 }
 
-func apiErrorMessage(body []byte) string {
+// apiErrorMessage is the error body's message, else its reason, nested
+// error or text, and its reason.
+func apiErrorMessage(body []byte) (string, string) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
-		return ""
+		return "", ""
 	}
 
 	var payload struct {
@@ -315,15 +315,15 @@ func apiErrorMessage(body []byte) string {
 	}
 	if json.Unmarshal(body, &payload) == nil {
 		if payload.Message != "" {
-			return payload.Message
+			return payload.Message, payload.Reason
 		}
 		if payload.Reason != "" {
-			return payload.Reason
+			return payload.Reason, payload.Reason
 		}
 		if len(payload.Error) > 0 {
 			var message string
 			if json.Unmarshal(payload.Error, &message) == nil && message != "" {
-				return message
+				return message, ""
 			}
 			var nested struct {
 				Message string `json:"message"`
@@ -331,14 +331,14 @@ func apiErrorMessage(body []byte) string {
 			}
 			if json.Unmarshal(payload.Error, &nested) == nil {
 				if nested.Message != "" {
-					return nested.Message
+					return nested.Message, ""
 				}
 				if nested.Reason != "" {
-					return nested.Reason
+					return nested.Reason, ""
 				}
 			}
 		}
 	}
 
-	return trimmed
+	return trimmed, ""
 }

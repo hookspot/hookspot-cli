@@ -54,18 +54,16 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-	case session.Ready:
+	case session.Ready, session.Reconnected:
 		m.connection = m.follow(cards.StateLive, nil)
-		m.noticeAlert = cards.NoticeAlert(msg.Notice)
-	case session.Reconnected:
-		m.connection = m.follow(cards.StateLive, nil)
-		m.noticeAlert = cards.NoticeAlert(msg.Notice)
 	case session.ConnectionLost:
 		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.Recorded:
 		m.totals = msg.Totals
 	case session.UpdateAvailable:
 		m.updateAlert = cards.UpdateAlert(msg)
+	case session.Notice:
+		m.noticeAlert = cards.NoticeAlert(msg.Text)
 	case stoppingMsg:
 		m.state, m.reply = cards.StateStopping, ""
 	case stoppedMsg:

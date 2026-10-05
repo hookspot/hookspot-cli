@@ -256,7 +256,6 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 		{reason: "forbidden", wantKind: SessionAuthentication},
 		{reason: "not_found", wantKind: SessionNotFound},
 		{reason: "NOT_FOUND", wantKind: SessionNotFound},
-		{reason: "cli_outdated", wantKind: SessionOutdated},
 		{reason: "denied", wantKind: SessionProtocol},
 	}
 

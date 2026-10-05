@@ -587,7 +587,7 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 				return "", "", sessionError(SessionNotFound, false, err)
 			}
 			if strings.EqualFold(reply.Response.Reason, "cli_outdated") {
-				return "", "", sessionError(SessionOutdated, false, errors.New(cmp.Or(reply.Response.Message, err.Error())))
+				return "", "", sessionError(SessionOutdated, false, errors.New(cmp.Or(reply.Response.Message, reply.Response.Reason)))
 			}
 			return "", "", sessionError(SessionProtocol, false, err)
 		}
