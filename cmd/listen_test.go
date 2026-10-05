@@ -541,7 +541,7 @@ func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
 func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, *fakeHookspot) {
 	t.Helper()
 	hookspot := startFakeHookspot(t, sources)
-	hookspot.rejectJoins.Store(true)
+	hookspot.joinReplies <- notFoundReply
 	return runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(args...)...), hookspot
 }
 

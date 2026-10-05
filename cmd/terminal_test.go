@@ -537,8 +537,8 @@ type fakeHookspot struct {
 	deliveries chan any
 	// joins holds the first two channel joins: topic, event and payload.
 	joins chan []json.RawMessage
-	// rejectJoins answers joins as a project that isn't found.
-	rejectJoins atomic.Bool
+	// joinReplies answers the next joins in place of the plain acceptance.
+	joinReplies chan map[string]any
 	done        chan struct{}
 	// holdJoins holds each join's reply until release closes.
 	holdJoins atomic.Bool
@@ -552,6 +552,9 @@ type hangUp struct{}
 // error.
 var endListen = map[string]string{}
 
+// notFoundReply refuses a join as a project that isn't found.
+var notFoundReply = map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}
+
 // fakeHookspotConfig signs in and selects the fake project.
 const fakeHookspotConfig = "schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n"
 
@@ -564,11 +567,12 @@ const fakeHookspotSources = `[
 func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 	t.Helper()
 	hookspot := &fakeHookspot{
-		config:     filepath.Join(t.TempDir(), "config.toml"),
-		deliveries: make(chan any),
-		joins:      make(chan []json.RawMessage, 2),
-		release:    make(chan struct{}),
-		done:       make(chan struct{}),
+		config:      filepath.Join(t.TempDir(), "config.toml"),
+		deliveries:  make(chan any),
+		joins:       make(chan []json.RawMessage, 2),
+		joinReplies: make(chan map[string]any, 2),
+		release:     make(chan struct{}),
+		done:        make(chan struct{}),
 	}
 	if err := writeCommandFixture(hookspot.config, []byte(fakeHookspotConfig)); err != nil {
 		t.Fatal(err)
@@ -600,11 +604,15 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 					return
 				}
 			}
-			if hookspot.rejectJoins.Load() {
-				_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}})
+			reply := map[string]any{"status": "ok", "response": map[string]any{}}
+			select {
+			case reply = <-hookspot.joinReplies:
+			default:
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", reply})
+			if reply["status"] != "ok" {
 				return
 			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
 			// Responses and heartbeats are dropped until the command hangs up.
 			gone := make(chan struct{})
 			go func() {
