@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"maps"
@@ -475,7 +476,7 @@ func TestDashboardRequestsURLUsesOnlySafeSlugs(t *testing.T) {
 }
 
 func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
-	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"stripe"}, hangUp{})
+	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"stripe", "--forward-to", "3000"}, hangUp{})
 	if !strings.HasSuffix(result.stdout, "\nConnecting…\nReady. Waiting for requests (Ctrl-C to quit)\n") {
 		t.Fatalf("stdout = %q, want one Ready after Connecting…", result.stdout)
 	}
@@ -490,23 +491,47 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 	if strings.Count(result.stderr, hint) != 1 {
 		t.Fatalf("stderr = %q, want the test hint once, after Ready", result.stderr)
 	}
+	if len(hookspot.joins) != 2 {
+		t.Fatalf("joins = %d, want the join and the rejoin", len(hookspot.joins))
+	}
+	if join, rejoin := <-hookspot.joins, <-hookspot.joins; string(rejoin[2]) != string(join[2]) {
+		t.Fatalf("rejoin payload = %s, want the join's %s", rejoin[2], join[2])
+	}
 }
 
-func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
-	result, hookspot := runListenAgainst(t, fakeHookspotSources, "stripe")
-	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
-		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = ""
 	}
-	if !strings.HasSuffix(result.stdout, "Connecting…\n") {
-		t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
+	machine, _ := json.Marshal(hostname)
+	tests := []struct {
+		name      string
+		args      []string
+		forwardTo string
+	}{
+		{name: "print-only", args: []string{"stripe"}, forwardTo: "null"},
+		{name: "forwarding", args: []string{"stripe", "--forward-to", "3000/hooks/"}, forwardTo: `"http://localhost:3000/hooks/"`},
 	}
-	select {
-	case join := <-hookspot.joins:
-		if got := string(join[0]) + " " + string(join[1]) + " " + string(join[2]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
-			t.Fatalf("join = %s", got)
-		}
-	default:
-		t.Fatal("listen did not join a channel")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, hookspot := runListenAgainst(t, fakeHookspotSources, test.args...)
+			if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
+				t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+			}
+			if !strings.HasSuffix(result.stdout, "Connecting…\n") {
+				t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
+			}
+			want := `"project:proj_payments" "phx_join" {"sources":["src_stripe"],"machine":` + string(machine) + `,"forward_to":` + test.forwardTo + `}`
+			select {
+			case join := <-hookspot.joins:
+				if got := string(join[0]) + " " + string(join[1]) + " " + string(join[2]); got != want {
+					t.Fatalf("join = %s, want %s", got, want)
+				}
+			default:
+				t.Fatal("listen did not join a channel")
+			}
+		})
 	}
 }
 

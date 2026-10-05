@@ -77,7 +77,7 @@ func TestClientJoinWithoutReplyTimesOut(t *testing.T) {
 
 	options := testClientOptions()
 	options.joinTimeout = 30 * time.Millisecond
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 		Listen(context.Background(), func(Delivery) (Response, error) { return Response{}, nil })
 	var sessionErr *SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionConnect {
@@ -101,7 +101,7 @@ func TestClientCancellationInterruptsJoin(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	}()
 	<-joinSeen
@@ -126,7 +126,7 @@ func TestClientMalformedJoinFrameIsFatalProtocolError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).
 		Listen(context.Background(), func(Delivery) (Response, error) { return Response{}, nil })
 	var sessionErr *SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionProtocol || sessionErr.Connected {
@@ -152,7 +152,7 @@ func TestClientJoinRejectionReportsOnlyShortParsedDetails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).
 		Listen(context.Background(), func(Delivery) (Response, error) { return Response{}, nil })
 	var sessionErr *SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionProtocol || sessionErr.Connected {
@@ -191,7 +191,7 @@ func TestClientCorrelatesJoinAndRoutesOnlyJoinedTopicDeliveries(t *testing.T) {
 	defer server.Close()
 
 	var calls atomic.Int32
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).Listen(ctx, func(delivery Delivery) (Response, error) {
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).Listen(ctx, func(delivery Delivery) (Response, error) {
 		calls.Add(1)
 		if delivery.AttemptUID != "att_valid" || string(delivery.Body) != "hi" {
 			t.Errorf("unexpected delivery: %#v", delivery)
@@ -232,7 +232,7 @@ func TestClientInvalidJoinedTopicDeliveryIsFatalWithoutReply(t *testing.T) {
 			defer server.Close()
 
 			var calls atomic.Int32
-			err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
+			err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
 				calls.Add(1)
 				return Response{Status: http.StatusOK}, nil
 			})
@@ -338,7 +338,7 @@ func TestClientCancellationInterruptsDial(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- newClient("ws://example.invalid/socket", "test-key", "project:proj_1", nil, options).
+		done <- newClient("ws://example.invalid/socket", "test-key", "project:proj_1", nil, "", options).
 			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	}()
 	<-started
@@ -376,7 +376,7 @@ func TestClientCancellationInterruptsWithheldUpgradeResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	}()
 	<-requestSeen
@@ -408,7 +408,7 @@ func TestClientCancellationInterruptsRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).
+		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).
 			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	}()
 	<-joined
@@ -458,7 +458,7 @@ func TestClientRepeatedCancellationJoinsSessionWorkers(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		result := make(chan error, 1)
 		go func() {
-			result <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+			result <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 				Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 		}()
 		<-joined
@@ -507,7 +507,7 @@ func TestClientMatchingHeartbeatRepliesKeepIdleSessionAlive(t *testing.T) {
 	options := testClientOptions()
 	options.heartbeatInterval = 5 * time.Millisecond
 	options.receiveIdle = 25 * time.Millisecond
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 		Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Listen error = %v, want cancellation after healthy replies", err)
@@ -542,7 +542,7 @@ func TestMalformedAndForeignFramesDoNotRenewReceiveIdle(t *testing.T) {
 	options := testClientOptions()
 	options.receiveIdle = 40 * time.Millisecond
 	started := time.Now()
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 		Listen(context.Background(), func(Delivery) (Response, error) { return Response{}, nil })
 	var sessionErr *SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionDisconnected || !sessionErr.Connected {
@@ -651,7 +651,7 @@ func TestClientSerialSlowDeliveriesRearmIdleThenInactivityExpires(t *testing.T) 
 	options.heartbeatInterval = 10 * time.Millisecond
 	options.receiveIdle = 80 * time.Millisecond
 	var order []string
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).Listen(context.Background(), func(delivery Delivery) (Response, error) {
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).Listen(context.Background(), func(delivery Delivery) (Response, error) {
 		order = append(order, delivery.AttemptUID)
 		time.Sleep(30 * time.Millisecond)
 		return Response{Status: http.StatusOK}, nil
@@ -687,7 +687,7 @@ func TestClientRejectsFrameAtConfiguredLimitPlusOne(t *testing.T) {
 
 	options := testClientOptions()
 	options.maxFrameBytes = limit
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, options).
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", options).
 		Listen(context.Background(), func(Delivery) (Response, error) { return Response{}, nil })
 	var sessionErr *SessionError
 	if !errors.As(err, &sessionErr) || sessionErr.Kind != SessionDisconnected {
@@ -709,7 +709,7 @@ func TestClientHandlerFailureWithoutResponseSendsNoAcknowledgement(t *testing.T)
 	defer server.Close()
 
 	wantErr := errors.New("output unavailable")
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
 		return Response{}, wantErr
 	})
 	var sessionErr *SessionError
@@ -742,7 +742,7 @@ func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T)
 	defer server.Close()
 
 	wantErr := errors.New("display unavailable")
-	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
+	err := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).Listen(context.Background(), func(Delivery) (Response, error) {
 		return Response{
 			Status:  http.StatusTemporaryRedirect,
 			Headers: http.Header{"Location": []string{"/next"}},
@@ -803,7 +803,7 @@ func TestClientCancellationWinsAfterBlockedHandlerResumes(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions()).Listen(ctx, func(Delivery) (Response, error) {
+		done <- newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions()).Listen(ctx, func(Delivery) (Response, error) {
 			close(started)
 			<-release
 			return Response{}, errors.New("closed output")
