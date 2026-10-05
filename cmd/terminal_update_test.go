@@ -37,7 +37,7 @@ func TestTerminalUpdateAlert(t *testing.T) {
 		keys := regexp.MustCompile(`(?m)^\? help  q quit .*…  +` + alert + `$`)
 		run.waitFor("the alert after the keys", keys.MatchString)
 		run.send("s")
-		sourcesKeys := regexp.MustCompile(`(?m)^↑↓ select .*  +` + alert + `$`)
+		sourcesKeys := regexp.MustCompile(`(?m)^\? help  q quit  ↑↓ select .*  +` + alert + `$`)
 		run.waitFor("the alert on the Sources page", sourcesKeys.MatchString)
 	})
 

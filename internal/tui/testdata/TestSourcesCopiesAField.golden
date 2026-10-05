@@ -27,4 +27,4 @@ Sources · 2 sources · 3 routes · stats since listen started
 ╰──────────────────────────────────────────────────────────────────────────────╯
 copied https://in.hookspot.test/src_github
 copying needs a terminal with OSC 52 (Terminal.app has none)
-↑↓ select  c copy…  t test  esc back  ? help  q quit
+? help  q quit  ↑↓ select  c copy…  t test  esc back

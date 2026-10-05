@@ -21,4 +21,4 @@ Sources · 2 sources · 3 routes · stats since listen started
 │ last        #1  14:02:01                                                     │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-↑↓ select  c copy…  t test  esc back  ? help  q quit
+? help  q quit  ↑↓ select  c copy…  t test  esc back

@@ -294,7 +294,7 @@ func announceUpdate(ctx context.Context, sess *session.Session) (stop func()) {
 	go func() {
 		defer close(done)
 		if latest := newerRelease(ctx, version); latest != "" {
-			_ = sess.Emit(session.UpdateAvailable{Latest: latest, Command: upgradeCommand()})
+			_ = sess.Emit(session.UpdateAvailable{Latest: latest, Upgrade: upgradeCommand()})
 		}
 	}()
 	return func() {

@@ -146,7 +146,7 @@ var (
 
 func letter(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
 
-var updateAvailable = session.UpdateAvailable{Latest: "1.3.0", Command: "brew upgrade hookspot-cli"}
+var updateAvailable = session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}
 
 // final quits tm and returns its last view without color.
 func final(t *testing.T, tm *teatest.TestModel) string {

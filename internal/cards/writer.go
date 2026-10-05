@@ -21,7 +21,6 @@ type Writer struct {
 	listen      Listen
 	requestsURL string
 	out, errOut stream
-	// The update alert waits for Ready.
 	ready       bool
 	updateAlert string
 	// mu keeps replies, which don't come through the session, whole.
@@ -83,8 +82,8 @@ func (w *Writer) Emit(event session.Event) error {
 	return nil
 }
 
-// writeUpdateAlert writes the update alert once both it and Ready are in. It
-// goes to out, the terminal the update check asked about.
+// writeUpdateAlert writes the update alert once both it and Ready are in, on
+// out: the terminal the update check asked about.
 func (w *Writer) writeUpdateAlert() error {
 	if !w.ready || w.updateAlert == "" {
 		return nil

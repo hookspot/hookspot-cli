@@ -169,10 +169,11 @@ func (m Stream) statusHints() []string {
 	return []string{QuitHint}
 }
 
-// statusAlert takes the status line's hint, but for the one that says, while
-// stopping, what a second Ctrl-C does.
+// statusAlert takes the status line's hint while connecting or live. Then
+// the line says why the connection dropped, what a second Ctrl-C does, or
+// the run's totals.
 func (m Stream) statusAlert() cards.Alert {
-	if m.state == cards.StateStopping {
+	if m.state > cards.StateLive {
 		return cards.Alert{}
 	}
 	return m.updateAlert

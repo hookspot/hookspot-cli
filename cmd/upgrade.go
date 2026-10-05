@@ -9,8 +9,7 @@ import (
 // upgradeDocsURL covers the installs no command upgrades, such as an archive.
 const upgradeDocsURL = "https://hookspot.dev/docs/cli#upgrading"
 
-// dockerEnvPath marks a Docker container. It is a variable so tests can turn
-// it off: make test runs in one.
+// dockerEnvPath marks a Docker container; tests turn it off.
 var dockerEnvPath = "/.dockerenv"
 
 // upgradeCommand is how the channel that installed this binary upgrades it.

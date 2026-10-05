@@ -81,9 +81,9 @@ type RootNotFound struct {
 // UpdateAvailable names a newer release than the running one.
 type UpdateAvailable struct {
 	Latest string
-	// Command upgrades the install, or is the docs' URL where no command
-	// does.
-	Command string
+	// Upgrade is the upgrade command for the install channel, or the docs'
+	// URL.
+	Upgrade string
 }
 
 // Recorded reports an entry just added to the history, with stats as of then.

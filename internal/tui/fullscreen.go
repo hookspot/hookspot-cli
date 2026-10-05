@@ -549,8 +549,8 @@ func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string
 		}
 		return lines
 	}
-	first := bindings.ShortHelp()[0].Help()
-	alert, room := m.updateAlert.Claim(width, lipgloss.Width(first.Key+" "+first.Desc))
+	first := lipgloss.Width(help.New().ShortHelpView(bindings.ShortHelp()[:1]))
+	alert, room := m.updateAlert.Claim(width, first)
 	return []string{cards.AtRightEnd(helpView(bindings, false, room)[0], alert, width)}
 }
 

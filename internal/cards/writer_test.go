@@ -29,8 +29,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	var out, errOut countingWriter
 	w := NewWriter(&out, &errOut, testListen(), "https://hookspot.test/acme/payments/requests")
 	entry := session.Entry{Number: 2, Delivery: testDelivery(), Received: received, Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, ReplayOf: 1, Replay: &session.Comparison{Original: 1, Status: http.StatusOK}}
-	update := session.UpdateAvailable{Latest: "1.3.0", Command: "brew upgrade hookspot-cli"}
-	// The update alert waits for Ready.
+	update := session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}
 	events := []session.Event{
 		session.DisabledSource{Name: "github"},
 		session.SkippedSource{Name: "shopify"},

@@ -132,7 +132,7 @@ type Status struct {
 	Project string
 	Totals  session.Stats
 	Hints   []string
-	// Alert takes the hints' place where it fits.
+	// Alert takes the hints' place.
 	Alert Alert
 }
 
@@ -156,11 +156,16 @@ func (s Status) Render(width int) string {
 	}
 	separator := faintStyle.Render(" · ")
 	line := strings.Join(parts, separator)
-	// The counts give way to the alert; the state and project don't.
-	if alert, room := s.Alert.Claim(width, lipgloss.Width(parts[0]+separator+parts[1])); alert != "" {
-		return AtRightEnd(truncate(line, room), alert, width)
+	if s.Alert == (Alert{}) {
+		return withHints(line, s.Hints, width)
 	}
-	return withHints(line, s.Hints, width)
+	if alert := s.Alert.fit(width - lipgloss.Width(line) - endGap); alert != "" {
+		return AtRightEnd(line, alert, width)
+	}
+	// Even the short form doesn't fit: the counts give way to it, but not
+	// the state and project, which the cut's "…" follows.
+	room := width - lipgloss.Width(s.Alert.short) - endGap
+	return AtRightEnd(truncate(line, max(room, lipgloss.Width(parts[0]+separator+parts[1])+1)), s.Alert.short, width)
 }
 
 func (s Status) state() string {
@@ -215,7 +220,7 @@ type Alert struct{ whole, short string }
 // an update is available where that doesn't fit.
 func UpdateAlert(update session.UpdateAvailable) Alert {
 	return Alert{
-		whole: okStyle.Render("↑ "+Line(update.Latest)) + faintStyle.Render(" · ") + Line(update.Command),
+		whole: okStyle.Render("↑ "+Line(update.Latest)) + faintStyle.Render(" · ") + Line(update.Upgrade),
 		short: okStyle.Render("↑ update available"),
 	}
 }
@@ -234,7 +239,7 @@ func (a Alert) Claim(width, keep int) (string, int) {
 // fit is the alert's widest form within width columns, or "".
 func (a Alert) fit(width int) string {
 	for _, text := range []string{a.whole, a.short} {
-		if text != "" && lipgloss.Width(text) <= width {
+		if lipgloss.Width(text) <= width {
 			return text
 		}
 	}
