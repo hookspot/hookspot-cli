@@ -47,7 +47,11 @@ type Event interface{ event() }
 type Connecting struct{}
 
 // Ready follows the first join.
-type Ready struct{}
+type Ready struct {
+	// Notice is the join's warning, such as the date this release stops
+	// working; "" when there is none.
+	Notice string
+}
 
 // ConnectionLost reports a failed session and the coming retry.
 type ConnectionLost struct {
@@ -59,6 +63,8 @@ type ConnectionLost struct {
 // offline are never retried.
 type Reconnected struct {
 	Offline time.Duration
+	// Notice is the join's, as Ready's.
+	Notice string
 }
 
 // DisabledSource warns that a listened source rejects its requests.

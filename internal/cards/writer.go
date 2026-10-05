@@ -50,7 +50,7 @@ func (w *Writer) Banner(project string, routes []BannerRoute, hints []string) er
 }
 
 // Emit writes each event in one write, so a terminal never shows part of a
-// card. The update alert follows Ready.
+// card. The join's notice and the update alert follow Ready.
 func (w *Writer) Emit(event session.Event) error {
 	switch e := event.(type) {
 	case session.Connecting:
@@ -58,6 +58,11 @@ func (w *Writer) Emit(event session.Event) error {
 	case session.Ready:
 		if err := w.write(w.out, Ready()); err != nil {
 			return err
+		}
+		if e.Notice != "" {
+			if err := w.write(w.errOut, NoticeAlert(e.Notice).whole); err != nil {
+				return err
+			}
 		}
 		w.ready = true
 		w.writeUpdateAlert()

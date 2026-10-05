@@ -413,7 +413,7 @@ func TestSuperviseListenPrintsReadyOnceAndTimesEachOutage(t *testing.T) {
 	joinThen := func(elapsed time.Duration, err error) func() error {
 		return func() error {
 			now = now.Add(elapsed)
-			if joinErr := notices.joined(); joinErr != nil {
+			if joinErr := notices.joined(""); joinErr != nil {
 				return joinErr
 			}
 			now = now.Add(time.Minute)

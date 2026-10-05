@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"strings"
 	"unicode"
 
@@ -43,6 +44,8 @@ type Stream struct {
 
 	// updateAlert names GitHub's newer release, once the check finds one.
 	updateAlert cards.Alert
+	// noticeAlert is the latest join's notice, shown over updateAlert.
+	noticeAlert cards.Alert
 }
 
 func (m Stream) Init() tea.Cmd { return nil }
@@ -51,8 +54,12 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-	case session.Ready, session.Reconnected:
+	case session.Ready:
 		m.connection = m.follow(cards.StateLive, nil)
+		m.noticeAlert = cards.NoticeAlert(msg.Notice)
+	case session.Reconnected:
+		m.connection = m.follow(cards.StateLive, nil)
+		m.noticeAlert = cards.NoticeAlert(msg.Notice)
 	case session.ConnectionLost:
 		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.Recorded:
@@ -175,7 +182,7 @@ func (m Stream) statusAlert() cards.Alert {
 	if m.state >= cards.StateStopping {
 		return cards.Alert{}
 	}
-	return m.updateAlert
+	return cmp.Or(m.noticeAlert, m.updateAlert)
 }
 
 func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {

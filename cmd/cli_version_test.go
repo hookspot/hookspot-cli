@@ -10,9 +10,15 @@ import (
 	"testing"
 )
 
-const outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
+const (
+	outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
+	deprecation     = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
+)
 
-var outdatedReply = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
+var (
+	outdatedReply  = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
+	deprecatedJoin = map[string]any{"status": "ok", "response": map[string]string{"notice": deprecation}}
+)
 
 // TestListenNamesItsReleaseInTheUserAgent covers the API calls and the
 // websocket handshake of a release and of a dev build.
@@ -89,4 +95,17 @@ func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 			t.Fatalf("reconnect notices = %d, want 1:\n%s", got, result.stderr)
 		}
 	})
+}
+
+// TestListenPrintsTheJoinsNoticeOnce covers plain mode: the notice follows
+// Ready, and a rejoin's doesn't repeat it.
+func TestListenPrintsTheJoinsNoticeOnce(t *testing.T) {
+	hookspot := startFakeHookspot(t, fakeHookspotSources)
+	hookspot.joinReplies <- deprecatedJoin
+	hookspot.joinReplies <- deprecatedJoin
+	hookspot.play(hangUp{})
+	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
+	if got := strings.Count(result.stderr, "⚠ "+deprecation+"\n"); got != 1 || len(hookspot.joins) != 2 {
+		t.Fatalf("notices = %d after %d joins, want 1 after 2:\n%s", got, len(hookspot.joins), result.stderr)
+	}
 }

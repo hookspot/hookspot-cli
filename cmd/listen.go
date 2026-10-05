@@ -373,14 +373,14 @@ func newConnectionNotices(emit func(session.Event) error) *connectionNotices {
 	return &connectionNotices{emit: emit, now: time.Now}
 }
 
-func (n *connectionNotices) joined() error {
+func (n *connectionNotices) joined(notice string) error {
 	if !n.ready {
 		n.ready = true
-		return n.emit(session.Ready{})
+		return n.emit(session.Ready{Notice: notice})
 	}
 	offline := n.now().Sub(n.offlineSince).Round(time.Second)
 	n.offlineSince = time.Time{}
-	return n.emit(session.Reconnected{Offline: offline})
+	return n.emit(session.Reconnected{Offline: offline, Notice: notice})
 }
 
 // lost reports a failed session. An outage is timed from its first failed

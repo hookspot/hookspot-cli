@@ -224,9 +224,18 @@ func AtRightEnd(line, end string, width int) string {
 }
 
 // Alert is what listen keeps at the right end of a line, in its widest form
-// that fits: the update alert. Unlike the full-screen view's alerts, esc
-// never dismisses it.
+// that fits: the server's notice, else the update alert. Unlike the
+// full-screen view's alerts, esc never dismisses it.
 type Alert struct{ whole, short string }
+
+// NoticeAlert is the join's notice as the server wrote it, as a warning.
+// "" is no alert.
+func NoticeAlert(notice string) Alert {
+	if notice == "" {
+		return Alert{}
+	}
+	return Alert{whole: warnStyle.Render("⚠ " + Line(notice))}
+}
 
 // UpdateAlert names the newer release and how to upgrade to it, or only that
 // an update is available where that doesn't fit.
@@ -241,17 +250,25 @@ func UpdateAlert(update session.UpdateAvailable) Alert {
 // its first columns: it returns the alert, "" when none fits, and the room
 // left before it.
 func (a Alert) Claim(width, keep int) (string, int) {
-	alert := a.fit(width - keep - endGap)
+	alert := cmp.Or(a.fit(width-keep-endGap), a.shrunk(width-keep-endGap))
 	return alert, width - lipgloss.Width(alert) - endGap
 }
 
-// shrunk is the alert's short form within width columns, or "".
+// shrunk is the alert's short form within width columns, or "". A notice
+// has none: it is cut to fit instead, but not below minCut, where it would
+// say nothing.
 func (a Alert) shrunk(width int) string {
+	if a.short == "" && width >= minCut {
+		return truncate(a.whole, width)
+	}
 	if lipgloss.Width(a.short) > width {
 		return ""
 	}
 	return a.short
 }
+
+// minCut is the fewest columns a cut notice keeps.
+const minCut = 20
 
 // fit is the alert's widest form within width columns, or "".
 func (a Alert) fit(width int) string {

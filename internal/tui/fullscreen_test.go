@@ -144,6 +144,7 @@ var (
 	pageDown = tea.KeyPressMsg{Code: tea.KeyPgDown}
 
 	updateAvailable = session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}
+	deprecation     = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
 )
 
 func letter(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
@@ -266,6 +267,10 @@ func TestFullscreen(t *testing.T) {
 		{name: "update help", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			// The help keeps every key, above the alert.
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable, letter('?')}
+		}},
+		{name: "notice", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			// The notice, over the update alert, is cut to fit.
+			return []tea.Msg{session.Ready{Notice: deprecation}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{

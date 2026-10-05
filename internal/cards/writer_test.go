@@ -35,7 +35,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 		session.SkippedSource{Name: "shopify"},
 		update,
 		session.Connecting{},
-		session.Ready{},
+		session.Ready{Notice: "Hookspot CLI 1.1.0 stops working on December 1, 2026."},
 		session.Recorded{Entry: entry},
 		session.RootNotFound{Root: "http://localhost:3000/", Status: http.StatusNotFound},
 		session.ConnectionLost{Err: errors.New("dropped"), RetryIn: 2 * time.Second},
@@ -55,6 +55,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	}
 	wantErr := noColor(t, DisabledSource("github")) +
 		noColor(t, SkippedSource("shopify")) +
+		noColor(t, NoticeAlert("Hookspot CLI 1.1.0 stops working on December 1, 2026.").whole) +
 		noColor(t, RootNotFound("http://localhost:3000/", http.StatusNotFound)) +
 		noColor(t, ConnectionLost(errors.New("dropped"), 2*time.Second)) +
 		noColor(t, Reconnected(3*time.Second, "https://hookspot.test/acme/payments/requests")) +
@@ -62,7 +63,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	if errOut.String() != wantErr {
 		t.Errorf("errOut:\n%s\nwant:\n%s", errOut.String(), wantErr)
 	}
-	if out.writes != 4 || errOut.writes != 6 {
+	if out.writes != 4 || errOut.writes != 7 {
 		t.Errorf("writes = %d and %d, want one per event", out.writes, errOut.writes)
 	}
 }
