@@ -297,13 +297,11 @@ func TestStreamStatusLine(t *testing.T) {
 					strings.Contains(plain, "http://localhost:3000/ returned 404. If your webhook route is elsewhere")
 			})
 		}},
-		{name: "update", events: func(t *testing.T, h *harness, _ func(string)) {
-			h.emit(t, session.Ready{})
-			h.emit(t, updateAvailable)
-		}},
 		{name: "stopping with a prompt", prompt: true, events: func(t *testing.T, h *harness, typeKeys func(string)) {
 			h.emit(t, session.Ready{})
-			// The prompt goes, and the status line says a second Ctrl-C kills.
+			// The prompt goes, and the status line says a second Ctrl-C kills,
+			// over the update alert.
+			h.emit(t, updateAvailable)
 			typeKeys("\x03")
 			receive(t, h.ctx.Done())
 		}},

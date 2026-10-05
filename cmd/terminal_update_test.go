@@ -36,6 +36,9 @@ func TestTerminalUpdateAlert(t *testing.T) {
 		run := startTerminal(t, options(map[string]string{}), release(hookspot), hookspot.listen()...)
 		keys := regexp.MustCompile(`(?m)^\? help  q quit .*…  +` + alert + `$`)
 		run.waitFor("the alert after the keys", keys.MatchString)
+		run.send("s")
+		sourcesKeys := regexp.MustCompile(`(?m)^↑↓ select .*  +` + alert + `$`)
+		run.waitFor("the alert on the Sources page", sourcesKeys.MatchString)
 	})
 
 	t.Run("stream", func(t *testing.T) {

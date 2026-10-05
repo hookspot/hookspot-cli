@@ -260,15 +260,11 @@ func TestFullscreen(t *testing.T) {
 				r.recorded(replay),
 			}
 		}},
-		{name: "update", width: 80, height: 24, events: func(r *tally) []tea.Msg {
-			// The keys give way to the alert.
-			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
-		}},
 		{name: "update narrow", width: 30, height: 16, events: func(r *tally) []tea.Msg {
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
 		}},
 		{name: "update help", width: 80, height: 24, events: func(r *tally) []tea.Msg {
-			// The help keeps every key; the alert takes the room left.
+			// The help keeps every key, above the alert.
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable, letter('?')}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {

@@ -21,9 +21,9 @@ type Writer struct {
 	listen      Listen
 	requestsURL string
 	out, errOut stream
-	// ready is set once Ready is written; update waits for it.
-	ready  bool
-	update string
+	// ready is set once Ready is written; the update alert waits for it.
+	ready       bool
+	updateAlert string
 	// mu keeps replies, which don't come through the session, whole.
 	mu sync.Mutex
 }
@@ -57,17 +57,14 @@ func (w *Writer) Emit(event session.Event) error {
 	case session.Connecting:
 		return w.write(w.out, Connecting())
 	case session.Ready:
-		w.ready = true
-		if err := w.write(w.out, Ready()); err != nil || w.update == "" {
+		if err := w.write(w.out, Ready()); err != nil {
 			return err
 		}
-		return w.write(w.errOut, w.update)
+		w.ready = true
+		return w.writeUpdateAlert()
 	case session.UpdateAvailable:
-		w.update = UpdateAlert(e).whole
-		if !w.ready {
-			return nil
-		}
-		return w.write(w.errOut, w.update)
+		w.updateAlert = UpdateAlert(e).whole
+		return w.writeUpdateAlert()
 	case session.ConnectionLost:
 		return w.write(w.errOut, ConnectionLost(e.Err, e.RetryIn))
 	case session.Reconnected:
@@ -84,6 +81,15 @@ func (w *Writer) Emit(event session.Event) error {
 		return w.write(w.out, w.listen.Entry(e.Entry, Width(w.out.w)))
 	}
 	return nil
+}
+
+// writeUpdateAlert writes the update alert once both it and Ready are in. It
+// goes to out, the terminal the update check asked about.
+func (w *Writer) writeUpdateAlert() error {
+	if !w.ready || w.updateAlert == "" {
+		return nil
+	}
+	return w.write(w.out, w.updateAlert)
 }
 
 // Reply answers a line command.

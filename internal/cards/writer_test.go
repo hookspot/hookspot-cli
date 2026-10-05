@@ -51,12 +51,11 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if want := noColor(t, Connecting()) + noColor(t, Ready()) + noColor(t, testListen().Entry(entry, DefaultWidth)); out.String() != want {
+	if want := noColor(t, Connecting()) + noColor(t, Ready()) + noColor(t, UpdateAlert(update).whole) + noColor(t, testListen().Entry(entry, DefaultWidth)); out.String() != want {
 		t.Errorf("out:\n%s\nwant:\n%s", out.String(), want)
 	}
 	wantErr := noColor(t, DisabledSource("github")) +
 		noColor(t, SkippedSource("shopify")) +
-		noColor(t, UpdateAlert(update).whole) +
 		noColor(t, RootNotFound("http://localhost:3000/", http.StatusNotFound)) +
 		noColor(t, ConnectionLost(errors.New("dropped"), 2*time.Second)) +
 		noColor(t, Reconnected(3*time.Second, "https://hookspot.test/acme/payments/requests")) +
@@ -64,7 +63,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	if errOut.String() != wantErr {
 		t.Errorf("errOut:\n%s\nwant:\n%s", errOut.String(), wantErr)
 	}
-	if out.writes != 3 || errOut.writes != 7 {
+	if out.writes != 4 || errOut.writes != 6 {
 		t.Errorf("writes = %d and %d, want one per event", out.writes, errOut.writes)
 	}
 }

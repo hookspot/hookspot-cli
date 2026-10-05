@@ -156,7 +156,7 @@ func (s Status) Render(width int) string {
 	}
 	line := strings.Join(parts, faintStyle.Render(" · "))
 	if s.Alert != (Alert{}) {
-		return AtRightEnd(line, s.Alert.Fit(width-lipgloss.Width(line)-2), width)
+		return s.Alert.After(line, width)
 	}
 	return withHints(line, s.Hints, width)
 }
@@ -192,21 +192,25 @@ func withHints(line string, hints []string, width int) string {
 	return AtRightEnd(line, end, width)
 }
 
-// AtRightEnd puts end at the right end of line, two columns or more after
-// it, when it fits, then cuts the line to width.
+// endGap is the fewest columns between a line and what ends it.
+const endGap = 2
+
+// AtRightEnd puts end at the right end of line when it fits, then cuts the
+// line to width.
 func AtRightEnd(line, end string, width int) string {
-	if gap := width - lipgloss.Width(line) - lipgloss.Width(end); end != "" && gap >= 2 {
+	if gap := width - lipgloss.Width(line) - lipgloss.Width(end); end != "" && gap >= endGap {
 		line += strings.Repeat(" ", gap) + end
 	}
 	return truncate(line, width)
 }
 
-// Alert is the update alert, which listen keeps at the right end of a line
-// until it exits.
+// Alert is what listen keeps at the right end of a line until it exits, in
+// its widest form that fits: the update alert. Unlike the full-screen view's
+// alerts, esc never dismisses it.
 type Alert struct{ whole, short string }
 
-// UpdateAlert names the newer release and the command that upgrades to it,
-// or only that an update is available where that doesn't fit.
+// UpdateAlert names the newer release and how to upgrade to it, or only that
+// an update is available where that doesn't fit.
 func UpdateAlert(update session.UpdateAvailable) Alert {
 	return Alert{
 		whole: okStyle.Render("↑ "+Line(update.Latest)) + faintStyle.Render(" · ") + Line(update.Command),
@@ -214,8 +218,23 @@ func UpdateAlert(update session.UpdateAvailable) Alert {
 	}
 }
 
-// Fit is the alert's widest form within width columns, or "".
-func (a Alert) Fit(width int) string {
+// After puts the alert at the right end of line, in the room line leaves.
+func (a Alert) After(line string, width int) string {
+	return AtRightEnd(line, a.fit(width-lipgloss.Width(line)-endGap), width)
+}
+
+// Take gives the alert room at the right end of a width-column line first:
+// it returns the alert, "" when it doesn't fit, and the room left before it.
+func (a Alert) Take(width int) (string, int) {
+	alert := a.fit(width - endGap)
+	if alert == "" {
+		return "", width
+	}
+	return alert, width - lipgloss.Width(alert) - endGap
+}
+
+// fit is the alert's widest form within width columns, or "".
+func (a Alert) fit(width int) string {
 	for _, text := range []string{a.whole, a.short} {
 		if lipgloss.Width(text) <= width {
 			return text

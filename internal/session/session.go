@@ -78,10 +78,11 @@ type RootNotFound struct {
 	Status int
 }
 
-// UpdateAvailable names a newer release than the running one and the
-// command that upgrades to it.
+// UpdateAvailable names a newer release than the running one.
 type UpdateAvailable struct {
-	Latest  string
+	Latest string
+	// Command upgrades the install, or is the docs' URL where no command
+	// does.
 	Command string
 }
 

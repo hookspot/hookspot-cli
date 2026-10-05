@@ -41,7 +41,7 @@ type Stream struct {
 	input  string
 	reply  string
 
-	// updateAlert takes the status line's hints until listen exits.
+	// updateAlert takes the status line's hint until listen exits.
 	updateAlert cards.Alert
 }
 
@@ -90,7 +90,12 @@ func (m Stream) View() tea.View {
 		// paths and warnings that must show whole.
 		lines = wrap(m.width, strings.Split(m.reply, "\n"))
 	}
-	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints(), Alert: m.updateAlert}.Render(m.width))
+	status := cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}
+	// While stopping, the hint says what a second Ctrl-C does.
+	if m.state != cards.StateStopping {
+		status.Alert = m.updateAlert
+	}
+	lines = append(lines, status.Render(m.width))
 	if m.prompting() {
 		lines = append(lines, cards.Prompt(m.input, append(m.commands(), QuitHint), m.width))
 	}

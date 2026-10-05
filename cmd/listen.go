@@ -127,7 +127,7 @@ var listenCmd = &cobra.Command{
 			target = forwarder.String()
 		}
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
-		// Only a terminal shows the update alert.
+		// The update alert is for a person: piped output may feed a script.
 		terminal := cards.Terminal(cmd.OutOrStdout())
 		setup := listenSetup{
 			ctx:         listenContext,
@@ -285,7 +285,7 @@ func runInTerminal(program *tui.Program, model tea.Model, listen func() error) e
 }
 
 // announceUpdate tells sess about a newer release on GitHub while listen
-// connects. Like the check, the alert never stops listening.
+// connects. An alert that can't be written never stops listening.
 func announceUpdate(ctx context.Context, sess *session.Session) {
 	if latest := newerRelease(ctx, version); latest != "" {
 		_ = sess.Emit(session.UpdateAvailable{Latest: latest, Command: upgradeCommand()})
