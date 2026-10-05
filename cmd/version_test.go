@@ -30,6 +30,9 @@ func TestCommandHelper(t *testing.T) {
 	// cobra's copy has to be refreshed by hand.
 	rootCmd.Version = version
 	githubAPIBaseURL = os.Getenv("TEST_GITHUB_API_URL")
+	// The test binary is in no package manager's tree, so the upgrade command
+	// is the docs' on every machine.
+	dockerEnvPath = ""
 
 	separator := 0
 	for i, arg := range os.Args {
@@ -198,6 +201,28 @@ func TestNeedsToUpgrade(t *testing.T) {
 	}
 }
 
+func TestChannelUpgradeCommand(t *testing.T) {
+	tests := []struct {
+		executable string
+		docker     bool
+		want       string
+	}{
+		{"/opt/homebrew/Cellar/hookspot-cli/1.2.3/bin/hookspot", false, "brew upgrade hookspot-cli"},
+		{"/home/linuxbrew/.linuxbrew/Cellar/hookspot-cli/1.2.3/bin/hookspot", false, "brew upgrade hookspot-cli"},
+		{"/usr/local/lib/node_modules/@hookspot/cli/binaries/linux-amd64/hookspot", false, "npm install -g @hookspot/cli@latest"},
+		{`C:\Users\dev\AppData\Roaming\npm\node_modules\@hookspot\cli\binaries\windows-amd64\hookspot.exe`, false, "npm install -g @hookspot/cli@latest"},
+		// A Node image installs through npm.
+		{"/usr/local/lib/node_modules/@hookspot/cli/binaries/linux-arm64/hookspot", true, "npm install -g @hookspot/cli@latest"},
+		{"/usr/local/bin/hookspot", true, "docker pull hookspot/cli"},
+		{"/usr/local/bin/hookspot", false, upgradeDocsURL},
+	}
+	for _, test := range tests {
+		if got := channelUpgradeCommand(test.executable, test.docker); got != test.want {
+			t.Errorf("channelUpgradeCommand(%q, %v) = %q, want %q", test.executable, test.docker, got, test.want)
+		}
+	}
+}
+
 func stubLatestRelease(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -295,9 +320,10 @@ func TestVersionPrintsUpdateCard(t *testing.T) {
 		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
 	}
 	want := "hookspot version 1.2.3\n" +
-		"╭─ Update available ──╮\n" +
-		"│ 1.2.3 → 1.3.0       │\n" +
-		"╰─────────────────────╯\n"
+		"╭─ Update available ──────────────────────╮\n" +
+		"│ 1.2.3 → 1.3.0                           │\n" +
+		"│ https://hookspot.dev/docs/cli#upgrading │\n" +
+		"╰─────────────────────────────────────────╯\n"
 	if result.stdout != want {
 		t.Fatalf("stdout = %q, want %q", result.stdout, want)
 	}

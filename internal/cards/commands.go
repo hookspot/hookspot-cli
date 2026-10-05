@@ -59,10 +59,12 @@ func Logout(environmentKey bool, width int) string {
 	})
 }
 
-// Update announces a newer release than the running one.
-func Update(current, latest string, width int) string {
+// Update announces a newer release than the running one, and the command
+// that upgrades to it.
+func Update(current, latest, command string, width int) string {
 	return box(warnStyle.Render("Update available"), "", faintStyle, width, []string{
-		Line(current) + " → " + boldStyle.Render(Line(strings.TrimPrefix(latest, "v"))),
+		Line(current) + " → " + boldStyle.Render(Line(latest)),
+		Line(command),
 	})
 }
 

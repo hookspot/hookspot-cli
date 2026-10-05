@@ -44,19 +44,27 @@ var githubAPIBaseURL = "https://api.github.com"
 // makes `version` hang.
 const latestReleaseTimeout = 5 * time.Second
 
-// checkLatestVersion asks GitHub for the newest published release and prints
-// an upgrade notice when it is newer than the running binary. Development
-// builds are never compared, and failures are silently ignored: the upgrade
-// hint must never break the command the user ran.
+// checkLatestVersion prints an upgrade notice, with the upgrade command, when
+// GitHub has a newer release than the running binary.
 func checkLatestVersion(ctx context.Context, out io.Writer, current string) {
+	if latest := newerRelease(ctx, current); latest != "" {
+		lipgloss.Fprintln(out, cards.Update(current, latest, upgradeCommand(), cards.Width(out)))
+	}
+}
+
+// newerRelease asks GitHub for the newest published release and returns its
+// version, without the "v", when it is newer than current; otherwise "".
+// Development builds are never compared, and failures are silently ignored:
+// the upgrade hint must never break the command the user ran.
+func newerRelease(ctx context.Context, current string) string {
 	if current == "dev" {
-		return
+		return ""
 	}
 	latest := latestVersion(ctx, current)
 	if !needsToUpgrade(current, latest) {
-		return
+		return ""
 	}
-	lipgloss.Fprintln(out, cards.Update(current, latest, cards.Width(out)))
+	return strings.TrimPrefix(latest, "v")
 }
 
 func latestVersion(ctx context.Context, current string) string {
