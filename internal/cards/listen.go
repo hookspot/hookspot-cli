@@ -132,12 +132,12 @@ type Status struct {
 	Project string
 	Totals  session.Stats
 	Hints   []string
-	// Alert takes the hints' place.
+	// Alert takes the hints' place where it fits.
 	Alert Alert
 }
 
 // Render draws the status at width: state, project, counts and p50, then the
-// alert or the hints while they fit.
+// alert, or the hints while they fit.
 func (s Status) Render(width int) string {
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
@@ -154,9 +154,11 @@ func (s Status) Render(width int) string {
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
-	line := strings.Join(parts, faintStyle.Render(" · "))
-	if s.Alert != (Alert{}) {
-		return s.Alert.After(line, width)
+	separator := faintStyle.Render(" · ")
+	line := strings.Join(parts, separator)
+	// The counts give way to the alert; the state and project don't.
+	if alert, room := s.Alert.Claim(width, lipgloss.Width(parts[0]+separator+parts[1])); alert != "" {
+		return AtRightEnd(truncate(line, room), alert, width)
 	}
 	return withHints(line, s.Hints, width)
 }
@@ -218,15 +220,11 @@ func UpdateAlert(update session.UpdateAvailable) Alert {
 	}
 }
 
-// After puts the alert at the right end of line, in the room line leaves.
-func (a Alert) After(line string, width int) string {
-	return AtRightEnd(line, a.fit(width-lipgloss.Width(line)-endGap), width)
-}
-
-// Take gives the alert room at the right end of a width-column line first:
-// it returns the alert, "" when it doesn't fit, and the room left before it.
-func (a Alert) Take(width int) (string, int) {
-	alert := a.fit(width - endGap)
+// Claim fits the alert at the right end of a width-column line that keeps
+// its first columns: it returns the alert, "" when none fits, and the room
+// left before it.
+func (a Alert) Claim(width, keep int) (string, int) {
+	alert := a.fit(width - keep - endGap)
 	if alert == "" {
 		return "", width
 	}
@@ -236,7 +234,7 @@ func (a Alert) Take(width int) (string, int) {
 // fit is the alert's widest form within width columns, or "".
 func (a Alert) fit(width int) string {
 	for _, text := range []string{a.whole, a.short} {
-		if lipgloss.Width(text) <= width {
+		if text != "" && lipgloss.Width(text) <= width {
 			return text
 		}
 	}

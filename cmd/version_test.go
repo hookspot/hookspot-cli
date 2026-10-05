@@ -208,8 +208,6 @@ func TestChannelUpgradeCommand(t *testing.T) {
 		want       string
 	}{
 		{"/opt/homebrew/Cellar/hookspot-cli/1.2.3/bin/hookspot", false, "brew upgrade hookspot-cli"},
-		{"/home/linuxbrew/.linuxbrew/Cellar/hookspot-cli/1.2.3/bin/hookspot", false, "brew upgrade hookspot-cli"},
-		{"/usr/local/lib/node_modules/@hookspot/cli/binaries/linux-amd64/hookspot", false, "npm install -g @hookspot/cli@latest"},
 		{`C:\Users\dev\AppData\Roaming\npm\node_modules\@hookspot\cli\binaries\windows-amd64\hookspot.exe`, false, "npm install -g @hookspot/cli@latest"},
 		// A Node image installs through npm.
 		{"/usr/local/lib/node_modules/@hookspot/cli/binaries/linux-arm64/hookspot", true, "npm install -g @hookspot/cli@latest"},

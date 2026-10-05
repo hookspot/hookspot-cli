@@ -134,6 +134,7 @@ func TestTestEvent(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	hints := []string{"↵ replay last", "r N replay #N", "? help", "ctrl-c quit"}
+	update := UpdateAlert(session.UpdateAvailable{Latest: "1.3.0", Command: "brew upgrade hookspot-cli"})
 	forwarded := session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond}
 	lines := []string{
 		Status{Project: "Acme | Payments"}.Render(80),
@@ -147,6 +148,11 @@ func TestStatus(t *testing.T) {
 		// Hints go first when a line doesn't fit, then the rest is cut.
 		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Hints: hints}.Render(40),
 		Prompt("r 4", hints, 40),
+		// The alert takes the hints' place; the counts give way to it, then
+		// it shrinks.
+		Status{State: StateLive, Project: "Acme | Payments", Totals: session.Stats{Count: 3}, Hints: hints, Alert: update}.Render(80),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(80),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(50),
 	}
 	golden.RequireEqual(t, noColor(t, strings.Join(lines, "\n")))
 }

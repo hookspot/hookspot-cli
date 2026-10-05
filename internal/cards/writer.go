@@ -21,7 +21,7 @@ type Writer struct {
 	listen      Listen
 	requestsURL string
 	out, errOut stream
-	// ready is set once Ready is written; the update alert waits for it.
+	// The update alert waits for Ready.
 	ready       bool
 	updateAlert string
 	// mu keeps replies, which don't come through the session, whole.

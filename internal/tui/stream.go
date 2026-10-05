@@ -90,12 +90,7 @@ func (m Stream) View() tea.View {
 		// paths and warnings that must show whole.
 		lines = wrap(m.width, strings.Split(m.reply, "\n"))
 	}
-	status := cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}
-	// While stopping, the hint says what a second Ctrl-C does.
-	if m.state != cards.StateStopping {
-		status.Alert = m.updateAlert
-	}
-	lines = append(lines, status.Render(m.width))
+	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints(), Alert: m.statusAlert()}.Render(m.width))
 	if m.prompting() {
 		lines = append(lines, cards.Prompt(m.input, append(m.commands(), QuitHint), m.width))
 	}
@@ -172,6 +167,15 @@ func (m Stream) statusHints() []string {
 		return []string{"ctrl-c force quit"}
 	}
 	return []string{QuitHint}
+}
+
+// statusAlert takes the status line's hint, but for the one that says, while
+// stopping, what a second Ctrl-C does.
+func (m Stream) statusAlert() cards.Alert {
+	if m.state == cards.StateStopping {
+		return cards.Alert{}
+	}
+	return m.updateAlert
 }
 
 func (m Stream) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {

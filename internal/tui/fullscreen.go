@@ -535,24 +535,23 @@ var helpStyles = help.Styles{
 
 // footer lists the keys on one line, or all of them in columns after ?.
 func (m Fullscreen) footer(width int) []string {
-	return m.keys(keyMap{forwarding: m.forwarding()}, m.help, width)
+	return m.keyLines(keyMap{forwarding: m.forwarding()}, m.help, width)
 }
 
-// keys lists bindings as helpView does, with the update alert at the right
-// end of the bottom line: the keys on one line give way to it, and the
-// columns, which keep every key, get a line of its own.
-func (m Fullscreen) keys(bindings help.KeyMap, all bool, width int) []string {
-	switch {
-	case m.updateAlert == (cards.Alert{}):
-		return helpView(bindings, all, width)
-	case all:
-		return append(helpView(bindings, true, width), m.updateAlert.After("", width))
+// keyLines lists bindings as helpView does, with the update alert at the
+// right end of the bottom line. The keys on one line give way to it, all but
+// the first; the columns keep every key, above it.
+func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string {
+	if all {
+		lines := helpView(bindings, true, width)
+		if alert, _ := m.updateAlert.Claim(width, 0); alert != "" {
+			lines = append(lines, cards.AtRightEnd("", alert, width))
+		}
+		return lines
 	}
-	alert, room := m.updateAlert.Take(width)
-	// help takes a zero width as no limit, and overruns one too narrow for
-	// its ellipsis.
-	keys := ansi.Truncate(helpView(bindings, false, room)[0], room, "")
-	return []string{cards.AtRightEnd(keys, alert, width)}
+	first := bindings.ShortHelp()[0].Help()
+	alert, room := m.updateAlert.Claim(width, lipgloss.Width(first.Key+" "+first.Desc))
+	return []string{cards.AtRightEnd(helpView(bindings, false, room)[0], alert, width)}
 }
 
 // helpView lists the keys on one line, or with all set, all of them in
