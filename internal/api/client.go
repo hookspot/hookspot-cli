@@ -26,6 +26,8 @@ type Error struct {
 	Method     string
 	URL        string
 	Message    string
+	// Reason is the server's code for the error, such as cli_outdated.
+	Reason string
 }
 
 func (e *Error) Error() string {
@@ -287,11 +289,16 @@ func decodeErrorResponse(req *http.Request, resp *http.Response) error {
 		return fmt.Errorf("read Hookspot API error response: %w", readErr)
 	}
 
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal(body, &payload)
 	return &Error{
 		StatusCode: resp.StatusCode,
 		Method:     req.Method,
 		URL:        req.URL.String(),
 		Message:    apiErrorMessage(body),
+		Reason:     payload.Reason,
 	}
 }
 

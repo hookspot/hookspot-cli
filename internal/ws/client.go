@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -39,6 +40,9 @@ const (
 	SessionProtocol
 	SessionHandler
 	SessionNotFound
+	// SessionOutdated is a join refused to a release below the minimum CLI
+	// version; Err is the server's message.
+	SessionOutdated
 )
 
 // SessionError retains the original failure and whether the session completed
@@ -563,7 +567,8 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 		var reply struct {
 			Status   string `json:"status"`
 			Response struct {
-				Reason string `json:"reason"`
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
 			} `json:"response"`
 		}
 		if err := json.Unmarshal(msg.Payload, &reply); err != nil {
@@ -577,6 +582,9 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 			}
 			if strings.EqualFold(reply.Response.Reason, "not_found") {
 				return "", sessionError(SessionNotFound, false, err)
+			}
+			if strings.EqualFold(reply.Response.Reason, "cli_outdated") {
+				return "", sessionError(SessionOutdated, false, errors.New(cmp.Or(reply.Response.Message, err.Error())))
 			}
 			return "", sessionError(SessionProtocol, false, err)
 		}

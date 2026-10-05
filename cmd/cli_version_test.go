@@ -1,9 +1,18 @@
 package cmd
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+const outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
+
+var outdatedReply = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
 
 // TestListenNamesItsReleaseInTheUserAgent covers the API calls and the
 // websocket handshake of a release and of a dev build.
@@ -27,4 +36,57 @@ func TestListenNamesItsReleaseInTheUserAgent(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestListenStopsWhenRefusedAsOutdated covers a release below the minimum
+// CLI version, refused by the API, the first join or a rejoin: listen prints
+// the server's message and the upgrade command, and exits without retrying.
+func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
+	refused := outdatedMessage + "\n\n" + upgradeDocsURL + "\n"
+
+	t.Run("API", func(t *testing.T) {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.WriteHeader(http.StatusUpgradeRequired)
+			_, _ = w.Write([]byte(`{"reason":"cli_outdated","message":"` + outdatedMessage + `"}`))
+		}))
+		defer server.Close()
+		config := filepath.Join(t.TempDir(), "config.toml")
+		if err := writeCommandFixture(config, []byte(fakeHookspotConfig)); err != nil {
+			t.Fatal(err)
+		}
+		result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", config, "listen")
+		if result.err == nil || result.stderr != refused || requests.Load() != 1 {
+			t.Fatalf("listen = %v after %d requests, stderr %q, want %q", result.err, requests.Load(), result.stderr, refused)
+		}
+	})
+
+	t.Run("first join", func(t *testing.T) {
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
+		hookspot.joinReplies <- outdatedReply
+		result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
+		if result.err == nil || result.stderr != refused || len(hookspot.joins) != 1 {
+			t.Fatalf("listen = %v after %d joins, stderr %q", result.err, len(hookspot.joins), result.stderr)
+		}
+	})
+
+	t.Run("rejoin", func(t *testing.T) {
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
+		go func() {
+			// The first join is in once the server takes a delivery.
+			select {
+			case hookspot.deliveries <- hangUp{}:
+				hookspot.joinReplies <- outdatedReply
+			case <-hookspot.done:
+			}
+		}()
+		result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
+		if result.err == nil || !strings.HasSuffix(result.stderr, "\n"+refused) || len(hookspot.joins) != 2 {
+			t.Fatalf("listen = %v after %d joins, stderr %q", result.err, len(hookspot.joins), result.stderr)
+		}
+		if got := strings.Count(result.stderr, "connection lost"); got != 1 {
+			t.Fatalf("reconnect notices = %d, want 1:\n%s", got, result.stderr)
+		}
+	})
 }

@@ -16,6 +16,10 @@ import (
 	"hookspot/internal/ws"
 )
 
+// cliOutdated is the reason the server refuses a release below its minimum
+// CLI version with.
+const cliOutdated = "cli_outdated"
+
 // commandError carries user-facing recovery guidance through wrapped errors.
 // Commands return it; only HandleError decides how it is presented.
 type commandError struct {
@@ -83,6 +87,9 @@ func fatalErrorMessage(err error) (string, string) {
 
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
+		if apiErr.Reason == cliOutdated {
+			return apiErr.Message, upgradeCommand()
+		}
 		switch {
 		case apiErr.StatusCode >= 300 && apiErr.StatusCode < 400:
 			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
@@ -113,6 +120,8 @@ func fatalErrorMessage(err error) (string, string) {
 			return err.Error(), "The delivery could not be processed. Check the error and retry the command."
 		case ws.SessionNotFound:
 			return "project not found: the WebSocket channel join was rejected", projectNotFoundHint()
+		case ws.SessionOutdated:
+			return sessionErr.Err.Error(), upgradeCommand()
 		}
 	}
 
