@@ -476,7 +476,7 @@ func TestDashboardRequestsURLUsesOnlySafeSlugs(t *testing.T) {
 }
 
 func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
-	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"stripe"}, hangUp{})
+	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"stripe", "--forward-to", "3000"}, hangUp{})
 	if !strings.HasSuffix(result.stdout, "\nConnecting…\nReady. Waiting for requests (Ctrl-C to quit)\n") {
 		t.Fatalf("stdout = %q, want one Ready after Connecting…", result.stdout)
 	}
@@ -502,7 +502,7 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		t.Fatal(err)
+		hostname = ""
 	}
 	machine, _ := json.Marshal(hostname)
 	tests := []struct {
