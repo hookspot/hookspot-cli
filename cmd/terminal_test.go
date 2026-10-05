@@ -535,7 +535,7 @@ type fakeHookspot struct {
 	url        string
 	config     string
 	deliveries chan any
-	// joins holds the first channel join: topic, event and payload.
+	// joins holds the first two channel joins: topic, event and payload.
 	joins chan []json.RawMessage
 	// rejectJoins answers joins as a project that isn't found.
 	rejectJoins atomic.Bool
@@ -566,7 +566,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 	hookspot := &fakeHookspot{
 		config:     filepath.Join(t.TempDir(), "config.toml"),
 		deliveries: make(chan any),
-		joins:      make(chan []json.RawMessage, 1),
+		joins:      make(chan []json.RawMessage, 2),
 		release:    make(chan struct{}),
 		done:       make(chan struct{}),
 	}

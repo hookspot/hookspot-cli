@@ -491,6 +491,12 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 	if strings.Count(result.stderr, hint) != 1 {
 		t.Fatalf("stderr = %q, want the test hint once, after Ready", result.stderr)
 	}
+	if len(hookspot.joins) != 2 {
+		t.Fatalf("joins = %d, want the join and the rejoin", len(hookspot.joins))
+	}
+	if join, rejoin := <-hookspot.joins, <-hookspot.joins; string(rejoin[2]) != string(join[2]) {
+		t.Fatalf("rejoin payload = %s, want the join's %s", rejoin[2], join[2])
+	}
 }
 
 func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {

@@ -180,8 +180,8 @@ type clientOptions struct {
 }
 
 // New returns a Client that connects to url, authenticates with cliKey, and
-// joins topic, requesting the given sources and reporting this machine and
-// forwardTo, its forwarding target.
+// joins topic, requesting the given sources and reporting the hostname and
+// forwardTo, the forwarding target.
 func New(url, cliKey, topic string, sources []string, forwardTo string) *Client {
 	return newClient(url, cliKey, topic, sources, forwardTo, clientOptions{})
 }
