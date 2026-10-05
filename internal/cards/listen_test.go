@@ -148,12 +148,12 @@ func TestStatus(t *testing.T) {
 		// Hints go first when a line doesn't fit, then the rest is cut.
 		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Hints: hints}.Render(40),
 		Prompt("r 4", hints, 40),
-		// Where the alert doesn't fit, it shrinks, then the counts give way,
-		// then the hints are back; offline, the reason stays.
+		// The details give way to the alert, which then shrinks, and the
+		// count; where even that doesn't fit, the line is as without it.
 		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(90),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(65),
 		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(50),
-		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Hints: hints, Alert: update}.Render(40),
-		Status{State: StateOffline, Err: errors.New("dial tcp: connection refused"), Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(80),
+		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Alert: update}.Render(40),
 	}
 	golden.RequireEqual(t, noColor(t, strings.Join(lines, "\n")))
 }

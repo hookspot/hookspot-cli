@@ -69,7 +69,7 @@ func TestTerminalUpdateAlert(t *testing.T) {
 		hookspot.end(t)
 		run.wait()
 		if asked.Load() != before || strings.Contains(run.piped()+run.text(), "↑ 1.3.0") {
-			t.Errorf("piped listen asked GitHub %d times; stdout:\n%s", asked.Load()-before, run.piped())
+			t.Errorf("piped listen asked GitHub %d times; stdout:\n%s\nscreen:\n%s", asked.Load()-before, run.piped(), run.text())
 		}
 	})
 }

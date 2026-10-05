@@ -59,13 +59,12 @@ func Logout(environmentKey bool, width int) string {
 	})
 }
 
-// Update announces a newer release than the running one, and the command
-// that upgrades to it.
+// Update announces a newer release than the running one, then the command
+// that upgrades to it, outside the box so a URL stays whole.
 func Update(current, latest, command string, width int) string {
 	return box(warnStyle.Render("Update available"), "", faintStyle, width, []string{
 		Line(current) + " → " + boldStyle.Render(Line(latest)),
-		Line(command),
-	})
+	}) + "\n" + Line(command)
 }
 
 // Projects is the project table, with the active project badged.

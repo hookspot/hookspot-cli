@@ -156,14 +156,17 @@ func (s Status) Render(width int) string {
 	}
 	separator := faintStyle.Render(" · ")
 	line := strings.Join(parts, separator)
-	if alert := s.Alert.fit(width - lipgloss.Width(line) - endGap); alert != "" {
-		return AtRightEnd(line, alert, width)
+	// The details after the request count give way to the alert, as the
+	// full-screen keys do, then the count; the state and project stay, which
+	// the cut's "…" follows. Offline, so does the reason.
+	keeps := []int{lipgloss.Width(strings.Join(parts[:3], separator)) + 1, lipgloss.Width(strings.Join(parts[:2], separator)) + 1}
+	if s.State == StateOffline {
+		keeps = []int{lipgloss.Width(line)}
 	}
-	// The counts give way to the short form, but not the state and project,
-	// which the cut's "…" follows, nor why the connection dropped.
-	keep := lipgloss.Width(parts[0]+separator+parts[1]) + 1
-	if alert := s.Alert.squeeze(width - keep - endGap); alert != "" && s.State != StateOffline {
-		return AtRightEnd(truncate(line, width-lipgloss.Width(alert)-endGap), alert, width)
+	for _, keep := range keeps {
+		if alert, room := s.Alert.Claim(width, min(keep, lipgloss.Width(line))); alert != "" {
+			return AtRightEnd(truncate(line, room), alert, width)
+		}
 	}
 	return withHints(line, s.Hints, width)
 }
@@ -211,9 +214,9 @@ func AtRightEnd(line, end string, width int) string {
 	return truncate(line, width)
 }
 
-// Alert is what listen keeps at the right end of a line until it exits, in
-// its widest form that fits: the update alert. Unlike the full-screen view's
-// alerts, esc never dismisses it.
+// Alert is what listen keeps at the right end of a line, in its widest form
+// that fits: the update alert. Unlike the full-screen view's alerts, esc
+// never dismisses it.
 type Alert struct{ whole, short string }
 
 // UpdateAlert names the newer release and how to upgrade to it, or only that
@@ -234,14 +237,6 @@ func (a Alert) Claim(width, keep int) (string, int) {
 		return "", width
 	}
 	return alert, width - lipgloss.Width(alert) - endGap
-}
-
-// squeeze is the alert's short form within width columns, or "".
-func (a Alert) squeeze(width int) string {
-	if lipgloss.Width(a.short) > width {
-		return ""
-	}
-	return a.short
 }
 
 // fit is the alert's widest form within width columns, or "".

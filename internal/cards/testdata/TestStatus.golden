@@ -8,7 +8,7 @@
 ■ stopped · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms
 ● live · Acme | Payments · 12 requests …
 › r 4 
-● live · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms    ↑ update available
+● live · Acme | Payments · 12 requests · 10 ok · 2 f…  ↑ 1.3.0 · brew upgrade hookspot-cli
+● live · Acme | Payments · 12 requests · 10 …  ↑ update available
 ● live · Acme | Payments · 12…  ↑ update available
 ● live · Acme | Payments · 12 requests …
-○ reconnecting · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms · …

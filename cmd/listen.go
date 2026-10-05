@@ -284,15 +284,15 @@ func runInTerminal(program *tui.Program, model tea.Model, listen func() error) e
 	return listenErr
 }
 
-// announceUpdate tells sess about a newer release on GitHub while listen
-// connects. The returned stop cancels the check and waits for it, so no
+// announceUpdate tells sess about a newer release on GitHub alongside
+// listening. The returned stop cancels the check and waits for it, so no
 // alert follows listening. An alert that can't be written never stops it.
 func announceUpdate(ctx context.Context, sess *session.Session) (stop func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if latest := newerRelease(ctx, version); latest != "" {
+		if latest := newerRelease(ctx, version); latest != "" && ctx.Err() == nil {
 			_ = sess.Emit(session.UpdateAvailable{Latest: latest, Upgrade: upgradeCommand()})
 		}
 	}()
