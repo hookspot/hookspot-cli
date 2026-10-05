@@ -62,8 +62,8 @@ type Reconnected struct {
 }
 
 // Notice is each join's warning, such as the date this release stops
-// working; "" when there is none. It comes before the join's Ready or
-// Reconnected.
+// working; "" when there is none. It comes before the first join's Ready
+// and after a rejoin's Reconnected.
 type Notice struct {
 	Text string
 }

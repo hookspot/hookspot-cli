@@ -159,8 +159,8 @@ func (s Status) Render(width int) string {
 	}
 	// The details after the request count, parts[3:], give way whole to the
 	// alert, as the full-screen keys do; then the count, but only to its
-	// short form. The state and project stay, and offline, so does the
-	// reason.
+	// short form or a cut notice. The state and project stay, and offline,
+	// so does the reason.
 	kept := 3
 	if s.State == StateOffline {
 		kept = len(parts)
@@ -226,7 +226,11 @@ func AtRightEnd(line, end string, width int) string {
 // Alert is what listen keeps at the right end of a line, in its widest form
 // that fits: the server's notice, else the update alert. Unlike the
 // full-screen view's alerts, esc never dismisses it.
-type Alert struct{ whole, short string }
+type Alert struct {
+	whole, short string
+	// cut is set for a notice, which has no short form: it is cut to fit.
+	cut bool
+}
 
 // NoticeAlert is the join's notice as the server wrote it, as a warning.
 // "" is no alert.
@@ -234,7 +238,7 @@ func NoticeAlert(notice string) Alert {
 	if notice == "" {
 		return Alert{}
 	}
-	return Alert{whole: warnStyle.Render("⚠ " + Line(notice))}
+	return Alert{whole: warnStyle.Render("⚠ " + Line(notice)), cut: true}
 }
 
 // UpdateAlert names the newer release and how to upgrade to it, or only that
@@ -254,11 +258,10 @@ func (a Alert) Claim(width, keep int) (string, int) {
 	return alert, width - lipgloss.Width(alert) - endGap
 }
 
-// shrunk is the alert's short form within width columns, or "". A notice
-// has none: it is cut to fit instead, but not below minCut, where it would
-// say nothing.
+// shrunk is the alert's short form within width columns, or "": a notice
+// cut to fit, but not below minCut, where it would say nothing.
 func (a Alert) shrunk(width int) string {
-	if a.short == "" && width >= minCut {
+	if a.cut && width >= minCut {
 		return truncate(a.whole, width)
 	}
 	if lipgloss.Width(a.short) > width {

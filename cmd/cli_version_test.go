@@ -10,20 +10,12 @@ import (
 	"testing"
 )
 
-const (
-	// outdatedMessage is the server's refusal of a release below its minimum
-	// CLI version.
-	outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
-	// deprecation is its notice to a release below its deprecated version.
-	deprecation = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
-)
+// outdatedMessage is the server's refusal of a release below its minimum CLI
+// version.
+const outdatedMessage = "Hookspot CLI 0.9.0 is too old: upgrade to 1.0.0 or later."
 
-var (
-	// outdatedReply refuses a join with outdatedMessage.
-	outdatedReply = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
-	// deprecatedJoin accepts a join with the deprecation notice.
-	deprecatedJoin = map[string]any{"status": "ok", "response": map[string]string{"notice": deprecation}}
-)
+// outdatedReply refuses a join with outdatedMessage.
+var outdatedReply = map[string]any{"status": "error", "response": map[string]string{"reason": "cli_outdated", "message": outdatedMessage}}
 
 // TestListenNamesItsReleaseInTheUserAgent covers the API calls and the
 // websocket handshake of a release and of a dev build.
@@ -50,8 +42,9 @@ func TestListenNamesItsReleaseInTheUserAgent(t *testing.T) {
 }
 
 // TestListenStopsWhenRefusedAsOutdated covers a release below the minimum
-// CLI version, refused by the API, the first join or a rejoin: listen prints
-// the server's message and the upgrade command, and exits without retrying.
+// CLI version, refused by the API, to listen or login, or by the first join
+// or a rejoin: the command prints the server's message and the upgrade
+// command, and exits without retrying.
 func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 	refused := outdatedMessage + "\n\n" + upgradeDocsURL + "\n"
 
@@ -70,6 +63,18 @@ func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 		result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", config, "listen")
 		if result.err == nil || result.stderr != refused || requests.Load() != 1 {
 			t.Fatalf("listen = %v after %d requests, stderr %q, want %q", result.err, requests.Load(), result.stderr, refused)
+		}
+	})
+
+	t.Run("login", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUpgradeRequired)
+			_, _ = w.Write([]byte(`{"reason":"cli_outdated","message":"` + outdatedMessage + `"}`))
+		}))
+		defer server.Close()
+		result := runCommandProcess(t, "", developmentMetadata(server.URL), "--config", filepath.Join(t.TempDir(), "config.toml"), "login")
+		if result.err == nil || result.stderr != refused {
+			t.Fatalf("login = %v, stderr %q, want %q", result.err, result.stderr, refused)
 		}
 	})
 
@@ -97,16 +102,17 @@ func TestListenStopsWhenRefusedAsOutdated(t *testing.T) {
 	})
 }
 
-// TestListenPrintsTheJoinsNoticeOnce covers plain mode: a notice first
-// sent at a rejoin prints, and the next rejoin's same notice doesn't.
+// TestListenPrintsTheJoinsNoticeOnce covers plain mode over four joins:
+// the first join's notice prints, the second's same one doesn't, and after a
+// join without one, the fourth's prints again.
 func TestListenPrintsTheJoinsNoticeOnce(t *testing.T) {
 	hookspot := startFakeHookspot(t, fakeHookspotSources)
-	hookspot.joinReplies <- acceptedReply
-	hookspot.joinReplies <- deprecatedJoin
-	hookspot.joinReplies <- deprecatedJoin
-	hookspot.play(hangUp{}, hangUp{})
+	for _, reply := range []map[string]any{deprecatedReply, deprecatedReply, acceptedReply, deprecatedReply} {
+		hookspot.joinReplies <- reply
+	}
+	hookspot.play(hangUp{}, hangUp{}, hangUp{})
 	result := runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen()...)
-	if got := strings.Count(result.stderr, "⚠ "+deprecation+"\n"); got != 1 || strings.Count(result.stderr, "Reconnected after") != 2 {
-		t.Fatalf("notices = %d, want 1 over 3 joins:\n%s", got, result.stderr)
+	if got := strings.Count(result.stderr, "⚠ "+deprecation+"\n"); got != 2 || strings.Count(result.stderr, "Reconnected after") != 3 {
+		t.Fatalf("notices = %d, want 2 over 4 joins:\n%s", got, result.stderr)
 	}
 }

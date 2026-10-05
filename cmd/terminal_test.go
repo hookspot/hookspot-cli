@@ -560,7 +560,13 @@ var (
 	acceptedReply = map[string]any{"status": "ok", "response": map[string]any{}}
 	// notFoundReply refuses a join as a project that isn't found.
 	notFoundReply = map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}
+	// deprecatedReply accepts a join with the server's deprecation notice.
+	deprecatedReply = map[string]any{"status": "ok", "response": map[string]string{"notice": deprecation}}
 )
+
+// deprecation is the server's notice to a release below its deprecated
+// version.
+const deprecation = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
 
 // fakeHookspotConfig signs in and selects the fake project.
 const fakeHookspotConfig = "schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n"
@@ -577,7 +583,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		config:      filepath.Join(t.TempDir(), "config.toml"),
 		deliveries:  make(chan any),
 		joins:       make(chan []json.RawMessage, 2),
-		joinReplies: make(chan map[string]any, 3),
+		joinReplies: make(chan map[string]any, 4),
 		userAgents:  make(chan string, 8),
 		release:     make(chan struct{}),
 		done:        make(chan struct{}),

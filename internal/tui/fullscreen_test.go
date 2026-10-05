@@ -269,8 +269,8 @@ func TestFullscreen(t *testing.T) {
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable, letter('?')}
 		}},
 		{name: "notice", width: 80, height: 24, events: func(r *tally) []tea.Msg {
-			// The notice, over the update alert, is cut to fit.
-			return []tea.Msg{session.Notice{Text: deprecation}, session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
+			// The notice is cut to fit.
+			return []tea.Msg{session.Notice{Text: deprecation}, session.Ready{}, r.recorded(entry(1, "src_stripe", 200))}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{

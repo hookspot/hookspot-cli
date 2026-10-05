@@ -44,7 +44,7 @@ func TestTerminalUpdateAlert(t *testing.T) {
 
 	t.Run("notice", func(t *testing.T) {
 		hookspot := startFakeHookspot(t, fakeHookspotSources)
-		hookspot.joinReplies <- deprecatedJoin
+		hookspot.joinReplies <- deprecatedReply
 		run := startTerminal(t, options(map[string]string{}), release(hookspot), hookspot.listen()...)
 		keys := regexp.MustCompile(`(?m)^\? help  q quit  +` + regexp.QuoteMeta("⚠ "+deprecation) + `$`)
 		run.waitFor("the notice after the keys", keys.MatchString)

@@ -290,7 +290,7 @@ func decodeErrorResponse(req *http.Request, resp *http.Response) error {
 		return fmt.Errorf("read Hookspot API error response: %w", readErr)
 	}
 
-	message, reason := apiErrorMessage(body)
+	message, reason := apiErrorDetails(body)
 	return &Error{
 		StatusCode: resp.StatusCode,
 		Method:     req.Method,
@@ -300,9 +300,9 @@ func decodeErrorResponse(req *http.Request, resp *http.Response) error {
 	}
 }
 
-// apiErrorMessage is the error body's message, else its reason, nested
-// error or text, and its reason.
-func apiErrorMessage(body []byte) (string, string) {
+// apiErrorDetails reads an error body: its message, else its reason, nested
+// error or text; then its top-level reason.
+func apiErrorDetails(body []byte) (string, string) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
 		return "", ""

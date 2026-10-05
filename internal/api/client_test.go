@@ -66,8 +66,8 @@ func TestAPIErrorMessageFormats(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got, _ := apiErrorMessage([]byte(test.body)); got != test.want {
-				t.Fatalf("apiErrorMessage() = %q, want %q", got, test.want)
+			if got, _ := apiErrorDetails([]byte(test.body)); got != test.want {
+				t.Fatalf("apiErrorDetails() = %q, want %q", got, test.want)
 			}
 		})
 	}

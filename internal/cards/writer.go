@@ -18,11 +18,13 @@ type Writer struct {
 	// Commands is set when stdin takes line commands, so the test hint names t.
 	Commands bool
 
-	listen              Listen
-	requestsURL         string
-	out, errOut         stream
-	ready               bool
-	notice, updateAlert string
+	listen      Listen
+	requestsURL string
+	out, errOut stream
+	ready       bool
+	updateAlert string
+	// notice is the latest join's, as the server wrote it.
+	notice string
 	// mu keeps replies, which don't come through the session, whole.
 	mu sync.Mutex
 }
