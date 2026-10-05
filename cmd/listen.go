@@ -121,10 +121,12 @@ var listenCmd = &cobra.Command{
 		listenContext, stopListening := context.WithCancel(cmd.Context())
 		defer stopListening()
 		var local session.Forwarder
+		target := ""
 		if forwarder != nil {
 			local = forwarder
+			target = forwarder.String()
 		}
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs)
+		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
 		setup := listenSetup{
 			ctx:         listenContext,
 			stop:        stopListening,

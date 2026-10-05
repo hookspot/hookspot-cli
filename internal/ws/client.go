@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,7 +164,9 @@ type Client struct {
 	cliKey  string
 	topic   string
 	sources []string
-	options clientOptions
+	// forwardTo is the --forward-to base URL, "" when listening print-only.
+	forwardTo string
+	options   clientOptions
 }
 
 type clientOptions struct {
@@ -176,9 +179,11 @@ type clientOptions struct {
 }
 
 // New returns a Client that connects to url, authenticates with cliKey, and
-// joins topic, requesting the given sources.
-func New(url, cliKey, topic string, sources []string) *Client {
-	return newClient(url, cliKey, topic, sources, clientOptions{})
+// joins topic, requesting the given sources and naming forwardTo.
+func New(url, cliKey, topic string, sources []string, forwardTo string) *Client {
+	client := newClient(url, cliKey, topic, sources, clientOptions{})
+	client.forwardTo = forwardTo
+	return client
 }
 
 func newClient(url, cliKey, topic string, sources []string, options clientOptions) *Client {
@@ -507,9 +512,21 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 	if sources == nil {
 		sources = []string{}
 	}
+	machine, err := os.Hostname()
+	if err != nil {
+		machine = ""
+	}
+	// The server labels this listener's deliveries with its machine and
+	// target; a print-only listener has no target.
+	var forwardTo *string
+	if c.forwardTo != "" {
+		forwardTo = &c.forwardTo
+	}
 	payload, err := json.Marshal(struct {
-		Sources []string `json:"sources"`
-	}{Sources: sources})
+		Sources   []string `json:"sources"`
+		Machine   string   `json:"machine"`
+		ForwardTo *string  `json:"forward_to"`
+	}{Sources: sources, Machine: machine, ForwardTo: forwardTo})
 	if err != nil {
 		return "", fmt.Errorf("encode join payload: %w", err)
 	}

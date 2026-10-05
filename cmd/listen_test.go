@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"maps"
@@ -492,21 +493,39 @@ func TestListenPrintsReadyAfterJoinAndReconnectNotice(t *testing.T) {
 	}
 }
 
-func TestListenJoinsProjectTopicWithAPIUIDs(t *testing.T) {
-	result, hookspot := runListenAgainst(t, fakeHookspotSources, "stripe")
-	if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
-		t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.HasSuffix(result.stdout, "Connecting…\n") {
-		t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
+	machine, _ := json.Marshal(hostname)
+	tests := []struct {
+		name      string
+		args      []string
+		forwardTo string
+	}{
+		{name: "print-only", args: []string{"stripe"}, forwardTo: "null"},
+		{name: "forwarding", args: []string{"stripe", "--forward-to", "3000/hooks"}, forwardTo: `"http://localhost:3000/hooks"`},
 	}
-	select {
-	case join := <-hookspot.joins:
-		if got := string(join[0]) + " " + string(join[1]) + " " + string(join[2]); got != `"project:proj_payments" "phx_join" {"sources":["src_stripe"]}` {
-			t.Fatalf("join = %s", got)
-		}
-	default:
-		t.Fatal("listen did not join a channel")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, hookspot := runListenAgainst(t, fakeHookspotSources, test.args...)
+			if result.err == nil || !strings.Contains(result.stderr, "project not found: the WebSocket channel join was rejected") {
+				t.Fatalf("listen = %v, stderr %q", result.err, result.stderr)
+			}
+			if !strings.HasSuffix(result.stdout, "Connecting…\n") {
+				t.Fatalf("stdout after a rejected join = %q, want the banner without Ready", result.stdout)
+			}
+			want := `"project:proj_payments" "phx_join" {"sources":["src_stripe"],"machine":` + string(machine) + `,"forward_to":` + test.forwardTo + `}`
+			select {
+			case join := <-hookspot.joins:
+				if got := string(join[0]) + " " + string(join[1]) + " " + string(join[2]); got != want {
+					t.Fatalf("join = %s, want %s", got, want)
+				}
+			default:
+				t.Fatal("listen did not join a channel")
+			}
+		})
 	}
 }
 

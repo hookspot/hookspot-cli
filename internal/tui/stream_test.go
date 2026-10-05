@@ -643,7 +643,7 @@ func listenTo(t *testing.T, h *harness) <-chan error {
 	t.Cleanup(server.Close)
 	listened := make(chan error, 1)
 	go func() {
-		listened <- ws.New("ws"+strings.TrimPrefix(server.URL, "http"), "key", "project:proj_1", nil).Listen(h.ctx, h.session.Handle)
+		listened <- ws.New("ws"+strings.TrimPrefix(server.URL, "http"), "key", "project:proj_1", nil, "").Listen(h.ctx, h.session.Handle)
 	}()
 	return listened
 }
