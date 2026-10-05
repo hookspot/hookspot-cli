@@ -40,6 +40,9 @@ type Stream struct {
 	totals session.Stats
 	input  string
 	reply  string
+
+	// updateAlert takes the status line's hints until listen exits.
+	updateAlert cards.Alert
 }
 
 func (m Stream) Init() tea.Cmd { return nil }
@@ -54,6 +57,8 @@ func (m Stream) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connection = m.follow(cards.StateOffline, msg.Err)
 	case session.Recorded:
 		m.totals = msg.Totals
+	case session.UpdateAvailable:
+		m.updateAlert = cards.UpdateAlert(msg)
 	case stoppingMsg:
 		m.state, m.reply = cards.StateStopping, ""
 	case stoppedMsg:
@@ -85,7 +90,7 @@ func (m Stream) View() tea.View {
 		// paths and warnings that must show whole.
 		lines = wrap(m.width, strings.Split(m.reply, "\n"))
 	}
-	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints()}.Render(m.width))
+	lines = append(lines, cards.Status{State: m.state, Err: m.lost, Project: m.Project, Totals: m.totals, Hints: m.statusHints(), Alert: m.updateAlert}.Render(m.width))
 	if m.prompting() {
 		lines = append(lines, cards.Prompt(m.input, append(m.commands(), QuitHint), m.width))
 	}

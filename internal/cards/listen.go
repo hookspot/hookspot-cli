@@ -132,10 +132,12 @@ type Status struct {
 	Project string
 	Totals  session.Stats
 	Hints   []string
+	// Alert takes the hints' place.
+	Alert Alert
 }
 
 // Render draws the status at width: state, project, counts and p50, then the
-// hints while they fit.
+// alert or the hints while they fit.
 func (s Status) Render(width int) string {
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
@@ -152,7 +154,11 @@ func (s Status) Render(width int) string {
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
-	return withHints(strings.Join(parts, faintStyle.Render(" · ")), s.Hints, width)
+	line := strings.Join(parts, faintStyle.Render(" · "))
+	if s.Alert != (Alert{}) {
+		return AtRightEnd(line, s.Alert.Fit(width-lipgloss.Width(line)-2), width)
+	}
+	return withHints(line, s.Hints, width)
 }
 
 func (s Status) state() string {
@@ -179,13 +185,43 @@ func Prompt(input string, hints []string, width int) string {
 // withHints puts hints at the right end of line while they fit, then cuts the
 // line to width.
 func withHints(line string, hints []string, width int) string {
+	end := ""
 	if len(hints) > 0 {
-		joined := faintStyle.Render(strings.Join(hints, " · "))
-		if gap := width - lipgloss.Width(line) - lipgloss.Width(joined); gap >= 2 {
-			line += strings.Repeat(" ", gap) + joined
-		}
+		end = faintStyle.Render(strings.Join(hints, " · "))
+	}
+	return AtRightEnd(line, end, width)
+}
+
+// AtRightEnd puts end at the right end of line, two columns or more after
+// it, when it fits, then cuts the line to width.
+func AtRightEnd(line, end string, width int) string {
+	if gap := width - lipgloss.Width(line) - lipgloss.Width(end); end != "" && gap >= 2 {
+		line += strings.Repeat(" ", gap) + end
 	}
 	return truncate(line, width)
+}
+
+// Alert is the update alert, which listen keeps at the right end of a line
+// until it exits.
+type Alert struct{ whole, short string }
+
+// UpdateAlert names the newer release and the command that upgrades to it,
+// or only that an update is available where that doesn't fit.
+func UpdateAlert(update session.UpdateAvailable) Alert {
+	return Alert{
+		whole: okStyle.Render("↑ "+Line(update.Latest)) + faintStyle.Render(" · ") + Line(update.Command),
+		short: okStyle.Render("↑ update available"),
+	}
+}
+
+// Fit is the alert's widest form within width columns, or "".
+func (a Alert) Fit(width int) string {
+	for _, text := range []string{a.whole, a.short} {
+		if lipgloss.Width(text) <= width {
+			return text
+		}
+	}
+	return ""
 }
 
 // DisabledSource warns that a listened source rejects its requests.

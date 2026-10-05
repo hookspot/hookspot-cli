@@ -29,9 +29,12 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	var out, errOut countingWriter
 	w := NewWriter(&out, &errOut, testListen(), "https://hookspot.test/acme/payments/requests")
 	entry := session.Entry{Number: 2, Delivery: testDelivery(), Received: received, Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, ReplayOf: 1, Replay: &session.Comparison{Original: 1, Status: http.StatusOK}}
+	update := session.UpdateAvailable{Latest: "1.3.0", Command: "brew upgrade hookspot-cli"}
+	// The update alert waits for Ready.
 	events := []session.Event{
 		session.DisabledSource{Name: "github"},
 		session.SkippedSource{Name: "shopify"},
+		update,
 		session.Connecting{},
 		session.Ready{},
 		session.Recorded{Entry: entry},
@@ -53,6 +56,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	}
 	wantErr := noColor(t, DisabledSource("github")) +
 		noColor(t, SkippedSource("shopify")) +
+		noColor(t, UpdateAlert(update).whole) +
 		noColor(t, RootNotFound("http://localhost:3000/", http.StatusNotFound)) +
 		noColor(t, ConnectionLost(errors.New("dropped"), 2*time.Second)) +
 		noColor(t, Reconnected(3*time.Second, "https://hookspot.test/acme/payments/requests")) +
@@ -60,7 +64,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	if errOut.String() != wantErr {
 		t.Errorf("errOut:\n%s\nwant:\n%s", errOut.String(), wantErr)
 	}
-	if out.writes != 3 || errOut.writes != 6 {
+	if out.writes != 3 || errOut.writes != 7 {
 		t.Errorf("writes = %d and %d, want one per event", out.writes, errOut.writes)
 	}
 }

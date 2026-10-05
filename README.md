@@ -47,7 +47,8 @@ Without Node.js, Homebrew, or Docker, download the archive for your system
 from the [latest release](https://github.com/hookspot/hookspot-cli/releases/latest)
 and follow its [`INSTALL.md`](docs/releases/INSTALL.md).
 
-`hookspot version` tells you when a newer release is out. Update with
+`hookspot listen` and `hookspot version` tell you when a newer release is out,
+with the command for the channel you installed from:
 `npm install -g @hookspot/cli@latest`, `brew upgrade hookspot-cli`, or
 `docker pull hookspot/cli`.
 

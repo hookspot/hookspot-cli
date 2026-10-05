@@ -99,6 +99,9 @@ type Fullscreen struct {
 	toast   string
 	toastID int
 	help    bool
+
+	// updateAlert stays at the keys' right end until listen exits.
+	updateAlert cards.Alert
 }
 
 type (
@@ -144,6 +147,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		m.hint = &msg
 	case session.RootNotFound:
 		m.notFound = &msg
+	case session.UpdateAvailable:
+		m.updateAlert = cards.UpdateAlert(msg)
 	case session.Recorded:
 		return m.record(msg)
 	case stoppingMsg:
@@ -528,9 +533,26 @@ var helpStyles = help.Styles{
 	FullSeparator:  faintStyle,
 }
 
-// footer lists the keys on one line, or all of them in columns after ?.
+// footer lists the keys on one line, or all of them in columns after ?, with
+// the update alert at the right end of the bottom line. The keys on one line
+// give way to the alert; the columns keep them all.
 func (m Fullscreen) footer(width int) []string {
-	return helpView(keyMap{forwarding: m.forwarding()}, m.help, width)
+	bindings := keyMap{forwarding: m.forwarding()}
+	if m.updateAlert != (cards.Alert{}) && !m.help {
+		alert := m.updateAlert.Fit(width - 2)
+		keys := ""
+		if room := width - lipgloss.Width(alert) - 2; room > 0 {
+			keys = ansi.Truncate(helpView(bindings, false, room)[0], room, "")
+		}
+		return []string{cards.AtRightEnd(keys, alert, width)}
+	}
+	lines := helpView(bindings, m.help, width)
+	if m.updateAlert != (cards.Alert{}) {
+		last := len(lines) - 1
+		line := ansi.Truncate(lines[last], lipgloss.Width(strings.TrimRight(ansi.Strip(lines[last]), " ")), "")
+		lines[last] = cards.AtRightEnd(line, m.updateAlert.Fit(width-lipgloss.Width(line)-2), width)
+	}
+	return lines
 }
 
 // helpView lists the keys on one line, or with all set, all of them in

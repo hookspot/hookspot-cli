@@ -21,6 +21,9 @@ type Writer struct {
 	listen      Listen
 	requestsURL string
 	out, errOut stream
+	// ready is set once Ready is written; update waits for it.
+	ready  bool
+	update string
 	// mu keeps replies, which don't come through the session, whole.
 	mu sync.Mutex
 }
@@ -48,13 +51,23 @@ func (w *Writer) Banner(project string, routes []BannerRoute, hints []string) er
 }
 
 // Emit writes each event in one write, so a terminal never shows part of a
-// card.
+// card. The update alert follows Ready.
 func (w *Writer) Emit(event session.Event) error {
 	switch e := event.(type) {
 	case session.Connecting:
 		return w.write(w.out, Connecting())
 	case session.Ready:
-		return w.write(w.out, Ready())
+		w.ready = true
+		if err := w.write(w.out, Ready()); err != nil || w.update == "" {
+			return err
+		}
+		return w.write(w.errOut, w.update)
+	case session.UpdateAvailable:
+		w.update = UpdateAlert(e).whole
+		if !w.ready {
+			return nil
+		}
+		return w.write(w.errOut, w.update)
 	case session.ConnectionLost:
 		return w.write(w.errOut, ConnectionLost(e.Err, e.RetryIn))
 	case session.Reconnected:

@@ -40,7 +40,7 @@ type Sink interface {
 }
 
 // Event is a Connecting, Ready, ConnectionLost, Reconnected, DisabledSource,
-// SkippedSource, RootNotFound, Recorded or TestHint.
+// SkippedSource, RootNotFound, UpdateAvailable, Recorded or TestHint.
 type Event interface{ event() }
 
 // Connecting precedes the first join.
@@ -78,6 +78,13 @@ type RootNotFound struct {
 	Status int
 }
 
+// UpdateAvailable names a newer release than the running one and the
+// command that upgrades to it.
+type UpdateAvailable struct {
+	Latest  string
+	Command string
+}
+
 // Recorded reports an entry just added to the history, with stats as of then.
 type Recorded struct {
 	Entry Entry
@@ -88,14 +95,15 @@ type Recorded struct {
 	Evicted []int
 }
 
-func (Connecting) event()     {}
-func (Ready) event()          {}
-func (ConnectionLost) event() {}
-func (Reconnected) event()    {}
-func (DisabledSource) event() {}
-func (SkippedSource) event()  {}
-func (RootNotFound) event()   {}
-func (Recorded) event()       {}
+func (Connecting) event()      {}
+func (Ready) event()           {}
+func (ConnectionLost) event()  {}
+func (Reconnected) event()     {}
+func (DisabledSource) event()  {}
+func (SkippedSource) event()   {}
+func (RootNotFound) event()    {}
+func (UpdateAvailable) event() {}
+func (Recorded) event()        {}
 
 // Session is one listen run. Recording an entry and emitting it happen under
 // one mutex, so numbers always match the order events reach the sink.

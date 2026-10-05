@@ -127,6 +127,8 @@ var listenCmd = &cobra.Command{
 			target = forwarder.String()
 		}
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
+		// Only a terminal shows the update alert.
+		terminal := cards.Terminal(cmd.OutOrStdout())
 		setup := listenSetup{
 			ctx:         listenContext,
 			stop:        stopListening,
@@ -138,6 +140,9 @@ var listenCmd = &cobra.Command{
 			routes:      routes,
 			requestsURL: requestsURL,
 			listen: func(sess *session.Session) error {
+				if terminal {
+					go announceUpdate(listenContext, sess)
+				}
 				if err := sess.Emit(session.Connecting{}); err != nil {
 					return err
 				}
@@ -152,7 +157,7 @@ var listenCmd = &cobra.Command{
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		piped := !cards.Terminal(cmd.OutOrStdout())
+		piped := !terminal
 		if piped || os.Getenv("TERM") == "dumb" {
 			return runPlain(setup, cmd.InOrStdin(), piped)
 		}
@@ -277,6 +282,14 @@ func runInTerminal(program *tui.Program, model tea.Model, listen func() error) e
 		return runErr
 	}
 	return listenErr
+}
+
+// announceUpdate tells sess about a newer release on GitHub while listen
+// connects. Like the check, the alert never stops listening.
+func announceUpdate(ctx context.Context, sess *session.Session) {
+	if latest := newerRelease(ctx, version); latest != "" {
+		_ = sess.Emit(session.UpdateAvailable{Latest: latest, Command: upgradeCommand()})
+	}
 }
 
 type websocketListener interface {

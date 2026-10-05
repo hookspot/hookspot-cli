@@ -146,6 +146,8 @@ var (
 
 func letter(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
 
+var updateAvailable = session.UpdateAvailable{Latest: "1.3.0", Command: "brew upgrade hookspot-cli"}
+
 // final quits tm and returns its last view without color.
 func final(t *testing.T, tm *teatest.TestModel) string {
 	t.Helper()
@@ -257,6 +259,17 @@ func TestFullscreen(t *testing.T) {
 				lost, session.Reconnected{Offline: 2 * time.Second},
 				r.recorded(replay),
 			}
+		}},
+		{name: "update", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			// The keys give way to the alert.
+			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
+		}},
+		{name: "update narrow", width: 30, height: 16, events: func(r *tally) []tea.Msg {
+			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
+		}},
+		{name: "update help", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			// The help keeps every key; the alert takes the room left.
+			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable, letter('?')}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{
