@@ -139,13 +139,16 @@ type Status struct {
 // Render draws the status at width: state, project, counts and p50, then the
 // alert, or the hints while they fit.
 func (s Status) Render(width int) string {
+	separator := faintStyle.Render(" · ")
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
 		failed := strconv.Itoa(t.Failed) + " failed"
 		if t.Failed > 0 {
 			failed = errorStyle.Render(failed)
 		}
-		parts = append(parts, okStyle.Render(strconv.Itoa(t.OK)+" ok"), failed)
+		// One part, so a line that gives way never shows one without the
+		// other.
+		parts = append(parts, okStyle.Render(strconv.Itoa(t.OK)+" ok")+separator+failed)
 	}
 	// Max is zero until a request got a response or timed out.
 	if s.Totals.Max > 0 {
@@ -154,21 +157,29 @@ func (s Status) Render(width int) string {
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
-	separator := faintStyle.Render(" · ")
-	line := strings.Join(parts, separator)
-	// The details after the request count give way to the alert, as the
-	// full-screen keys do, then the count; the state and project stay, which
-	// the cut's "…" follows. Offline, so does the reason.
-	keeps := []int{lipgloss.Width(strings.Join(parts[:3], separator)) + 1, lipgloss.Width(strings.Join(parts[:2], separator)) + 1}
-	if s.State == StateOffline {
-		keeps = []int{lipgloss.Width(line)}
-	}
-	for _, keep := range keeps {
-		if alert, room := s.Alert.Claim(width, min(keep, lipgloss.Width(line))); alert != "" {
-			return AtRightEnd(truncate(line, room), alert, width)
+	// joined is the first n parts, then as many more as fit room.
+	joined := func(n, room int) string {
+		for n < len(parts) && lipgloss.Width(strings.Join(parts[:n+1], separator)) <= room {
+			n++
 		}
+		return strings.Join(parts[:n], separator)
 	}
-	return withHints(line, s.Hints, width)
+	// The details after the request count give way, whole, to the alert, as
+	// the full-screen keys do; then the count, but only to its short form.
+	// The state and project stay, and offline, so does the reason.
+	keep := 3
+	if s.State == StateOffline {
+		keep = len(parts)
+	}
+	alert := s.Alert.fit(width - lipgloss.Width(joined(keep, 0)) - endGap)
+	if alert == "" && s.State != StateOffline {
+		keep = 2
+		alert = s.Alert.shrunk(width - lipgloss.Width(joined(keep, 0)) - endGap)
+	}
+	if alert == "" {
+		return withHints(strings.Join(parts, separator), s.Hints, width)
+	}
+	return AtRightEnd(joined(keep, width-lipgloss.Width(alert)-endGap), alert, width)
 }
 
 func (s Status) state() string {
@@ -237,6 +248,14 @@ func (a Alert) Claim(width, keep int) (string, int) {
 		return "", width
 	}
 	return alert, width - lipgloss.Width(alert) - endGap
+}
+
+// shrunk is the alert's short form within width columns, or "".
+func (a Alert) shrunk(width int) string {
+	if lipgloss.Width(a.short) > width {
+		return ""
+	}
+	return a.short
 }
 
 // fit is the alert's widest form within width columns, or "".

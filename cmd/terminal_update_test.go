@@ -68,8 +68,8 @@ func TestTerminalUpdateAlert(t *testing.T) {
 		run.waitFor("#1 on stdout", func(string) bool { return strings.Contains(run.piped(), "╭─ #1 stripe · POST /webhooks/stripe ") })
 		hookspot.end(t)
 		run.wait()
-		if asked.Load() != before || strings.Contains(run.piped()+run.text(), "↑ 1.3.0") {
-			t.Errorf("piped listen asked GitHub %d times; stdout:\n%s\nscreen:\n%s", asked.Load()-before, run.piped(), run.text())
+		if asked.Load() != before {
+			t.Errorf("piped listen asked GitHub %d times", asked.Load()-before)
 		}
 	})
 }

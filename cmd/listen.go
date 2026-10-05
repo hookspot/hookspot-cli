@@ -129,7 +129,7 @@ var listenCmd = &cobra.Command{
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
 		// Piped output may feed a script: it gets plain mode and no update
 		// alert.
-		terminal := cards.Terminal(cmd.OutOrStdout())
+		piped := !cards.Terminal(cmd.OutOrStdout())
 		setup := listenSetup{
 			ctx:         listenContext,
 			stop:        stopListening,
@@ -141,7 +141,7 @@ var listenCmd = &cobra.Command{
 			routes:      routes,
 			requestsURL: requestsURL,
 			listen: func(sess *session.Session) error {
-				if terminal {
+				if !piped {
 					defer announceUpdate(listenContext, sess)()
 				}
 				if err := sess.Emit(session.Connecting{}); err != nil {
@@ -158,8 +158,8 @@ var listenCmd = &cobra.Command{
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		if !terminal || os.Getenv("TERM") == "dumb" {
-			return runPlain(setup, cmd.InOrStdin(), !terminal)
+		if piped || os.Getenv("TERM") == "dumb" {
+			return runPlain(setup, cmd.InOrStdin(), piped)
 		}
 		var input io.Reader
 		if cards.Terminal(cmd.InOrStdin()) {

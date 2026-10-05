@@ -549,7 +549,7 @@ func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string
 		}
 		return lines
 	}
-	first := lipgloss.Width(help.New().ShortHelpView(bindings.ShortHelp()[:1]))
+	first := lipgloss.Width(newHelp(false, 0).ShortHelpView(bindings.ShortHelp()[:1]))
 	alert, room := m.updateAlert.Claim(width, first)
 	if alert == "" {
 		return helpView(bindings, false, width)
@@ -562,12 +562,17 @@ func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string
 // helpView lists the keys on one line, or with all set, all of them in
 // columns.
 func helpView(bindings help.KeyMap, all bool, width int) []string {
+	return strings.Split(newHelp(all, width).View(bindings), "\n")
+}
+
+// newHelp is the help model the views list keys with.
+func newHelp(all bool, width int) help.Model {
 	h := help.New()
 	h.ShowAll = all
 	h.ShortSeparator = "  "
 	h.Styles = helpStyles
 	h.SetWidth(width)
-	return strings.Split(h.View(bindings), "\n")
+	return h
 }
 
 // keyMap lists the keys; nothing replays without --forward-to.
