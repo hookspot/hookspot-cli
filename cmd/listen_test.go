@@ -505,7 +505,7 @@ func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
 		forwardTo string
 	}{
 		{name: "print-only", args: []string{"stripe"}, forwardTo: "null"},
-		{name: "forwarding", args: []string{"stripe", "--forward-to", "3000/hooks"}, forwardTo: `"http://localhost:3000/hooks"`},
+		{name: "forwarding", args: []string{"stripe", "--forward-to", "3000/hooks/"}, forwardTo: `"http://localhost:3000/hooks/"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

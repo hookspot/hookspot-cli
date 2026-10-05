@@ -327,7 +327,7 @@ func TestClientOnJoinedRunsOncePerAcceptedJoinBeforeDeliveries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions())
+	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions())
 	joins := 0
 	client.OnJoined = func() error {
 		joins++
@@ -361,7 +361,7 @@ func TestClientOnJoinedFailureEndsSessionBeforeDeliveries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, testClientOptions())
+	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions())
 	wantErr := errors.New("stdout closed")
 	client.OnJoined = func() error { return wantErr }
 	err := client.Listen(context.Background(), func(Delivery) (Response, error) {

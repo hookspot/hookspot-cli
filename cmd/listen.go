@@ -121,7 +121,7 @@ var listenCmd = &cobra.Command{
 		listenContext, stopListening := context.WithCancel(cmd.Context())
 		defer stopListening()
 		var local session.Forwarder
-		target := ""
+		var target string
 		if forwarder != nil {
 			local = forwarder
 			target = forwarder.String()
