@@ -157,29 +157,27 @@ func (s Status) Render(width int) string {
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
-	// joined is the first n parts, then as many more as fit room.
-	joined := func(n, room int) string {
-		for n < len(parts) && lipgloss.Width(strings.Join(parts[:n+1], separator)) <= room {
-			n++
-		}
-		return strings.Join(parts[:n], separator)
-	}
-	// The details after the request count give way, whole, to the alert, as
-	// the full-screen keys do; then the count, but only to its short form.
-	// The state and project stay, and offline, so does the reason.
-	keep := 3
+	// The details after the request count, parts[3:], give way whole to the
+	// alert, as the full-screen keys do; then the count, but only to its
+	// short form. The state and project stay, and offline, so does the
+	// reason.
+	kept := 3
 	if s.State == StateOffline {
-		keep = len(parts)
+		kept = len(parts)
 	}
-	alert := s.Alert.fit(width - lipgloss.Width(joined(keep, 0)) - endGap)
+	alert := s.Alert.fit(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	if alert == "" && s.State != StateOffline {
-		keep = 2
-		alert = s.Alert.shrunk(width - lipgloss.Width(joined(keep, 0)) - endGap)
+		kept = 2
+		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
 	if alert == "" {
 		return withHints(strings.Join(parts, separator), s.Hints, width)
 	}
-	return AtRightEnd(joined(keep, width-lipgloss.Width(alert)-endGap), alert, width)
+	// Then as many details as fit come back.
+	for kept < len(parts) && lipgloss.Width(strings.Join(parts[:kept+1], separator))+endGap+lipgloss.Width(alert) <= width {
+		kept++
+	}
+	return AtRightEnd(strings.Join(parts[:kept], separator), alert, width)
 }
 
 func (s Status) state() string {

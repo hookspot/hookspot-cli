@@ -60,7 +60,9 @@ func (w *Writer) Emit(event session.Event) error {
 			return err
 		}
 		w.ready = true
-		return w.writeUpdateAlert()
+		// Like the update check's failures, the alert's never stop listening.
+		_ = w.writeUpdateAlert()
+		return nil
 	case session.UpdateAvailable:
 		w.updateAlert = UpdateAlert(e).whole
 		return w.writeUpdateAlert()

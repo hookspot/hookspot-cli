@@ -10,5 +10,6 @@
 › r 4 
 ● live · Acme | Payments · 12 requests                 ↑ 1.3.0 · brew upgrade hookspot-cli
 ● live · Acme | Payments · 12 requests         ↑ update available
+● live · Acme | Payments · 12 requests · 10 ok · 2 failed     ↑ update available
 ● live · Acme | Payments        ↑ update available
 ● live · Acme | Payments · 12 requests …

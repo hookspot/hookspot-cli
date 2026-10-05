@@ -1,6 +1,10 @@
 package cmd
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestChannelUpgradeCommand(t *testing.T) {
 	tests := []struct {
@@ -19,5 +23,22 @@ func TestChannelUpgradeCommand(t *testing.T) {
 		if got := channelUpgradeCommand(test.executable, test.docker); got != test.want {
 			t.Errorf("channelUpgradeCommand(%q, %v) = %q, want %q", test.executable, test.docker, got, test.want)
 		}
+	}
+}
+
+// TestUpgradeCommandReadsTheDockerMarker covers the running binary, which no
+// package manager installed.
+func TestUpgradeCommandReadsTheDockerMarker(t *testing.T) {
+	original := dockerEnvPath
+	t.Cleanup(func() { dockerEnvPath = original })
+	dockerEnvPath = filepath.Join(t.TempDir(), ".dockerenv")
+	if got := upgradeCommand(); got != upgradeDocsURL {
+		t.Fatalf("upgradeCommand() without the marker = %q", got)
+	}
+	if err := os.WriteFile(dockerEnvPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := upgradeCommand(); got != "docker pull hookspot/cli" {
+		t.Fatalf("upgradeCommand() with the marker = %q", got)
 	}
 }
