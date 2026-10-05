@@ -177,7 +177,7 @@ func TestHandleErrorExplainsBlockedAPIClientRedirect(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = api.New(base, "key-sentinel").Me(context.Background())
+			_, err = api.New(base, "key-sentinel", "").Me(context.Background())
 			if err == nil {
 				t.Fatal("API client accepted redirect")
 			}

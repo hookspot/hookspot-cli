@@ -39,7 +39,7 @@ var projectListCmd = &cobra.Command{
 			return loginRequiredError()
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		projects, err := client.ListProjects(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("list projects: %w", err)
@@ -88,7 +88,7 @@ names. Name matching ignores case.`,
 			return loginRequiredError()
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		project, err := resolveProjectSelection(cmd.Context(), client, args, store.SavedProject(), cmd.InOrStdin(), cmd.OutOrStdout(), promptProject)
 		if err != nil {
 			return err

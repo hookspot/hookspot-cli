@@ -72,7 +72,7 @@ var listenCmd = &cobra.Command{
 			)
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		var project *api.Project
 		if cfg.OrganizationSlug != "" {
 			project, err = client.GetProjectBySlugs(cmd.Context(), cfg.OrganizationSlug, cfg.ProjectSlug)
@@ -126,7 +126,7 @@ var listenCmd = &cobra.Command{
 			local = forwarder
 			target = forwarder.String()
 		}
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
+		wsClient := ws.New(wsURL.String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
 		// Piped output may feed a script: it gets plain mode and no update
 		// alert.
 		piped := !cards.Terminal(cmd.OutOrStdout())

@@ -47,16 +47,19 @@ func (e *Error) Status() string {
 
 // Client is a small REST client for the hookspot API.
 type Client struct {
-	base   endpoint.Base
-	cliKey string
-	http   *http.Client
+	base      endpoint.Base
+	cliKey    string
+	userAgent string
+	http      *http.Client
 }
 
-// New returns a Client configured for base, authenticating with cliKey.
-func New(base endpoint.Base, cliKey string) *Client {
+// New returns a Client configured for base, authenticating with cliKey and
+// naming the CLI release in userAgent.
+func New(base endpoint.Base, cliKey, userAgent string) *Client {
 	return &Client{
-		base:   base,
-		cliKey: cliKey,
+		base:      base,
+		cliKey:    cliKey,
+		userAgent: userAgent,
 		http: &http.Client{
 			Timeout: 10 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -246,6 +249,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out interface{
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", c.userAgent)
 	if c.cliKey != "" {
 		req.Header.Set("X-CLI-KEY", c.cliKey)
 	}

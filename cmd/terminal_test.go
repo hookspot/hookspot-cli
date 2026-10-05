@@ -539,7 +539,10 @@ type fakeHookspot struct {
 	joins chan []json.RawMessage
 	// joinReplies answers the next joins in place of the plain acceptance.
 	joinReplies chan map[string]any
-	done        chan struct{}
+	// userAgents holds the first requests' User-Agent headers, the
+	// websocket's included.
+	userAgents chan string
+	done       chan struct{}
 	// holdJoins holds each join's reply until release closes.
 	holdJoins atomic.Bool
 	release   chan struct{}
@@ -571,6 +574,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		deliveries:  make(chan any),
 		joins:       make(chan []json.RawMessage, 2),
 		joinReplies: make(chan map[string]any, 2),
+		userAgents:  make(chan string, 8),
 		release:     make(chan struct{}),
 		done:        make(chan struct{}),
 	}
@@ -578,6 +582,10 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hookspot.userAgents <- r.UserAgent():
+		default:
+		}
 		switch r.URL.Path {
 		case "/cli/projects/proj_payments":
 			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))

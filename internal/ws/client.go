@@ -160,11 +160,12 @@ type Client struct {
 	// deliveries. An error ends the session as a fatal handler failure.
 	OnJoined func() error
 
-	url     string
-	cliKey  string
-	topic   string
-	sources []string
-	machine string
+	url       string
+	cliKey    string
+	userAgent string
+	topic     string
+	sources   []string
+	machine   string
 	// forwardTo is "" when listening print-only.
 	forwardTo string
 	options   clientOptions
@@ -179,14 +180,14 @@ type clientOptions struct {
 	maxFrameBytes     int64
 }
 
-// New returns a Client that connects to url, authenticates with cliKey, and
-// joins topic, requesting the given sources and reporting the hostname and
-// forwardTo, the forwarding target.
-func New(url, cliKey, topic string, sources []string, forwardTo string) *Client {
-	return newClient(url, cliKey, topic, sources, forwardTo, clientOptions{})
+// New returns a Client that connects to url, authenticates with cliKey,
+// names the CLI release in userAgent, and joins topic, requesting the given
+// sources and reporting the hostname and forwardTo, the forwarding target.
+func New(url, cliKey, userAgent, topic string, sources []string, forwardTo string) *Client {
+	return newClient(url, cliKey, userAgent, topic, sources, forwardTo, clientOptions{})
 }
 
-func newClient(url, cliKey, topic string, sources []string, forwardTo string, options clientOptions) *Client {
+func newClient(url, cliKey, userAgent, topic string, sources []string, forwardTo string, options clientOptions) *Client {
 	if options.dialer == nil {
 		options.dialer = websocket.DefaultDialer
 	}
@@ -210,7 +211,7 @@ func newClient(url, cliKey, topic string, sources []string, forwardTo string, op
 	if err != nil {
 		machine = ""
 	}
-	return &Client{url: url, cliKey: cliKey, topic: topic, sources: sources, machine: machine, forwardTo: forwardTo, options: options}
+	return &Client{url: url, cliKey: cliKey, userAgent: userAgent, topic: topic, sources: sources, machine: machine, forwardTo: forwardTo, options: options}
 }
 
 // connWriter serializes writes to a websocket connection and assigns a unique,
@@ -291,7 +292,7 @@ func (w *connWriter) sendMessage(m message, join bool, pending *heartbeatTracker
 // blocks until handler returns an error, the channel errors/closes, or ctx is
 // cancelled.
 func (c *Client) Listen(ctx context.Context, handler Handler) error {
-	header := http.Header{}
+	header := http.Header{"User-Agent": {c.userAgent}}
 	if c.cliKey != "" {
 		header.Set("X-CLI-KEY", c.cliKey)
 	}
