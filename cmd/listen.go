@@ -158,9 +158,8 @@ var listenCmd = &cobra.Command{
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		piped := !terminal
-		if piped || os.Getenv("TERM") == "dumb" {
-			return runPlain(setup, cmd.InOrStdin(), piped)
+		if !terminal || os.Getenv("TERM") == "dumb" {
+			return runPlain(setup, cmd.InOrStdin(), !terminal)
 		}
 		var input io.Reader
 		if cards.Terminal(cmd.InOrStdin()) {

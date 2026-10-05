@@ -260,7 +260,7 @@ func TestFullscreen(t *testing.T) {
 				r.recorded(replay),
 			}
 		}},
-		{name: "update narrow", width: 30, height: 16, events: func(r *tally) []tea.Msg {
+		{name: "update narrow", width: 26, height: 16, events: func(r *tally) []tea.Msg {
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
 		}},
 		{name: "update help", width: 80, height: 24, events: func(r *tally) []tea.Msg {

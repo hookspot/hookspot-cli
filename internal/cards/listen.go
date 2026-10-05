@@ -132,7 +132,7 @@ type Status struct {
 	Project string
 	Totals  session.Stats
 	Hints   []string
-	// Alert takes the hints' place.
+	// Alert takes the hints' place where it fits.
 	Alert Alert
 }
 
@@ -156,16 +156,16 @@ func (s Status) Render(width int) string {
 	}
 	separator := faintStyle.Render(" · ")
 	line := strings.Join(parts, separator)
-	if s.Alert == (Alert{}) {
-		return withHints(line, s.Hints, width)
-	}
 	if alert := s.Alert.fit(width - lipgloss.Width(line) - endGap); alert != "" {
 		return AtRightEnd(line, alert, width)
 	}
-	// Even the short form doesn't fit: the counts give way to it, but not
-	// the state and project, which the cut's "…" follows.
-	room := width - lipgloss.Width(s.Alert.short) - endGap
-	return AtRightEnd(truncate(line, max(room, lipgloss.Width(parts[0]+separator+parts[1])+1)), s.Alert.short, width)
+	// The counts give way to the short form, but not the state and project,
+	// which the cut's "…" follows, nor why the connection dropped.
+	keep := lipgloss.Width(parts[0]+separator+parts[1]) + 1
+	if alert := s.Alert.squeeze(width - keep - endGap); alert != "" && s.State != StateOffline {
+		return AtRightEnd(truncate(line, width-lipgloss.Width(alert)-endGap), alert, width)
+	}
+	return withHints(line, s.Hints, width)
 }
 
 func (s Status) state() string {
@@ -234,6 +234,14 @@ func (a Alert) Claim(width, keep int) (string, int) {
 		return "", width
 	}
 	return alert, width - lipgloss.Width(alert) - endGap
+}
+
+// squeeze is the alert's short form within width columns, or "".
+func (a Alert) squeeze(width int) string {
+	if lipgloss.Width(a.short) > width {
+		return ""
+	}
+	return a.short
 }
 
 // fit is the alert's widest form within width columns, or "".

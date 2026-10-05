@@ -41,7 +41,7 @@ type Stream struct {
 	input  string
 	reply  string
 
-	// updateAlert takes the status line's hint until listen exits.
+	// updateAlert names GitHub's newer release, once the check finds one.
 	updateAlert cards.Alert
 }
 
@@ -169,11 +169,10 @@ func (m Stream) statusHints() []string {
 	return []string{QuitHint}
 }
 
-// statusAlert takes the status line's hint while connecting or live. Then
-// the line says why the connection dropped, what a second Ctrl-C does, or
-// the run's totals.
+// statusAlert takes the status line's hint, except once listening stops,
+// when the line says what a second Ctrl-C does, and then the run's totals.
 func (m Stream) statusAlert() cards.Alert {
-	if m.state > cards.StateLive {
+	if m.state >= cards.StateStopping {
 		return cards.Alert{}
 	}
 	return m.updateAlert

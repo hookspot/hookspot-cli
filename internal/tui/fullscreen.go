@@ -100,7 +100,7 @@ type Fullscreen struct {
 	toastID int
 	help    bool
 
-	// updateAlert stays at the keys' right end until listen exits.
+	// updateAlert names GitHub's newer release, once the check finds one.
 	updateAlert cards.Alert
 }
 
@@ -551,7 +551,12 @@ func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string
 	}
 	first := lipgloss.Width(help.New().ShortHelpView(bindings.ShortHelp()[:1]))
 	alert, room := m.updateAlert.Claim(width, first)
-	return []string{cards.AtRightEnd(helpView(bindings, false, room)[0], alert, width)}
+	if alert == "" {
+		return helpView(bindings, false, width)
+	}
+	// help overruns a width too narrow for its ellipsis.
+	keys := ansi.Truncate(helpView(bindings, false, room)[0], room, "")
+	return []string{cards.AtRightEnd(keys, alert, width)}
 }
 
 // helpView lists the keys on one line, or with all set, all of them in

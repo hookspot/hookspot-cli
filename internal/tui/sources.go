@@ -450,7 +450,8 @@ func (k sourcesKeyMap) ShortHelp() []key.Binding {
 	if k.copying {
 		return []key.Binding{sourcesKeys.field, sourcesKeys.cancel}
 	}
-	// As on the requests page, help and quit come first.
+	// The line is cut from its end, for the update alert too, so help and
+	// quit come first.
 	return []key.Binding{keys.help, keys.quit, keys.up, sourcesKeys.copy, keys.test, sourcesKeys.back}
 }
 

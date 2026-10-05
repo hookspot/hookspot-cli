@@ -284,7 +284,7 @@ func TestStreamStatusLine(t *testing.T) {
 		{name: "offline", events: func(t *testing.T, h *harness, _ func(string)) {
 			h.emit(t, session.Ready{})
 			h.handle(t, delivery(1, "/hooks"))
-			// The status line says why, over the update alert.
+			// The reason stays; the update alert doesn't fit beside it.
 			h.emit(t, updateAvailable)
 			h.emit(t, lost)
 		}},
