@@ -8,7 +8,7 @@ linters:
       enable:
         - shadow
   exclusions:
-    # Unchecked Close and Print errors: the idiom for deferred closes and terminal output.
+    # Unchecked errors Go code commonly leaves, such as Close's, Print's and os.Remove's.
     presets:
       - std-error-handling
 
