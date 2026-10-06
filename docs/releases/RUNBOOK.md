@@ -30,10 +30,6 @@ Before the first release, and worth re-checking when a release fails early:
 - The `HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN`
   Actions secrets are set (see Secrets below).
 - The npm package `@hookspot/cli` exists and trusts `release.yml` (see Secrets below).
-- The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
-  clutter the release list, and the newest reachable one is what
-  `make release-snapshot` names in its formula (see Local snapshot); delete
-  them when convenient.
 
 ## Tag and push
 

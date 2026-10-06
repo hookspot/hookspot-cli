@@ -3,9 +3,7 @@ version: 2
 project_name: hookspot
 
 env:
-  # `make local-build` overrides these for local binaries.
-  - SERVER_URL={{ envOrDefault "SERVER_URL" "https://app.hookspot.dev/" }}
-  - CONFIG_PREFIX={{ envOrDefault "CONFIG_PREFIX" "" }}
+  - SERVER_URL=https://app.hookspot.dev/
   - GOTOOLCHAIN=local
   - GOFLAGS=-mod=readonly
 
@@ -26,12 +24,13 @@ builds:
     flags:
       - -trimpath
       - -buildvcs=true
+    # An empty configPrefix keeps a release's config apart from dev builds'.
     ldflags:
       - >-
         -s -w
         -X hookspot/cmd.version={{ .Version }}
         -X hookspot/cmd.serverURL={{ .Env.SERVER_URL }}
-        -X hookspot/cmd.configPrefix={{ .Env.CONFIG_PREFIX }}
+        -X hookspot/cmd.configPrefix=
         -X hookspot/cmd.commit={{ .FullCommit }}
         -X hookspot/cmd.sourceDate={{ .CommitDate }}
         -X hookspot/cmd.buildKind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}

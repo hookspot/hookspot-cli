@@ -33,8 +33,10 @@ DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 # The packages whose tests compare output with testdata/*.golden files.
 GOLDEN_PKGS = $(shell $(GO) list -f '{{range .TestImports}}{{if eq . "github.com/charmbracelet/x/exp/golden"}}{{$$.ImportPath}}{{end}}{{end}}' ./...)
 E2E_OUTPUT ?= tmp/e2e/hookspot
+E2E_GOOS ?= darwin
+E2E_GOARCH ?= $(shell uname -m | sed s/x86_64/amd64/)
 
-.PHONY: tidy build test golden vet fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
+.PHONY: tidy build test golden vet fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot release-publish release-image release-image-publish
 
 tidy:
 	$(GO) mod tidy
@@ -83,7 +85,7 @@ check: toolchain-check lint vet test release-tools release-check release-snapsho
 #   make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443 UPDATE_API_URL=http://127.0.0.1:8080
 # VERSION is what it reports and compares with the latest release the GitHub
 # API at UPDATE_API_URL (default GitHub's) serves; the later -X wins. With
-# DOCKER=1 it builds for LOCAL_GOOS/LOCAL_GOARCH.
+# DOCKER=1 it builds for E2E_GOOS/E2E_GOARCH, this Mac's by default.
 e2e-build: LDFLAGS += -X hookspot/cmd.version=$(VERSION) $(if $(UPDATE_API_URL),-X hookspot/cmd.githubAPIBaseURL=$(UPDATE_API_URL))
 e2e-build:
 ifndef VERSION
@@ -92,7 +94,7 @@ endif
 ifndef SERVER_URL
 	$(error SERVER_URL is required, e.g. make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443)
 endif
-	$(if $(filter 1,$(DOCKER)),GOOS=$(LOCAL_GOOS) GOARCH=$(LOCAL_GOARCH) )$(GO) build -o $(E2E_OUTPUT) -ldflags "$(LDFLAGS)" .
+	$(if $(filter 1,$(DOCKER)),GOOS=$(E2E_GOOS) GOARCH=$(E2E_GOARCH) )$(GO) build -o $(E2E_OUTPUT) -ldflags "$(LDFLAGS)" .
 
 run:
 ifndef SERVER_URL
@@ -133,17 +135,6 @@ endef
 release-snapshot:
 	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
-
-# Unpublished binary for a non-prod server (host macOS by default); see
-# scripts/build-local.fish. The tmpfs keeps release-snapshot's dist/, and the
-# skipped hooks only stage the prod npm package and build-info.json.
-LOCAL_GOOS ?= darwin
-LOCAL_GOARCH ?= $(shell uname -m | sed s/x86_64/amd64/)
-LOCAL_OUTPUT ?= tmp/dist/hookspot_$(CONFIG_PREFIX)
-
-local-build: release-tools
-	mkdir -p $(dir $(LOCAL_OUTPUT))
-	$(DOCKER_RUN) --tmpfs /src/dist -e SERVER_URL="$(SERVER_URL)" -e CONFIG_PREFIX=$(CONFIG_PREFIX) -e GOOS=$(LOCAL_GOOS) -e GOARCH=$(LOCAL_GOARCH) $(RELEASE_IMAGE) build --snapshot --single-target --skip=before,post-hooks --output $(LOCAL_OUTPUT)
 
 # CI only: publishes the GitHub Release and the Homebrew formula.
 release-publish:
