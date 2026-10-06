@@ -624,7 +624,7 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 		{name: "print-only", hints: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := map[string]string{"request_uid": "req_1", "source_uid": "src_stripe", "method": "POST", "path": "/"}
+			root := map[string]string{"request_uid": "req_1", "source_uid": "src_stripe", "route_uid": "rte_stripe", "method": "POST", "path": "/"}
 			first, second := maps.Clone(root), maps.Clone(root)
 			first["attempt_uid"], second["attempt_uid"] = "att_1", "att_2"
 			result, _ := runListenStream(t, sources, append([]string{"stripe"}, test.args...), first, second)
@@ -777,7 +777,7 @@ func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
 	if err := runLineCommand(sess, writer, lineCommandOptions{forwarding: true}, ""); err != nil || stdout.Len()+stderr.Len() != 0 {
 		t.Fatalf("↵ before any request = %v, output %q %q", err, stdout.String(), stderr.String())
 	}
-	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks"}); err != nil {
+	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/hooks"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range []string{"r 1", " r  2 ", "r 9", "r x"} {
@@ -858,7 +858,7 @@ func TestLineCommandsSendTestEventsAndRefuseReplaysWhenInspecting(t *testing.T) 
 	var stdout, stderr bytes.Buffer
 	writer := cards.NewWriter(&stdout, &stderr, cards.Listen{Sources: sourceNamesByUID(sources)}, "")
 	sess := session.New(context.Background(), sources, nil, writer)
-	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks"}); err != nil {
+	if _, err := sess.Handle(ws.Delivery{AttemptUID: "att_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/hooks"}); err != nil {
 		t.Fatal(err)
 	}
 	stdout.Reset()
@@ -952,12 +952,12 @@ func TestListenStream(t *testing.T) {
 	t.Run("inspect", func(t *testing.T) {
 		result, _ := runListenStream(t, fakeHookspotSources, nil,
 			ws.Delivery{
-				AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Query: "attempt=1",
+				AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe", Query: "attempt=1",
 				Headers: http.Header{"Content-Type": []string{"application/json"}, "Authorization": []string{"Bearer secret"}},
 				Body:    []byte(`{"type":"payment_intent.succeeded","amount":2000}`),
 			},
 			ws.Delivery{
-				AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", Method: "POST", Path: "/webhooks/github",
+				AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", RouteUID: "rte_github", Method: "POST", Path: "/webhooks/github",
 				Headers: http.Header{"X-Github-Event": []string{"push"}},
 				Body:    []byte("ref=refs/heads/main"),
 			},
@@ -970,7 +970,7 @@ func TestListenStream(t *testing.T) {
 	t.Run("limits", func(t *testing.T) {
 		args := []string{"--show-sensitive-headers", "--max-body-lines", "1", "--max-headers", "1", "--max-value-chars", "20"}
 		result, _ := runListenStream(t, fakeHookspotSources, args, ws.Delivery{
-			AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe",
+			AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe",
 			Headers: http.Header{"Content-Type": []string{"application/json"}, "Authorization": []string{"Bearer sk_test_0123456789abcdef"}},
 			Body:    []byte(`{"type":"payment_intent.succeeded","amount":2000}`),
 		})
@@ -987,9 +987,9 @@ func TestListenStream(t *testing.T) {
 		defer local.Close()
 		// Rows and cards of two sources interleave in one burst.
 		result, _ := runListenStream(t, fakeHookspotSources, []string{"--forward-to", local.URL},
-			ws.Delivery{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"payment_intent.succeeded"}`)},
-			ws.Delivery{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", Method: "POST", Path: "/webhooks/github", Headers: jsonHeaders, Body: []byte(`{"action":"opened"}`)},
-			ws.Delivery{AttemptUID: "att_3", RequestUID: "req_stripe_2", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"invoice.paid"}`)},
+			ws.Delivery{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"payment_intent.succeeded"}`)},
+			ws.Delivery{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", RouteUID: "rte_github", Method: "POST", Path: "/webhooks/github", Headers: jsonHeaders, Body: []byte(`{"action":"opened"}`)},
+			ws.Delivery{AttemptUID: "att_3", RequestUID: "req_stripe_2", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe", Headers: jsonHeaders, Body: []byte(`{"type":"invoice.paid"}`)},
 		)
 		if strings.ContainsRune(result.stdout, '\x1b') {
 			t.Fatalf("piped stream has ANSI codes: %q", result.stdout)

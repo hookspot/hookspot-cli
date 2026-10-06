@@ -36,8 +36,8 @@ import (
 
 var sources = []api.Source{{UID: "src_stripe", Name: "stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
 
-// delivery is one to path, through the sources route whose destination it
-// is, if any.
+// delivery returns a delivery to path through the sources route with that
+// destination, if any.
 func delivery(attempt int, path string) ws.Delivery {
 	d := ws.Delivery{AttemptUID: "att_" + strconv.Itoa(attempt), SourceUID: "src_stripe", Method: "POST", Path: path}
 	for _, route := range sources[0].Routes {
@@ -812,7 +812,7 @@ func listenTo(t *testing.T, h *harness) <-chan error {
 			return
 		}
 		_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
-		_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{"attempt_uid": "att_1", "source_uid": "src_stripe", "method": "POST", "path": "/hooks"}})
+		_ = conn.WriteJSON([]any{nil, nil, join[2], "delivery", map[string]string{"attempt_uid": "att_1", "source_uid": "src_stripe", "route_uid": "rte_stripe", "method": "POST", "path": "/hooks"}})
 		_, _, _ = conn.ReadMessage()
 	}))
 	t.Cleanup(server.Close)

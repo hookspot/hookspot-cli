@@ -700,7 +700,7 @@ func (h *fakeHookspot) end(t *testing.T) {
 
 // terminalDelivery is a POST of payment_intent.succeeded to stripe.
 var terminalDelivery = ws.Delivery{
-	AttemptUID: "att_1", RequestUID: "req_1", SourceUID: "src_stripe", Method: "POST", Path: "/webhooks/stripe",
+	AttemptUID: "att_1", RequestUID: "req_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe",
 	Headers: http.Header{"Content-Type": []string{"application/json"}},
 	Body:    []byte(`{"type":"payment_intent.succeeded"}`),
 }

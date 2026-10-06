@@ -10,7 +10,7 @@ prefix. After installing, confirm the binary before logging in:
 hookspot version --json
 ```
 
-The JSON identifies the version, source commit, environment, compiled endpoint,
+The JSON identifies the version, source commit, build kind, compiled endpoint,
 Go version, and target platform. The endpoint is part of the executable and
 cannot be changed at runtime.
 
@@ -189,8 +189,7 @@ hookspot listen
 choose an organization and project; the CLI saves both. On a headless or SSH
 machine, open the printed URL manually. `hookspot login -i` prompts for a key
 to paste (piping a key on stdin requires `-i`), and CI should pass
-`HOOKSPOT_CLI_KEY` or `--cli-key`. Browser login requires a Hookspot server
-with browser login support.
+`HOOKSPOT_CLI_KEY` or `--cli-key`.
 
 After login, `project use` selects the only accessible project automatically
 or opens an arrow-key picker when several are available. Noninteractive callers
@@ -249,10 +248,10 @@ Remove-Item "$HOME\.local\bin\hookspot.exe"
 
 Credential and configuration removal is separate. `hookspot logout` clears the
 saved key but does not unset `HOOKSPOT_CLI_KEY`; unset the environment variable
-yourself. Delete the config directory only when you intentionally want to
-remove its saved key and project. The same home-relative location applies on
-Windows:
+yourself. Delete the config directory, and the `.hookspot` folders
+`project use --local` created, only when you intentionally want to remove their
+saved keys and projects. The same home-relative location applies on Windows:
 
 ```text
-~/.config/hookspot/prod
+~/.config/hookspot
 ```

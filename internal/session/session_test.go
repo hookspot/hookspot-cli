@@ -25,8 +25,8 @@ var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{
 	{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
 }}}
 
-// delivery is one to path, through the testSources route whose destination
-// it is, if any.
+// delivery returns a delivery to path through the testSources route with that
+// destination, if any.
 func delivery(path string) ws.Delivery {
 	d := ws.Delivery{
 		AttemptUID: "att_1",
