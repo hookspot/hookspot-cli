@@ -21,7 +21,7 @@ IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target r
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
-# Only GoReleaser builds anything other than a dev binary.
+# Only GoReleaser builds anything but the dev build kind.
 LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
 # test, golden, fmt and lint pass ARGS to go or golangci-lint unexpanded, so a
 # -run pattern keeps its $; run and dev pass it to the CLI.
