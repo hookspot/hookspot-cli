@@ -11,8 +11,8 @@ DOCKER ?=
 # Go's VCS stamping read inside the container.
 GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 DOCKER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(if $(GIT_COMMON_DIR),-v "$(GIT_COMMON_DIR)":"$(GIT_COMMON_DIR)") -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build
-GO := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -e GOARCH $(GO_IMAGE) )go
-LINT := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -v hookspot-golangci-cache:/root/.cache/golangci-lint $(GOLANGCI_LINT_IMAGE) )golangci-lint
+GO := $(if $(filter 1,$(DOCKER)),$(DOCKER_RUN) -e GOOS -e GOARCH $(GO_IMAGE) )go
+LINT := $(if $(filter 1,$(DOCKER)),$(DOCKER_RUN) -e GOOS -v hookspot-golangci-cache:/root/.cache/golangci-lint $(GOLANGCI_LINT_IMAGE) )golangci-lint
 RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG -e HOOKSPOT_CONFIG_FILE
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
@@ -93,7 +93,7 @@ endif
 ifndef SERVER_URL
 	$(error SERVER_URL is required, e.g. make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443)
 endif
-	$(if $(DOCKER),GOOS=$(LOCAL_GOOS) GOARCH=$(LOCAL_GOARCH) )$(GO) build -o $(E2E_OUTPUT) -ldflags "$(LDFLAGS)" .
+	$(if $(filter 1,$(DOCKER)),GOOS=$(LOCAL_GOOS) GOARCH=$(LOCAL_GOARCH) )$(GO) build -o $(E2E_OUTPUT) -ldflags "$(LDFLAGS)" .
 
 run:
 ifndef SERVER_URL
