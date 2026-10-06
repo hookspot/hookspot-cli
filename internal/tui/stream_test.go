@@ -348,18 +348,19 @@ func TestStreamStatusLine(t *testing.T) {
 // comments of Status.Render, Status.offline and statusAlert give.
 func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 	const project = "Acme | Payments"
-	lost := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
 	states := []struct {
 		name, state string
 		events      []tea.Msg
-		offline     bool
-		stopping    bool
+		// reason is why the connection dropped, while offline.
+		reason   string
+		stopping bool
 		// hint ends the line without the prompt, promptHint with it.
 		hint, promptHint string
 	}{
 		{name: "connecting", state: "○ connecting…", hint: QuitHint},
 		{name: "live", state: "● live", events: []tea.Msg{session.Ready{}}, hint: QuitHint},
-		{name: "offline", state: "○ reconnecting", events: []tea.Msg{session.Ready{}, lost}, offline: true, hint: QuitHint},
+		{name: "offline", state: "○ reconnecting", events: []tea.Msg{session.Ready{}}, reason: "dial tcp: connection refused", hint: QuitHint},
+		{name: "offline briefly", state: "○ reconnecting", events: []tea.Msg{session.Ready{}}, reason: "EOF", hint: QuitHint},
 		{name: "stopping", state: "◌ stopping…", events: []tea.Msg{session.Ready{}, stoppingMsg{}}, stopping: true, hint: QuitHint, promptHint: "ctrl-c force quit"},
 		{name: "stopped", state: "■ stopped", events: []tea.Msg{session.Ready{}, stoppingMsg{}, stoppedMsg{}}, stopping: true},
 	}
@@ -409,8 +410,8 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 						// stayWhole; offline it keeps them all.
 						parts := append([]string{s.state, project}, total.parts...)
 						stay, stayWhole := 2, 3
-						if s.offline {
-							parts = append(parts, lost.Err.Error())
+						if s.reason != "" {
+							parts = append(parts, s.reason)
 							stay, stayWhole = len(parts), len(parts)
 						}
 						hint := s.hint
@@ -419,6 +420,9 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 						}
 						stream := Stream{Project: project, Prompt: prompt}
 						events := append([]tea.Msg{session.Recorded{Totals: total.stats}}, s.events...)
+						if s.reason != "" {
+							events = append(events, session.ConnectionLost{Err: errors.New(s.reason)})
+						}
 						for columns := 20; columns <= 140; columns++ {
 							without := streamView(stream, columns, events...)
 							with := streamView(stream, columns, append([]tea.Msg{alert.event}, events...)...)
@@ -450,16 +454,16 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 							// Live, the hint shows while every part fits beside it; stopping,
 							// the details give way to it as to an alert. Offline, where the
 							// parts don't fit, the reason keeps the most leading totals that
-							// fit beside it, and only the width cuts it, to no fewer than
+							// fit beside it, and only the width cuts it, unless to fewer than
 							// minCut columns.
 							want := ending(len(parts), len(parts), hint, wholeOnly)
 							if s.stopping {
 								want = ending(2, 2, hint, wholeOnly)
 							}
 							shown := parts
-							if s.offline && columns-ansi.StringWidth(s.state+" · "+project+" · ") >= minCut {
+							if s.reason != "" && columns-ansi.StringWidth(s.state+" · "+project+" · ") >= min(minCut, ansi.StringWidth(s.reason)) {
 								for n := len(parts) - 1; n >= 2; n-- {
-									shown = append(slices.Clone(parts[:n]), lost.Err.Error())
+									shown = append(slices.Clone(parts[:n]), s.reason)
 									if ansi.StringWidth(strings.Join(shown, " · ")) <= columns {
 										break
 									}

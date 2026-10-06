@@ -181,20 +181,24 @@ func (s Status) Render(width int) string {
 // parts. Every part stays over the alert, which shows only beside them all,
 // shrunk if need be. Where they don't fit, the hints and then the totals,
 // last first, give way whole to the reason, which only the width cuts;
-// where the reason would keep fewer than minCut columns, nothing gives way.
+// where even beside the state and project alone it would be cut to fewer
+// than minCut columns, nothing gives way.
 func (s Status) offline(parts []string, separator string, width int) string {
 	if s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
 	line := strings.Join(parts, separator)
-	room := width - lipgloss.Width(line) - endGap
-	if alert := cmp.Or(s.Alert.fit(room), s.Alert.shrunk(room)); alert != "" {
+	if alert, _ := s.Alert.Claim(width, lipgloss.Width(line)); alert != "" {
 		return AtRightEnd(line, alert, width)
 	}
-	if s.Err == nil || lipgloss.Width(line) <= width || width-lipgloss.Width(strings.Join(parts[:2], separator)+separator) < minCut {
+	if s.Err == nil || lipgloss.Width(line) <= width {
 		return withHints(line, s.Hints, width)
 	}
 	totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
+	reasonRoom := width - lipgloss.Width(strings.Join(parts[:2], separator)+separator)
+	if reasonRoom < min(minCut, lipgloss.Width(reason)) {
+		return truncate(line, width)
+	}
 	for len(totals) > 0 && lipgloss.Width(line) > width {
 		totals = totals[:len(totals)-1]
 		line = strings.Join(slices.Concat(parts[:2], totals, []string{reason}), separator)
@@ -299,7 +303,7 @@ func (a Alert) shrunk(width int) string {
 	return a.short
 }
 
-// minCut is the fewest columns a cut notice keeps.
+// minCut is the fewest columns a cut notice or offline reason keeps.
 const minCut = 20
 
 // fit is the alert's widest form within width columns, or "".
