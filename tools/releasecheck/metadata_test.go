@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -68,7 +69,8 @@ func TestRunMetadataWritesSnapshotBuildInfoToAbsoluteOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o644 {
+	// Windows keeps no Unix mode: Go reports any writable file as 0666.
+	if got := info.Mode().Perm(); got != 0o644 && runtime.GOOS != "windows" {
 		t.Fatalf("metadata mode = %04o, want 0644", got)
 	}
 }
