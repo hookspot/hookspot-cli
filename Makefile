@@ -31,7 +31,7 @@ DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 GOLDEN_PKGS = $(shell $(GO) list -f '{{range .TestImports}}{{if eq . "github.com/charmbracelet/x/exp/golden"}}{{$$.ImportPath}}{{end}}{{end}}' ./...)
 E2E_OUTPUT ?= tmp/e2e/hookspot
 
-.PHONY: tidy build test golden vet fmt lint check e2e-build run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
+.PHONY: tidy build test golden vet fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
 
 tidy:
 	$(GO) mod tidy
@@ -61,9 +61,19 @@ fmt:
 lint:
 	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(value ARGS) || exit 1; done
 
+# go.mod, mise.toml and release/toolchain.env's images pin the same Go, and
+# mise.toml and the image the same golangci-lint.
+toolchain-check:
+	@go=$$(sed -n 's/^go = "\(.*\)"$$/\1/p' mise.toml); lint=$$(sed -n 's/^golangci-lint = "\(.*\)"$$/\1/p' mise.toml); \
+	grep -qx "go $$go" go.mod \
+		&& grep -q "^GO_IMAGE=golang:$$go@" release/toolchain.env \
+		&& grep -q "^GO_ALPINE_IMAGE=golang:$$go-" release/toolchain.env \
+		&& grep -q "^GOLANGCI_LINT_IMAGE=golangci/golangci-lint:v$$lint@" release/toolchain.env \
+		|| { echo "go.mod, mise.toml and release/toolchain.env pin different Go or golangci-lint versions" >&2; exit 1; }
+
 # Everything CI runs. release-snapshot needs a clean tree, and release-image
 # the binaries it stages.
-check: lint vet test release-tools release-check release-snapshot release-image npm-test
+check: toolchain-check lint vet test release-tools release-check release-snapshot release-image npm-test
 	scripts/smoke_test.sh
 	cd npm && npm pack --dry-run
 
