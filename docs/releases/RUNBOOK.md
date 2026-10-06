@@ -43,9 +43,10 @@ gh run watch
 ## Release notes
 
 GoReleaser writes them from the commits since the previous tag: `feat:`
-commits under Features, `fix:` commits under Fixes, and no others. The first
-release has no previous tag, so it goes out without notes; write them once
-`release` is green:
+commits under Features, `fix:` commits under Fixes, and no others. A
+pre-release tag counts, so after `v1.2.3-rc.1`, `v1.2.3`'s notes list only the
+commits since it. The first release has no previous tag, so it goes out
+without notes; write them once `release` is green:
 
 ```sh
 gh release edit v0.1.0 --repo hookspot/hookspot-cli --notes-file notes.md

@@ -24,7 +24,7 @@ builds:
     flags:
       - -trimpath
       - -buildvcs=true
-    # An empty configPrefix keeps a release's config apart from dev builds'.
+    # An empty configPrefix puts a release's config in the root folder, not dev/.
     ldflags:
       - >-
         -s -w
@@ -80,9 +80,8 @@ checksum:
 snapshot:
   version_template: '0.0.0-snapshot.{{ .ShortCommit }}'
 
-# Release notes list the feat: and fix: commits since the previous tag; the
-# rest (test:, refactor:, docs:, chore:, ci:, build:, merges) match no group
-# and are left out. Without a previous tag (v0.1.0), they're written by hand.
+# Commits matching no group are left out of the release notes. Without a
+# previous tag (v0.1.0), the notes are written by hand.
 changelog:
   disable: '{{ not .PreviousTag }}'
   groups:
