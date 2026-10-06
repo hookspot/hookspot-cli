@@ -17,16 +17,18 @@ IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target r
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
-# Only GoReleaser builds anything other than a dev binary.
-LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
+# Only GoReleaser builds anything other than a dev kind. A dev version never
+# asks GITHUB_API_URL (default GitHub's) for a newer release.
+LDFLAGS = -X hookspot/cmd.version=$(or $(VERSION),dev) -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev $(if $(GITHUB_API_URL),-X hookspot/cmd.githubAPIBaseURL=$(GITHUB_API_URL))
 # test, golden and lint pass ARGS to go test or golangci-lint run; run and dev
 # to the CLI.
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 # The packages whose tests compare output with testdata/*.golden files.
 GOLDEN_PKGS = $(shell $(GO) list -f '{{range .TestImports}}{{if eq . "github.com/charmbracelet/x/exp/golden"}}{{$$.ImportPath}}{{end}}{{end}}' ./...)
+E2E_OUTPUT ?= tmp/e2e/hookspot
 
-.PHONY: tidy build test golden vet fmt lint check run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
+.PHONY: tidy build test golden vet fmt lint check e2e-build run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
 
 tidy:
 	$(GO) mod tidy
@@ -61,6 +63,19 @@ lint:
 check: lint vet test release-tools release-check release-snapshot release-image npm-test
 	scripts/smoke_test.sh
 	cd npm && npm pack --dry-run
+
+# A host binary for end-to-end checks against a local Hookspot, e.g.
+#   make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443 GITHUB_API_URL=http://127.0.0.1:8080
+# VERSION is what it reports and compares with the latest release that
+# GITHUB_API_URL serves. With DOCKER=1 it builds for LOCAL_GOOS/LOCAL_GOARCH.
+e2e-build:
+ifndef VERSION
+	$(error VERSION is required, e.g. make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443)
+endif
+ifndef SERVER_URL
+	$(error SERVER_URL is required, e.g. make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443)
+endif
+	$(if $(DOCKER),GOOS=$(LOCAL_GOOS) GOARCH=$(LOCAL_GOARCH) )$(GO) build -o $(E2E_OUTPUT) -ldflags "$(LDFLAGS)" .
 
 run:
 ifndef SERVER_URL
