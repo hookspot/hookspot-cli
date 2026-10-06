@@ -255,6 +255,3 @@ Windows:
 ```text
 ~/.config/hookspot
 ```
-
-`project use --local` keeps its records in `.hookspot` folders of the
-directories it ran in; delete those the same way.
