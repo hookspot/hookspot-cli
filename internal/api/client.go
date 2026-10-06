@@ -267,7 +267,8 @@ func (c *Client) do(ctx context.Context, method, path string, in, out interface{
 	defer resp.Body.Close()
 
 	// Reads are always 200; creating a login attempt returns 201.
-	if resp.StatusCode != http.StatusOK && !(method == http.MethodPost && resp.StatusCode == http.StatusCreated) {
+	created := method == http.MethodPost && resp.StatusCode == http.StatusCreated
+	if resp.StatusCode != http.StatusOK && !created {
 		return decodeErrorResponse(req, resp)
 	}
 

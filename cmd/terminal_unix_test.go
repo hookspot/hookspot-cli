@@ -25,7 +25,7 @@ func readTerminalMode(t *testing.T, pty xpty.Pty) terminalMode {
 	controlErr := pty.(*xpty.UnixPty).Control(func(fd uintptr) {
 		mode, err = termios.GetTermios(int(fd))
 	})
-	if err := errors.Join(controlErr, err); err != nil {
+	if err = errors.Join(controlErr, err); err != nil {
 		t.Fatal(err)
 	}
 	return *mode

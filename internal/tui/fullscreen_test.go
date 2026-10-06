@@ -473,7 +473,7 @@ func TestFullscreenCommands(t *testing.T) {
 
 	m = model.(Fullscreen)
 	m.ShowSensitiveHeaders = true
-	model = press(press(m, letter('c')), letter('e'))
+	press(press(m, letter('c')), letter('e'))
 	if asked := []string{receive(t, requests.asked), receive(t, requests.asked)}; !slices.Equal(asked, []string{"curl #2 redact false", "fixture #2 redact false"}) {
 		t.Fatalf("with --show-sensitive-headers asked for %v", asked)
 	}

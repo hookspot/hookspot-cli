@@ -51,7 +51,7 @@ func TestUnixAtomicWriterFaultsPreserveStoreAndRemoveTemp(t *testing.T) {
 			store.write = func(path string, contents []byte, noOverwrite bool) error {
 				return writeFileAtomicWithOperations(path, contents, noOverwrite, operations)
 			}
-			if err := store.SaveProject("new-project"); !errors.Is(err, wantErr) {
+			if err = store.SaveProject("new-project"); !errors.Is(err, wantErr) {
 				t.Fatalf("SaveProject error = %v", err)
 			}
 			contents, err := os.ReadFile(path)
@@ -80,7 +80,7 @@ func TestUnixAtomicWriterCreatesPrivateFileUnderPermissiveUmask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveCLIKey("test-key"); err != nil {
+	if err = store.SaveCLIKey("test-key"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)
@@ -113,7 +113,7 @@ func TestUnixStoreRejectsSymlinkTargetAndPreservesParentMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveCLIKey("saved-key"); err != nil {
+	if err = store.SaveCLIKey("saved-key"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)

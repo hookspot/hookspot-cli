@@ -49,7 +49,7 @@ func runMetadata(args []string) error {
 	if err != nil {
 		return fmt.Errorf("metadata server URL: %w", err)
 	}
-	if err := validateBuildIdentity(*version, *commit, *sourceDate, *kind); err != nil {
+	if err = validateBuildIdentity(*version, *commit, *sourceDate, *kind); err != nil {
 		return err
 	}
 	if *output == "" {

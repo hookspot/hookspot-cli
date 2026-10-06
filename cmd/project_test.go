@@ -347,7 +347,7 @@ func TestPersistProjectSelectionHonorsCanceledContext(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := persistProjectSelection(ctx, store, selectionProjects()[0], &bytes.Buffer{}); !errors.Is(err, context.Canceled) {
+	if err = persistProjectSelection(ctx, store, selectionProjects()[0], &bytes.Buffer{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("persist error = %v, want context cancellation", err)
 	}
 	contents, err := os.ReadFile(configPath)

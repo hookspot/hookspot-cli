@@ -160,8 +160,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 	case replyMsg:
 		return m.show(string(msg))
 	case copiedMsg:
-		m, expire := m.show(msg.notes)
-		return m, tea.Batch(tea.SetClipboard(msg.command), expire)
+		shown, expire := m.show(msg.notes)
+		return shown, tea.Batch(tea.SetClipboard(msg.command), expire)
 	case dialedMsg:
 		return m.dialed(msg)
 	case waitReplayedMsg:

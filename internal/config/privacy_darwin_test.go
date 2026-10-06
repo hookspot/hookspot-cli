@@ -30,10 +30,10 @@ func TestDarwinInheritedReadACLIsRejectedBeforeSecretWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret := "darwin-acl-test-key"
-	if err := store.SaveCLIKey(secret); err == nil || strings.Contains(err.Error(), secret) {
+	if err = store.SaveCLIKey(secret); err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("SaveCLIKey error = %v", err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("config exists after ACL rejection: %v", err)
 	}
 	matches, err := filepath.Glob(filepath.Join(parent, ".hookspot-config-*"))

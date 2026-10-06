@@ -20,12 +20,7 @@ func makePrivateTestDirs(dir string) error { return createPrivateDirectories(dir
 func effectiveTestDir(dir string) (string, error) { return filepath.Abs(dir) }
 
 func writePrivateTestFile(path string, contents []byte) error {
-	token, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer token.Close()
-	user, err := token.GetTokenUser()
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return err
 	}

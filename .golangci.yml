@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  enable:
+    - unparam
+  settings:
+    govet:
+      enable:
+        - shadow
+  exclusions:
+    # Unchecked Close and Print errors: the idiom for deferred closes and terminal output.
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -10,12 +10,7 @@ import (
 )
 
 func writeCommandFixture(path string, contents []byte) error {
-	token, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return err
-	}
-	defer token.Close()
-	user, err := token.GetTokenUser()
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return err
 	}

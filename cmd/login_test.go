@@ -159,7 +159,7 @@ func TestRunBrowserLoginWithoutProjectKeepsSavedProject(t *testing.T) {
 	}
 	var out bytes.Buffer
 
-	if err := runBrowserLogin(context.Background(), browserLoginDeps{
+	if err = runBrowserLogin(context.Background(), browserLoginDeps{
 		api:          loginAPI,
 		endpoint:     loginTestEndpoint(t),
 		openBrowser:  func(string) error { return nil },

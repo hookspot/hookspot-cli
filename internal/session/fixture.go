@@ -46,7 +46,7 @@ func (s *Session) ExportFixture(n int, redact bool) (Fixture, error) {
 	encoder := json.NewEncoder(&encoded)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(struct {
+	if err = encoder.Encode(struct {
 		Method  string      `json:"method"`
 		Path    string      `json:"path"`
 		Query   string      `json:"query"`

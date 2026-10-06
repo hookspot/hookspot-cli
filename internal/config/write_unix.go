@@ -31,9 +31,9 @@ func resolveEffectiveDirectory(path string) (string, error) {
 	current := filepath.Clean(path)
 	for {
 		if _, err := os.Lstat(current); err == nil {
-			resolved, err := filepath.EvalSymlinks(current)
-			if err != nil {
-				return "", fmt.Errorf("resolve config directory aliases: %w", err)
+			resolved, resolveErr := filepath.EvalSymlinks(current)
+			if resolveErr != nil {
+				return "", fmt.Errorf("resolve config directory aliases: %w", resolveErr)
 			}
 			for index := len(missing) - 1; index >= 0; index-- {
 				resolved = filepath.Join(resolved, missing[index])
@@ -145,7 +145,7 @@ func validateUnixAncestry(path string) error {
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return errors.New("effective config directory ancestry must contain only directories")
 		}
-		if err := validateUnixOwner(info, "config directory"); err != nil {
+		if err = validateUnixOwner(info, "config directory"); err != nil {
 			return err
 		}
 		permissions := info.Mode().Perm()
@@ -198,7 +198,7 @@ type unixWriteOperations struct {
 
 func writeFileAtomicWithOperations(path string, contents []byte, noOverwrite bool, operations unixWriteOperations) error {
 	if info, err := os.Lstat(path); err == nil {
-		if err := validateConfigFileType(path, info); err != nil {
+		if err = validateConfigFileType(path, info); err != nil {
 			return err
 		}
 		file, openErr := os.Open(path)
@@ -235,7 +235,7 @@ func writeFileAtomicWithOperations(path string, contents []byte, noOverwrite boo
 		}
 		_ = os.Remove(tempPath)
 	}()
-	if err := validatePlatformAccess(temp, true); err != nil {
+	if err = validatePlatformAccess(temp, true); err != nil {
 		return fmt.Errorf("temporary config access is not private: %w", err)
 	}
 

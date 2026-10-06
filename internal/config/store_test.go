@@ -176,7 +176,7 @@ func TestNewLocalCopiesOnlyPersistedGlobalKey(t *testing.T) {
 	if store.SavedProject() != "global-project" {
 		t.Fatalf("saved project default = %q, want global-project", store.SavedProject())
 	}
-	if err := store.SaveProject("local-project"); err != nil {
+	if err = store.SaveProject("local-project"); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(store.Path())
@@ -208,7 +208,7 @@ func TestNewLocalPreservesExistingLocalKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveProject("new-project"); err != nil {
+	if err = store.SaveProject("new-project"); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(localPath)
@@ -304,7 +304,7 @@ func TestNewLocalDoesNotOverwriteConcurrentDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeConfigFixture(t, store.Path(), "schema_version = 1\ncli_key = 'concurrent-key'\n")
-	if err := store.SaveProject("selected-project"); err == nil {
+	if err = store.SaveProject("selected-project"); err == nil {
 		t.Fatal("SaveProject overwrote a concurrently created local config")
 	}
 	contents, err := os.ReadFile(store.Path())
@@ -346,7 +346,7 @@ func TestNewSelectsDefaultAndOverridePaths(t *testing.T) {
 	}
 
 	explicit := filepath.Join(home, "explicit.toml")
-	if _, err := New(Options{ExplicitPath: explicit, ExplicitPathSet: true}); err == nil {
+	if _, err = New(Options{ExplicitPath: explicit, ExplicitPathSet: true}); err == nil {
 		t.Fatal("ordinary read accepted a missing explicit path")
 	}
 	store, err = New(Options{ExplicitPath: explicit, ExplicitPathSet: true, Intent: LoginCreate})
@@ -419,20 +419,20 @@ func TestPrefixStoresRemainIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := dev.SaveCLIKey("dev-key"); err != nil {
+	if err = dev.SaveCLIKey("dev-key"); err != nil {
 		t.Fatal(err)
 	}
-	if err := prod.SaveCLIKey("prod-key"); err != nil {
+	if err = prod.SaveCLIKey("prod-key"); err != nil {
 		t.Fatal(err)
 	}
 	prodBefore, err := os.ReadFile(prod.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := dev.SaveProject("dev-project"); err != nil {
+	if err = dev.SaveProject("dev-project"); err != nil {
 		t.Fatal(err)
 	}
-	if err := stage.SaveCLIKey("stage-key"); err != nil {
+	if err = stage.SaveCLIKey("stage-key"); err != nil {
 		t.Fatal(err)
 	}
 	prodAfter, err := os.ReadFile(prod.Path())
@@ -516,7 +516,7 @@ func TestResolveProjectPrecedenceDoesNotMixSlugPairs(t *testing.T) {
 	if cfg.Project != "flag-project" || cfg.OrganizationSlug != "" || cfg.ProjectSlug != "" {
 		t.Fatalf("project flag did not win: %+v", cfg)
 	}
-	if _, err := store.Resolve(Overrides{NeedProject: true}); err == nil {
+	if _, err = store.Resolve(Overrides{NeedProject: true}); err == nil {
 		t.Fatal("incomplete slug pair was accepted")
 	}
 
@@ -540,7 +540,7 @@ func TestStoreMutationsPersistOnlyMarkedOwnedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveProject("saved-project"); err != nil {
+	if err = store.SaveProject("saved-project"); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(path)
@@ -559,10 +559,10 @@ func TestStoreMutationsPersistOnlyMarkedOwnedFields(t *testing.T) {
 		}
 	}
 
-	if err := store.SaveCLIKey("saved-key"); err != nil {
+	if err = store.SaveCLIKey("saved-key"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ClearCLIKey(); err != nil {
+	if err = store.ClearCLIKey(); err != nil {
 		t.Fatal(err)
 	}
 	contents, err = os.ReadFile(path)
@@ -627,7 +627,7 @@ func TestStoreMutationFailurePreservesDiskAndMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.write = func(string, []byte, bool) error { return errors.New("publish failed") }
-	if err := store.SaveProject("new-project"); err == nil {
+	if err = store.SaveProject("new-project"); err == nil {
 		t.Fatal("SaveProject succeeded")
 	}
 	contents, err := os.ReadFile(path)
@@ -653,7 +653,7 @@ func TestSaveLoginPersistsKeyAndProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveLogin("login-key", "login-project"); err != nil {
+	if err = store.SaveLogin("login-key", "login-project"); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(path)
@@ -677,7 +677,7 @@ func TestSaveLoginOverwritesExistingRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveLogin("new-key", "new-project"); err != nil {
+	if err = store.SaveLogin("new-key", "new-project"); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(path)
@@ -701,7 +701,7 @@ func TestSaveLoginWithoutProjectKeepsSavedProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveLogin("new-key", ""); err != nil {
+	if err = store.SaveLogin("new-key", ""); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := os.ReadFile(path)
@@ -730,7 +730,7 @@ func TestSaveLoginFailurePreservesDiskAndMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 	store.write = func(string, []byte, bool) error { return errors.New("publish failed") }
-	if err := store.SaveLogin("new-key", "new-project"); err == nil {
+	if err = store.SaveLogin("new-key", "new-project"); err == nil {
 		t.Fatal("SaveLogin succeeded")
 	}
 	contents, err := os.ReadFile(path)
