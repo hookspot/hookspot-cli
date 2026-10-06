@@ -17,9 +17,8 @@ IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target r
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
-# Only GoReleaser builds anything other than a dev kind. A dev version never
-# asks GITHUB_API_URL (default GitHub's) for a newer release.
-LDFLAGS = -X hookspot/cmd.version=$(or $(VERSION),dev) -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev $(if $(GITHUB_API_URL),-X hookspot/cmd.githubAPIBaseURL=$(GITHUB_API_URL))
+# Only GoReleaser builds anything other than a dev binary.
+LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
 # test, golden and lint pass ARGS to go test or golangci-lint run; run and dev
 # to the CLI.
 ARGS ?=
@@ -65,9 +64,11 @@ check: lint vet test release-tools release-check release-snapshot release-image 
 	cd npm && npm pack --dry-run
 
 # A host binary for end-to-end checks against a local Hookspot, e.g.
-#   make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443 GITHUB_API_URL=http://127.0.0.1:8080
-# VERSION is what it reports and compares with the latest release that
-# GITHUB_API_URL serves. With DOCKER=1 it builds for LOCAL_GOOS/LOCAL_GOARCH.
+#   make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443 UPDATE_API_URL=http://127.0.0.1:8080
+# VERSION is what it reports and compares with the latest release the GitHub
+# API at UPDATE_API_URL (default GitHub's) serves; the later -X wins. With
+# DOCKER=1 it builds for LOCAL_GOOS/LOCAL_GOARCH.
+e2e-build: LDFLAGS += -X hookspot/cmd.version=$(VERSION) $(if $(UPDATE_API_URL),-X hookspot/cmd.githubAPIBaseURL=$(UPDATE_API_URL))
 e2e-build:
 ifndef VERSION
 	$(error VERSION is required, e.g. make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443)

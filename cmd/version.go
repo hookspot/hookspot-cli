@@ -36,8 +36,8 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// githubAPIBaseURL is the GitHub REST API root. It is a variable so tests can
-// point it at an httptest server.
+// githubAPIBaseURL is the GitHub REST API root. It is a variable so tests and
+// make e2e-build can point it at a stub.
 var githubAPIBaseURL = "https://api.github.com"
 
 // latestReleaseTimeout bounds the upgrade check so an offline machine never
@@ -54,7 +54,7 @@ func checkLatestVersion(ctx context.Context, out io.Writer, current string) {
 
 // newerRelease asks GitHub for the newest published release and returns its
 // version, without the "v", when it is newer than current; otherwise "".
-// Development builds are never compared, and failures are silently ignored:
+// The version dev is never compared, and failures are silently ignored:
 // the upgrade hint must never break the command the user ran.
 func newerRelease(ctx context.Context, current string) string {
 	if current == "dev" {
