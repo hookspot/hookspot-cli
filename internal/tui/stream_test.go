@@ -447,12 +447,17 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 							}
 
 							// Live, the hint shows while every part fits beside it; stopping,
-							// the details give way to it as to an alert.
+							// the details give way to it as to an alert. Offline, where the
+							// parts don't fit, the details give way whole to the reason.
 							want := ending(len(parts), len(parts), hint, wholeOnly)
 							if s.stopping {
 								want = ending(2, 2, hint, wholeOnly)
 							}
-							want = cmp.Or(want, ansi.Truncate(strings.Join(parts, " · "), columns, "…"))
+							shown := slices.Clone(parts)
+							for s.offline && len(shown) > 4 && ansi.StringWidth(strings.Join(shown, " · ")) > columns {
+								shown = slices.Delete(shown, len(shown)-2, len(shown)-1)
+							}
+							want = cmp.Or(want, ansi.Truncate(strings.Join(shown, " · "), columns, "…"))
 							if without[0] != want {
 								t.Fatalf("at %d columns, without the alert:\n got %q\nwant %q", columns, without[0], want)
 							}

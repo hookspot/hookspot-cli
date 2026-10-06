@@ -173,8 +173,17 @@ func (s Status) Render(width int) string {
 		}
 		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
+	line := strings.Join(parts, separator)
+	if alert == "" && s.State == StateOffline && s.Err != nil && lipgloss.Width(line) > width {
+		// The hints went first; now the details give way whole to the reason,
+		// which only the width cuts.
+		for len(parts) > 4 && lipgloss.Width(strings.Join(parts, separator)) > width {
+			parts = slices.Delete(parts, len(parts)-2, len(parts)-1)
+		}
+		return truncate(strings.Join(parts, separator), width)
+	}
 	if alert == "" {
-		return withHints(strings.Join(parts, separator), s.Hints, width)
+		return withHints(line, s.Hints, width)
 	}
 	// Then as many details as fit come back.
 	for kept < len(parts) && lipgloss.Width(strings.Join(parts[:kept+1], separator))+endGap+lipgloss.Width(alert) <= width {
