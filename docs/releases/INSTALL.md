@@ -248,10 +248,13 @@ Remove-Item "$HOME\.local\bin\hookspot.exe"
 
 Credential and configuration removal is separate. `hookspot logout` clears the
 saved key but does not unset `HOOKSPOT_CLI_KEY`; unset the environment variable
-yourself. Delete the config directory, and the `.hookspot` folders
-`project use --local` created, only when you intentionally want to remove their
-saved keys and projects. The same home-relative location applies on Windows:
+yourself. Delete the config directory only when you intentionally want to
+remove its saved key and project. The same home-relative location applies on
+Windows:
 
 ```text
 ~/.config/hookspot
 ```
+
+`project use --local` keeps its records in `.hookspot` folders of the
+directories it ran in; delete those the same way.
