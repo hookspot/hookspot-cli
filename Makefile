@@ -26,6 +26,9 @@ LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X
 # test, golden, fmt and lint pass ARGS to go or golangci-lint unexpanded, so a
 # -run pattern keeps its $; run and dev pass it to the CLI.
 ARGS ?=
+# The packages ARGS names, such as ./internal/tui; test and golden default to
+# theirs without any.
+ARGS_PKGS = $(filter ./% hookspot%,$(value ARGS))
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 # The packages whose tests compare output with testdata/*.golden files.
 GOLDEN_PKGS = $(shell $(GO) list -f '{{range .TestImports}}{{if eq . "github.com/charmbracelet/x/exp/golden"}}{{$$.ImportPath}}{{end}}{{end}}' ./...)
@@ -44,12 +47,12 @@ endif
 
 # e.g. make test ARGS='-run TestStatus ./internal/cards'
 test:
-	$(GO) test $(or $(value ARGS),./...)
+	$(GO) test $(value ARGS) $(if $(ARGS_PKGS),,./...)
 
 # Rewrites the golden files of the tests ARGS names (default: all of them);
 # review the diff. e.g. make golden ARGS='-run TestStatus ./internal/cards'
 golden:
-	$(GO) test $(or $(value ARGS),$(GOLDEN_PKGS)) -update
+	$(GO) test $(value ARGS) $(if $(ARGS_PKGS),,$(GOLDEN_PKGS)) -update
 
 vet:
 	$(GO) vet ./...
