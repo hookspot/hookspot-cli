@@ -1,7 +1,11 @@
 include release/toolchain.env
 
+# Go and golangci-lint run on the host at mise.toml's versions; DOCKER=1 runs
+# them in release/toolchain.env's images instead. run and dev always use Docker.
+DOCKER ?=
 DOCKER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build
-RUN := $(DOCKER_RUN) $(GO_IMAGE)
+GO := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -e GOARCH $(GO_IMAGE) )go
+LINT := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -v hookspot-golangci-cache:/root/.cache/golangci-lint $(GOLANGCI_LINT_IMAGE) )golangci-lint
 RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG -e HOOKSPOT_CONFIG_FILE
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
@@ -12,25 +16,48 @@ COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
 # Only GoReleaser builds anything other than a dev binary.
 LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
+# test, golden and lint pass ARGS to go test or golangci-lint run; run and dev
+# to the CLI.
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
+# The packages whose tests compare output with testdata/*.golden files.
+GOLDEN_PKGS = $(shell $(GO) list -f '{{range .TestImports}}{{if eq . "github.com/charmbracelet/x/exp/golden"}}{{$$.ImportPath}}{{end}}{{end}}' ./...)
 
-.PHONY: tidy build test vet run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
+.PHONY: tidy build test golden vet fmt lint check run get dev npm-test release-tools release-check release-snapshot local-build release-publish release-image release-image-publish
 
 tidy:
-	$(RUN) go mod tidy
+	$(GO) mod tidy
 
 build:
 ifndef SERVER_URL
 	$(error SERVER_URL is required, e.g. make build SERVER_URL=https://api.example.invalid)
 endif
-	$(RUN) go build -ldflags "$(LDFLAGS)" ./...
+	$(GO) build -ldflags "$(LDFLAGS)" ./...
 
+# e.g. make test ARGS='-run TestStatus ./internal/cards'
 test:
-	$(RUN) go test ./...
+	$(GO) test $(or $(ARGS),./...)
+
+# Rewrites the golden files of the tests ARGS names (default: all of them);
+# review the diff. e.g. make golden ARGS='-run TestStatus ./internal/cards'
+golden:
+	$(GO) test $(or $(ARGS),$(GOLDEN_PKGS)) -update
 
 vet:
-	$(RUN) go vet ./...
+	$(GO) vet ./...
+
+fmt:
+	$(LINT) fmt $(ARGS)
+
+# Includes the gofmt check. Each GOOS has its own config and terminal code.
+lint:
+	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(ARGS) || exit 1; done
+
+# Everything CI runs. release-snapshot needs a clean tree, and release-image
+# the binaries it stages.
+check: lint vet test release-tools release-check release-snapshot release-image npm-test
+	scripts/smoke_test.sh
+	cd npm && npm pack --dry-run
 
 run:
 ifndef SERVER_URL
@@ -40,7 +67,7 @@ endif
 	$(DOCKER_RUN) -i $$tty_flag -v "$(DEV_CONFIG_VOLUME)":/root/.config/hookspot $(RUN_ENV) $(GO_IMAGE) go run -ldflags "$(LDFLAGS)" . $(ARGS)
 
 get:
-	$(RUN) go get $(PKG)
+	$(GO) get $(PKG)
 
 # Live-reload dev loop: rebuilds and restarts the command on every file change.
 # Pass credentials inline, e.g.
