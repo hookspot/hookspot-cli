@@ -13,40 +13,28 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    # No dependency caching: the Makefile's hookspot-gomod and hookspot-gocache
-    # Docker volumes are created on the runner and do not survive between runs.
+    # No dependency caching: Go's module and build caches, on the runner and in
+    # the Makefile's Docker volumes, start empty on every run.
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - run: make test
-
-      - run: make vet
-
-      - run: make release-tools
-
-      - run: make release-check
-
-      - run: make release-snapshot
+      # Go and golangci-lint at mise.toml's versions.
+      - uses: jdx/mise-action@v5
 
       # QEMU runs the arm64 image's package install on the amd64 runner.
       - uses: docker/setup-qemu-action@v4
 
       - uses: docker/setup-buildx-action@v4
 
-      - run: make release-image
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - run: make npm-test
-
-      - run: scripts/smoke_test.sh
-
-      - run: npm pack --dry-run
-        working-directory: npm
+      # lint (gofmt and golangci-lint), vet, test, the release snapshot and
+      # image, and the npm and smoke tests.
+      - run: make check
 
   # Runs the terminal tests on each platform's own pseudo-terminal (ConPTY on
   # Windows) and the platform-specific config permission tests; make test
