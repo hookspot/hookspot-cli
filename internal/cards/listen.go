@@ -244,6 +244,16 @@ func NoticeAlert(notice string) Alert {
 	return Alert{whole: warnStyle.Render("⚠ " + Line(notice)), cut: true}
 }
 
+// HintAlert holds hints the details give way to, as to an alert. They show
+// whole or not at all. "" is no alert.
+func HintAlert(hints []string) Alert {
+	if len(hints) == 0 {
+		return Alert{}
+	}
+	hint := faintStyle.Render(strings.Join(hints, " · "))
+	return Alert{whole: hint, short: hint}
+}
+
 // UpdateAlert names the newer release and how to upgrade to it, or only that
 // an update is available where that doesn't fit.
 func UpdateAlert(update session.UpdateAvailable) Alert {

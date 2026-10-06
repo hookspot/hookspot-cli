@@ -174,11 +174,12 @@ func (m Stream) statusHints() []string {
 	return []string{QuitHint}
 }
 
-// statusAlert takes the status line's hint, except once listening stops,
-// when the line says what a second Ctrl-C does, and then the run's totals.
+// statusAlert takes the status line's hint, except once listening stops:
+// then the details give way to the hint, which says what a second Ctrl-C
+// does, and then the line keeps the run's totals.
 func (m Stream) statusAlert() cards.Alert {
 	if m.state >= cards.StateStopping {
-		return cards.Alert{}
+		return cards.HintAlert(m.statusHints())
 	}
 	return cmp.Or(m.noticeAlert, m.updateAlert)
 }

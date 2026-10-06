@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -343,13 +344,8 @@ func TestStreamStatusLine(t *testing.T) {
 
 // TestStreamStatusLineAtEveryWidth renders the status line in every state,
 // with the update alert and with the server's notice, at every width from 20
-// to 140 columns, as hookspot/hookspot#125 and #126 settled. Without an alert,
-// the hint shows whole beside the line while it fits, and then the line is
-// cut. The details after the request count give way, whole parts, to the
-// whole alert; then it shrinks, the notice by a cut, and the count gives way
-// to that. Then as many parts as fit come back. The state and project always
-// stay, and offline every part. Where nothing fits, and once listening stops,
-// the line is as without the alert.
+// to 140 columns, and compares it with the line the give-way order of
+// hookspot/hookspot#125 and #126 gives, as Status.Render's comment states it.
 func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 	const project = "Acme | Payments"
 	lost := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
@@ -401,16 +397,20 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 			return ansi.Truncate(notice, room, "…")
 		}},
 	}
+	// wholeOnly is the shrunk form of what shows whole or not at all.
+	wholeOnly := func(int) string { return "" }
 	for _, s := range states {
 		for _, total := range totals {
 			for _, prompt := range []bool{false, true} {
 				for _, alert := range alerts {
 					t.Run(fmt.Sprintf("%s/%s/prompt %t/%s", s.name, total.name, prompt, alert.name), func(t *testing.T) {
+						// An alert keeps the first stay parts, and its whole form the first
+						// stayWhole; offline it keeps them all.
 						parts := append([]string{s.state, project}, total.parts...)
-						always, besideWhole := 2, 3
+						stay, stayWhole := 2, 3
 						if s.offline {
 							parts = append(parts, lost.Err.Error())
-							always, besideWhole = len(parts), len(parts)
+							stay, stayWhole = len(parts), len(parts)
 						}
 						hint := s.hint
 						if prompt {
@@ -419,8 +419,6 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 						stream := Stream{Project: project, Prompt: prompt}
 						events := append([]tea.Msg{session.Recorded{Totals: total.stats}}, s.events...)
 						for columns := 20; columns <= 140; columns++ {
-							// room is what the first n parts leave for what ends the line.
-							room := func(n int) int { return columns - ansi.StringWidth(strings.Join(parts[:n], " · ")) - 2 }
 							without := streamView(stream, columns, events...)
 							with := streamView(stream, columns, append([]tea.Msg{alert.event}, events...)...)
 							for _, line := range append(without, with...) {
@@ -429,24 +427,37 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 								}
 							}
 
-							want := ansi.Truncate(strings.Join(parts, " · "), columns, "…")
-							if hint != "" && room(len(parts)) >= ansi.StringWidth(hint) {
-								want = atRightEnd(parts, len(parts), hint, columns)
+							// ending is the line that ends with end: whole beside the first
+							// endsWhole parts, else shrunk beside the first ends, and then
+							// as many parts as fit; "" where neither fits.
+							room := func(n int) int { return columns - ansi.StringWidth(strings.Join(parts[:n], " · ")) - 2 }
+							ending := func(ends, endsWhole int, end string, shrunk func(int) string) string {
+								if room(endsWhole) < ansi.StringWidth(end) {
+									end = shrunk(room(ends))
+								}
+								if end == "" {
+									return ""
+								}
+								n := ends
+								for n < len(parts) && room(n+1) >= ansi.StringWidth(end) {
+									n++
+								}
+								line := strings.Join(parts[:n], " · ")
+								return line + strings.Repeat(" ", columns-ansi.StringWidth(line)-ansi.StringWidth(end)) + end
 							}
+
+							// Live, the hint shows while every part fits beside it; stopping,
+							// the details give way to it as to an alert.
+							want := ending(len(parts), len(parts), hint, wholeOnly)
+							if s.stopping {
+								want = ending(2, 2, hint, wholeOnly)
+							}
+							want = cmp.Or(want, ansi.Truncate(strings.Join(parts, " · "), columns, "…"))
 							if without[0] != want {
 								t.Fatalf("at %d columns, without the alert:\n got %q\nwant %q", columns, without[0], want)
 							}
-
-							form := alert.whole
-							if room(besideWhole) < ansi.StringWidth(form) {
-								form = alert.shrunk(room(always))
-							}
-							if form != "" && !s.stopping {
-								kept := always
-								for kept < len(parts) && room(kept+1) >= ansi.StringWidth(form) {
-									kept++
-								}
-								want = atRightEnd(parts, kept, form, columns)
+							if !s.stopping {
+								want = cmp.Or(ending(stay, stayWhole, alert.whole, alert.shrunk), want)
 							}
 							if with[0] != want {
 								t.Fatalf("at %d columns, with the alert:\n got %q\nwant %q", columns, with[0], want)
@@ -457,13 +468,6 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 			}
 		}
 	}
-}
-
-// atRightEnd is the first n parts with end at the right end of a line
-// columns wide.
-func atRightEnd(parts []string, n int, end string, columns int) string {
-	line := strings.Join(parts[:n], " · ")
-	return line + strings.Repeat(" ", columns-ansi.StringWidth(line)-ansi.StringWidth(end)) + end
 }
 
 // streamView is the plain view of stream at columns wide after events.
