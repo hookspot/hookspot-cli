@@ -78,7 +78,7 @@ func TestSendTest(t *testing.T) {
 	}
 
 	t.Run("marks every delivery carrying its id", func(t *testing.T) {
-		orders, refunds, other, plain := delivery("/orders"), delivery("/refunds"), delivery("/orders"), delivery("/orders")
+		orders, refunds, other, plain := delivery("rte_orders", "/orders"), delivery("rte_refunds", "/refunds"), delivery("rte_orders", "/orders"), delivery("rte_orders", "/orders")
 		orders.Headers = http.Header{"x-hookspot-test": {id}}
 		refunds.Headers = http.Header{"X-HOOKSPOT-TEST": {id}}
 		other.Headers = http.Header{"X-Hookspot-Test": {"someone-else"}}
@@ -162,7 +162,7 @@ func TestTestHintFollowsReadyBeforeAnyRequest(t *testing.T) {
 		t.Fatalf("events = %#v, want %#v", sink.events, want)
 	}
 
-	if _, err := s.Handle(delivery("/orders")); err != nil {
+	if _, err := s.Handle(delivery("rte_orders", "/orders")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Emit(Ready{}); err != nil {

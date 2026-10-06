@@ -36,16 +36,8 @@ import (
 
 var sources = []api.Source{{UID: "src_stripe", Name: "stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
 
-// delivery returns a delivery to path through the sources route with that
-// destination, if any.
-func delivery(attempt int, path string) ws.Delivery {
-	d := ws.Delivery{AttemptUID: "att_" + strconv.Itoa(attempt), SourceUID: "src_stripe", Method: "POST", Path: path}
-	for _, route := range sources[0].Routes {
-		if route.Destination.Path == path {
-			d.RouteUID = route.UID
-		}
-	}
-	return d
+func delivery(attempt int, route, path string) ws.Delivery {
+	return ws.Delivery{AttemptUID: "att_" + strconv.Itoa(attempt), SourceUID: "src_stripe", RouteUID: route, Method: "POST", Path: path}
 }
 
 // forwarder answers 200, or 500 for /fail, a millisecond later. When set,
@@ -233,16 +225,16 @@ func TestStreamPrintsWholeCardsInOrder(t *testing.T) {
 	keys, typeKeys := keyboard(t)
 	h := newHarness(t, forwarder{}, keys)
 	h.run(h.stream())
-	h.handle(t, delivery(0, "/hooks"))
+	h.handle(t, delivery(0, "rte_stripe", "/hooks"))
 
 	var burst sync.WaitGroup
 	for i := 1; i <= 20; i++ {
-		path := "/hooks"
+		route, path := "rte_stripe", "/hooks"
 		if i%4 == 0 {
-			path = "/fail"
+			route, path = "", "/fail"
 		}
 		burst.Go(func() {
-			if _, err := h.session.Handle(delivery(i, path)); err != nil {
+			if _, err := h.session.Handle(delivery(i, route, path)); err != nil {
 				t.Error(err)
 			}
 		})
@@ -284,16 +276,16 @@ func TestStreamStatusLine(t *testing.T) {
 		{name: "connecting", events: func(*testing.T, *harness, func(string)) {}},
 		{name: "counts", events: func(t *testing.T, h *harness, _ func(string)) {
 			h.emit(t, session.Ready{})
-			h.handle(t, delivery(1, "/hooks"))
-			h.handle(t, delivery(2, "/fail"))
+			h.handle(t, delivery(1, "rte_stripe", "/hooks"))
+			h.handle(t, delivery(2, "", "/fail"))
 		}},
 		{name: "inspect counts", inspect: true, events: func(t *testing.T, h *harness, _ func(string)) {
 			h.emit(t, session.Ready{})
-			h.handle(t, delivery(1, "/hooks"))
+			h.handle(t, delivery(1, "rte_stripe", "/hooks"))
 		}},
 		{name: "offline", events: func(t *testing.T, h *harness, _ func(string)) {
 			h.emit(t, session.Ready{})
-			h.handle(t, delivery(1, "/hooks"))
+			h.handle(t, delivery(1, "rte_stripe", "/hooks"))
 			// The reason stays; the update alert doesn't fit beside it.
 			h.emit(t, updateAvailable)
 			h.emit(t, lost)
@@ -528,7 +520,7 @@ func TestStreamTestEvent(t *testing.T) {
 	h := newHarness(t, forwarder{}, keys)
 	delivered := make(chan error, 1)
 	base := ingest(t, func(id string) {
-		d := delivery(1, "/hooks")
+		d := delivery(1, "rte_stripe", "/hooks")
 		d.Headers = http.Header{"x-hookspot-test": {id}}
 		// Hookspot delivers it over the websocket, after answering the POST.
 		go func() {
@@ -641,7 +633,7 @@ func TestStreamCommands(t *testing.T) {
 
 func TestStreamCopiesAndExports(t *testing.T) {
 	t.Chdir(t.TempDir())
-	d := delivery(1, "/hooks")
+	d := delivery(1, "rte_stripe", "/hooks")
 	d.RequestUID = "req_1"
 	d.Headers = http.Header{"Authorization": []string{"Bearer secret"}}
 	d.Body = []byte("a\r\nb")
@@ -751,7 +743,7 @@ func TestCtrlC(t *testing.T) {
 		h.run(h.stream())
 		handled := make(chan error, 1)
 		go func() {
-			_, err := h.session.Handle(delivery(1, "/hooks"))
+			_, err := h.session.Handle(delivery(1, "rte_stripe", "/hooks"))
 			handled <- err
 		}()
 		receive(t, called)

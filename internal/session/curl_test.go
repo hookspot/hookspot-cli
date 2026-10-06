@@ -185,7 +185,7 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 
 func TestCurlRedactsOnlyTheShownCommand(t *testing.T) {
 	s, _, _ := newTestSession()
-	d := delivery("/orders")
+	d := delivery("rte_orders", "/orders")
 	d.Headers["Authorization"] = []string{"Bearer secret"}
 	if _, err := s.Handle(d); err != nil {
 		t.Fatal(err)
@@ -213,7 +213,7 @@ func TestCurlRedactsOnlyTheShownCommand(t *testing.T) {
 
 func TestCurlRefusesControlCharactersInTheURL(t *testing.T) {
 	s, _, _ := newTestSession()
-	d := delivery("/orders")
+	d := delivery("rte_orders", "/orders")
 	d.Query = "a=\x1b[2J"
 	if _, err := s.Handle(d); err != nil {
 		t.Fatal(err)

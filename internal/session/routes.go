@@ -5,8 +5,6 @@ import (
 	"hookspot/internal/ws"
 )
 
-// routeFor returns the route of the delivery's source that RouteUID names.
-// False means unmatched.
 func routeFor(sources []api.Source, delivery ws.Delivery) (api.Route, bool) {
 	for _, source := range sources {
 		if source.UID != delivery.SourceUID {

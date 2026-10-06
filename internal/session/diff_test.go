@@ -17,7 +17,7 @@ func TestReplayComparesWithItsOriginal(t *testing.T) {
 		reply{status: http.StatusUnprocessableEntity, body: `{"error":"missing customer_id"}`, latency: 9 * time.Millisecond},
 		reply{status: http.StatusOK, body: `{"received":true}`, latency: 41 * time.Millisecond},
 	)
-	if _, err := s.Handle(delivery("/orders")); err != nil {
+	if _, err := s.Handle(delivery("rte_orders", "/orders")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Replay(1); err != nil {
