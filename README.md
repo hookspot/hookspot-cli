@@ -73,19 +73,9 @@ In CI, set `HOOKSPOT_CLI_KEY` instead of running `hookspot login`.
 
 ## Development
 
-`mise install` installs the Go and golangci-lint versions in `mise.toml`;
-`DOCKER=1` runs them in the pinned Docker images instead.
-Release builds embed the service URL; `.invalid` endpoints are placeholders,
-not live services.
-
-```sh
-make check                                         # everything CI runs, on a clean tree
-make test ARGS='-run TestStatus ./internal/cards'
-make build SERVER_URL=https://api.example.invalid
-```
-
-Golden files under `testdata/` pin rendered output. After an intended output
-change, regenerate them with `make golden` and review the diff.
+[`AGENTS.md`](AGENTS.md) covers the toolchain, the `make` targets, golden files
+and end-to-end builds. Release builds embed the service URL; `.invalid`
+endpoints are placeholders, not live services.
 
 ## Releasing
 
