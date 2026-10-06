@@ -40,6 +40,12 @@ func CurrentBuildInfo() BuildInfo {
 	}
 }
 
+// userAgent names this release on every call to the Hookspot server, which
+// refuses releases below its minimum CLI version.
+func userAgent() string {
+	return "hookspot-cli/" + version + " (" + runtime.GOOS + "; " + runtime.GOARCH + ")"
+}
+
 func (info BuildInfo) networkEndpoint() (endpoint.Base, error) {
 	base, err := endpoint.Parse(info.ServerURL)
 	if err != nil {

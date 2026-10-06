@@ -537,9 +537,12 @@ type fakeHookspot struct {
 	deliveries chan any
 	// joins holds the first two channel joins: topic, event and payload.
 	joins chan []json.RawMessage
-	// rejectJoins answers joins as a project that isn't found.
-	rejectJoins atomic.Bool
-	done        chan struct{}
+	// joinReplies answers the next joins in place of the plain acceptance.
+	joinReplies chan map[string]any
+	// userAgents holds the first requests' User-Agent headers, the
+	// websocket's included.
+	userAgents chan string
+	done       chan struct{}
 	// holdJoins holds each join's reply until release closes.
 	holdJoins atomic.Bool
 	release   chan struct{}
@@ -551,6 +554,19 @@ type hangUp struct{}
 // endListen, delivered, has no correlation fields, so listen ends with an
 // error.
 var endListen = map[string]string{}
+
+var (
+	// acceptedReply accepts a join, as the fake does when none is queued.
+	acceptedReply = map[string]any{"status": "ok", "response": map[string]any{}}
+	// notFoundReply refuses a join as a project that isn't found.
+	notFoundReply = map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}
+	// deprecatedReply accepts a join with the server's deprecation notice.
+	deprecatedReply = map[string]any{"status": "ok", "response": map[string]string{"notice": deprecation}}
+)
+
+// deprecation is the server's notice to a release below its deprecated
+// version.
+const deprecation = "Hookspot CLI 1.1.0 stops working on December 1, 2026: upgrade to 1.2.0 or later."
 
 // fakeHookspotConfig signs in and selects the fake project.
 const fakeHookspotConfig = "schema_version = 1\ncli_key = 'key'\nproject = 'proj_payments'\n"
@@ -564,16 +580,22 @@ const fakeHookspotSources = `[
 func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 	t.Helper()
 	hookspot := &fakeHookspot{
-		config:     filepath.Join(t.TempDir(), "config.toml"),
-		deliveries: make(chan any),
-		joins:      make(chan []json.RawMessage, 2),
-		release:    make(chan struct{}),
-		done:       make(chan struct{}),
+		config:      filepath.Join(t.TempDir(), "config.toml"),
+		deliveries:  make(chan any),
+		joins:       make(chan []json.RawMessage, 2),
+		joinReplies: make(chan map[string]any, 4),
+		userAgents:  make(chan string, 8),
+		release:     make(chan struct{}),
+		done:        make(chan struct{}),
 	}
 	if err := writeCommandFixture(hookspot.config, []byte(fakeHookspotConfig)); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hookspot.userAgents <- r.UserAgent():
+		default:
+		}
 		switch r.URL.Path {
 		case "/cli/projects/proj_payments":
 			_, _ = w.Write([]byte(`{"uid":"proj_payments","name":"Payments","slug":"payments","organization":{"name":"Acme","slug":"acme"}}`))
@@ -600,11 +622,15 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 					return
 				}
 			}
-			if hookspot.rejectJoins.Load() {
-				_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "error", "response": map[string]string{"reason": "not_found"}}})
+			reply := acceptedReply
+			select {
+			case reply = <-hookspot.joinReplies:
+			default:
+			}
+			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", reply})
+			if reply["status"] != "ok" {
 				return
 			}
-			_ = conn.WriteJSON([]any{join[0], join[1], join[2], "phx_reply", map[string]any{"status": "ok", "response": map[string]any{}}})
 			// Responses and heartbeats are dropped until the command hangs up.
 			gone := make(chan struct{})
 			go func() {

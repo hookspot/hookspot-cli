@@ -413,7 +413,7 @@ func TestSuperviseListenPrintsReadyOnceAndTimesEachOutage(t *testing.T) {
 	joinThen := func(elapsed time.Duration, err error) func() error {
 		return func() error {
 			now = now.Add(elapsed)
-			if joinErr := notices.joined(); joinErr != nil {
+			if joinErr := notices.joined(""); joinErr != nil {
 				return joinErr
 			}
 			now = now.Add(time.Minute)
@@ -541,7 +541,7 @@ func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
 func runListenAgainst(t *testing.T, sources string, args ...string) (commandResult, *fakeHookspot) {
 	t.Helper()
 	hookspot := startFakeHookspot(t, sources)
-	hookspot.rejectJoins.Store(true)
+	hookspot.joinReplies <- notFoundReply
 	return runCommandProcess(t, "", developmentMetadata(hookspot.url), hookspot.listen(args...)...), hookspot
 }
 

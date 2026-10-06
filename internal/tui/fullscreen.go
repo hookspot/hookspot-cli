@@ -102,6 +102,8 @@ type Fullscreen struct {
 
 	// updateAlert names GitHub's newer release, once the check finds one.
 	updateAlert cards.Alert
+	// noticeAlert is the latest join's notice, shown over updateAlert.
+	noticeAlert cards.Alert
 }
 
 type (
@@ -149,6 +151,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		m.notFound = &msg
 	case session.UpdateAvailable:
 		m.updateAlert = cards.UpdateAlert(msg)
+	case session.Notice:
+		m.noticeAlert = cards.NoticeAlert(msg.Text)
 	case session.Recorded:
 		return m.record(msg)
 	case stoppingMsg:
@@ -538,19 +542,20 @@ func (m Fullscreen) footer(width int) []string {
 	return m.keyLines(keyMap{forwarding: m.forwarding()}, m.help, width)
 }
 
-// keyLines lists bindings as helpView does, with the update alert at the
-// right end of the bottom line. The keys on one line give way to it, all but
-// the first; the columns keep every key, above it.
+// keyLines lists bindings as helpView does, with the alert at the right end
+// of the bottom line. The keys on one line give way to it, all but the
+// first; the columns keep every key, above it.
 func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string {
+	shown := cmp.Or(m.noticeAlert, m.updateAlert)
 	if all {
 		lines := helpView(bindings, true, width)
-		if alert, _ := m.updateAlert.Claim(width, 0); alert != "" {
+		if alert, _ := shown.Claim(width, 0); alert != "" {
 			lines = append(lines, cards.AtRightEnd("", alert, width))
 		}
 		return lines
 	}
 	first := lipgloss.Width(newHelp(false, 0).ShortHelpView(bindings.ShortHelp()[:1]))
-	alert, room := m.updateAlert.Claim(width, first)
+	alert, room := shown.Claim(width, first)
 	if alert == "" {
 		return helpView(bindings, false, width)
 	}

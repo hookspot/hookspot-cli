@@ -12,7 +12,8 @@ import (
 
 // TestTerminalUpdateAlert runs a release older than GitHub's latest: each
 // view keeps the alert, with the upgrade command, at the right end of its
-// bottom line or after Ready, and only a terminal on stdout asks GitHub.
+// bottom line or after Ready, the join's notice takes its place, and only a
+// terminal on stdout asks GitHub.
 func TestTerminalUpdateAlert(t *testing.T) {
 	var asked atomic.Int32
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,14 @@ func TestTerminalUpdateAlert(t *testing.T) {
 		run.send("s")
 		sourcesKeys := regexp.MustCompile(`(?m)^\? help  q quit  ↑↓ select .*  +` + alert + `$`)
 		run.waitFor("the alert on the Sources page", sourcesKeys.MatchString)
+	})
+
+	t.Run("notice", func(t *testing.T) {
+		hookspot := startFakeHookspot(t, fakeHookspotSources)
+		hookspot.joinReplies <- deprecatedReply
+		run := startTerminal(t, options(map[string]string{}), release(hookspot), hookspot.listen()...)
+		keys := regexp.MustCompile(`(?m)^\? help  q quit  +` + regexp.QuoteMeta("⚠ "+deprecation) + `$`)
+		run.waitFor("the notice after the keys", keys.MatchString)
 	})
 
 	t.Run("stream", func(t *testing.T) {

@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -39,6 +40,9 @@ const (
 	SessionProtocol
 	SessionHandler
 	SessionNotFound
+	// SessionOutdated is a join refused to a release below the minimum CLI
+	// version; Err is the server's message.
+	SessionOutdated
 )
 
 // SessionError retains the original failure and whether the session completed
@@ -157,14 +161,16 @@ type deliveryResponse struct {
 // Client connects to a hookspot Phoenix Channel and streams events.
 type Client struct {
 	// OnJoined runs after each accepted channel join, before that session's
-	// deliveries. An error ends the session as a fatal handler failure.
-	OnJoined func() error
+	// deliveries, with the reply's notice: "" or the date this release stops
+	// working. An error ends the session as a fatal handler failure.
+	OnJoined func(notice string) error
 
-	url     string
-	cliKey  string
-	topic   string
-	sources []string
-	machine string
+	url       string
+	cliKey    string
+	userAgent string
+	topic     string
+	sources   []string
+	machine   string
 	// forwardTo is "" when listening print-only.
 	forwardTo string
 	options   clientOptions
@@ -179,14 +185,14 @@ type clientOptions struct {
 	maxFrameBytes     int64
 }
 
-// New returns a Client that connects to url, authenticates with cliKey, and
-// joins topic, requesting the given sources and reporting the hostname and
-// forwardTo, the forwarding target.
-func New(url, cliKey, topic string, sources []string, forwardTo string) *Client {
-	return newClient(url, cliKey, topic, sources, forwardTo, clientOptions{})
+// New returns a Client that connects to url, authenticates with cliKey,
+// names the CLI release in userAgent, and joins topic, requesting the given
+// sources and reporting the hostname and forwardTo, the forwarding target.
+func New(url, cliKey, userAgent, topic string, sources []string, forwardTo string) *Client {
+	return newClient(url, cliKey, userAgent, topic, sources, forwardTo, clientOptions{})
 }
 
-func newClient(url, cliKey, topic string, sources []string, forwardTo string, options clientOptions) *Client {
+func newClient(url, cliKey, userAgent, topic string, sources []string, forwardTo string, options clientOptions) *Client {
 	if options.dialer == nil {
 		options.dialer = websocket.DefaultDialer
 	}
@@ -210,7 +216,7 @@ func newClient(url, cliKey, topic string, sources []string, forwardTo string, op
 	if err != nil {
 		machine = ""
 	}
-	return &Client{url: url, cliKey: cliKey, topic: topic, sources: sources, machine: machine, forwardTo: forwardTo, options: options}
+	return &Client{url: url, cliKey: cliKey, userAgent: userAgent, topic: topic, sources: sources, machine: machine, forwardTo: forwardTo, options: options}
 }
 
 // connWriter serializes writes to a websocket connection and assigns a unique,
@@ -291,7 +297,7 @@ func (w *connWriter) sendMessage(m message, join bool, pending *heartbeatTracker
 // blocks until handler returns an error, the channel errors/closes, or ctx is
 // cancelled.
 func (c *Client) Listen(ctx context.Context, handler Handler) error {
-	header := http.Header{}
+	header := http.Header{"User-Agent": {c.userAgent}}
 	if c.cliKey != "" {
 		header.Set("X-CLI-KEY", c.cliKey)
 	}
@@ -344,7 +350,7 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 	conn.SetReadLimit(c.options.maxFrameBytes)
 	writer := &connWriter{conn: conn, timeout: c.options.writeTimeout}
 
-	activeJoinRef, err := c.join(ctx, conn, writer)
+	activeJoinRef, notice, err := c.join(ctx, conn, writer)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -356,7 +362,7 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 		return sessionError(SessionConnect, false, err)
 	}
 	if c.OnJoined != nil {
-		if err := c.OnJoined(); err != nil {
+		if err := c.OnJoined(notice); err != nil {
 			return sessionError(SessionHandler, true, err)
 		}
 	}
@@ -511,8 +517,9 @@ func matchingHeartbeatReply(msg message, pending *heartbeatTracker) bool {
 		successfulReply(msg.Payload) && pending.take(*msg.Ref)
 }
 
-// join sends phx_join and waits for the reply matching both its topic and ref.
-func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWriter) (string, error) {
+// join sends phx_join and waits for the reply matching both its topic and
+// ref. It returns the join's ref and the reply's notice.
+func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWriter) (string, string, error) {
 	sources := c.sources
 	if sources == nil {
 		sources = []string{}
@@ -528,11 +535,11 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 		ForwardTo *string  `json:"forward_to"`
 	}{Sources: sources, Machine: c.machine, ForwardTo: forwardTo})
 	if err != nil {
-		return "", fmt.Errorf("encode join payload: %w", err)
+		return "", "", fmt.Errorf("encode join payload: %w", err)
 	}
 
 	if err := conn.SetReadDeadline(time.Now().Add(c.options.joinTimeout)); err != nil {
-		return "", fmt.Errorf("set join deadline: %w", err)
+		return "", "", fmt.Errorf("set join deadline: %w", err)
 	}
 	ref, err := writer.sendJoin(message{
 		Topic:   c.topic,
@@ -540,20 +547,20 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 		Payload: payload,
 	})
 	if err != nil {
-		return "", fmt.Errorf("send join: %w", err)
+		return "", "", fmt.Errorf("send join: %w", err)
 	}
 
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if ctx.Err() != nil {
-				return "", ctx.Err()
+				return "", "", ctx.Err()
 			}
-			return "", fmt.Errorf("read join reply: %w", err)
+			return "", "", fmt.Errorf("read join reply: %w", err)
 		}
 		msg, err := decode(data)
 		if err != nil {
-			return "", sessionError(SessionProtocol, false, errors.New("decode join reply: invalid frame"))
+			return "", "", sessionError(SessionProtocol, false, errors.New("decode join reply: invalid frame"))
 		}
 		if msg.Event != "phx_reply" || msg.Topic != c.topic || msg.Ref == nil || *msg.Ref != ref {
 			continue
@@ -562,24 +569,29 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 		var reply struct {
 			Status   string `json:"status"`
 			Response struct {
-				Reason string `json:"reason"`
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
+				Notice  string `json:"notice"`
 			} `json:"response"`
 		}
 		if err := json.Unmarshal(msg.Payload, &reply); err != nil {
-			return "", sessionError(SessionProtocol, false, errors.New("decode join reply: invalid payload"))
+			return "", "", sessionError(SessionProtocol, false, errors.New("decode join reply: invalid payload"))
 		}
 		if reply.Status != "ok" {
 			detail := shortReplyDetail(reply.Status, reply.Response.Reason)
 			err := fmt.Errorf("channel join rejected%s", detail)
 			if strings.EqualFold(reply.Response.Reason, "unauthorized") || strings.EqualFold(reply.Response.Reason, "forbidden") {
-				return "", sessionError(SessionAuthentication, false, err)
+				return "", "", sessionError(SessionAuthentication, false, err)
 			}
 			if strings.EqualFold(reply.Response.Reason, "not_found") {
-				return "", sessionError(SessionNotFound, false, err)
+				return "", "", sessionError(SessionNotFound, false, err)
 			}
-			return "", sessionError(SessionProtocol, false, err)
+			if strings.EqualFold(reply.Response.Reason, "cli_outdated") {
+				return "", "", sessionError(SessionOutdated, false, errors.New(cmp.Or(reply.Response.Message, reply.Response.Reason)))
+			}
+			return "", "", sessionError(SessionProtocol, false, err)
 		}
-		return ref, nil
+		return ref, reply.Response.Notice, nil
 	}
 }
 

@@ -36,7 +36,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		return runBrowserLogin(cmd.Context(), browserLoginDeps{
-			api:          api.New(activeEndpoint, ""),
+			api:          api.New(activeEndpoint, "", userAgent()),
 			endpoint:     activeEndpoint,
 			openBrowser:  browser.Open,
 			store:        store,
@@ -74,7 +74,7 @@ func runKeyLogin(ctx context.Context, cliKey string, in io.Reader, out io.Writer
 		return newCommandError("no CLI key provided", "Pass a CLI key when prompted, set HOOKSPOT_CLI_KEY, or run 'hookspot login' to authenticate via the browser.")
 	}
 
-	client := api.New(activeEndpoint, cliKey)
+	client := api.New(activeEndpoint, cliKey, userAgent())
 	user, err := client.Me(ctx)
 	if err != nil {
 		return fmt.Errorf("validate CLI key: %w", err)

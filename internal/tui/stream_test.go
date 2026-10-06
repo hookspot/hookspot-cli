@@ -299,6 +299,12 @@ func TestStreamStatusLine(t *testing.T) {
 					strings.Contains(plain, "http://localhost:3000/ returned 404. If your webhook route is elsewhere")
 			})
 		}},
+		{name: "notice", events: func(t *testing.T, h *harness, _ func(string)) {
+			// Over the update alert.
+			h.emit(t, updateAvailable)
+			h.emit(t, session.Notice{Text: deprecation})
+			h.emit(t, session.Ready{})
+		}},
 		{name: "stopping with a prompt", prompt: true, events: func(t *testing.T, h *harness, typeKeys func(string)) {
 			h.emit(t, session.Ready{})
 			// The prompt goes, and the status line says a second Ctrl-C kills,
@@ -647,7 +653,7 @@ func listenTo(t *testing.T, h *harness) <-chan error {
 	t.Cleanup(server.Close)
 	listened := make(chan error, 1)
 	go func() {
-		listened <- ws.New("ws"+strings.TrimPrefix(server.URL, "http"), "key", "project:proj_1", nil, "").Listen(h.ctx, h.session.Handle)
+		listened <- ws.New("ws"+strings.TrimPrefix(server.URL, "http"), "key", "", "project:proj_1", nil, "").Listen(h.ctx, h.session.Handle)
 	}()
 	return listened
 }

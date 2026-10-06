@@ -84,6 +84,8 @@ func fatalErrorMessage(err error) (string, string) {
 	var apiErr *api.Error
 	if errors.As(err, &apiErr) {
 		switch {
+		case apiErr.Outdated:
+			return apiErr.Message, upgradeCommand()
 		case apiErr.StatusCode >= 300 && apiErr.StatusCode < 400:
 			return fmt.Sprintf("Hookspot API redirect blocked: %s %s returned %s", apiErr.Method, apiErr.URL, apiErr.Status()),
 				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release."
@@ -113,6 +115,8 @@ func fatalErrorMessage(err error) (string, string) {
 			return err.Error(), "The delivery could not be processed. Check the error and retry the command."
 		case ws.SessionNotFound:
 			return "project not found: the WebSocket channel join was rejected", projectNotFoundHint()
+		case ws.SessionOutdated:
+			return sessionErr.Err.Error(), upgradeCommand()
 		}
 	}
 

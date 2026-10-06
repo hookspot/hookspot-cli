@@ -72,7 +72,7 @@ var listenCmd = &cobra.Command{
 			)
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey)
+		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		var project *api.Project
 		if cfg.OrganizationSlug != "" {
 			project, err = client.GetProjectBySlugs(cmd.Context(), cfg.OrganizationSlug, cfg.ProjectSlug)
@@ -126,7 +126,7 @@ var listenCmd = &cobra.Command{
 			local = forwarder
 			target = forwarder.String()
 		}
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
+		wsClient := ws.New(wsURL.String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
 		// Piped output may feed a script: it gets plain mode and no update
 		// alert.
 		piped := !cards.Terminal(cmd.OutOrStdout())
@@ -373,14 +373,22 @@ func newConnectionNotices(emit func(session.Event) error) *connectionNotices {
 	return &connectionNotices{emit: emit, now: time.Now}
 }
 
-func (n *connectionNotices) joined() error {
+func (n *connectionNotices) joined(notice string) error {
 	if !n.ready {
 		n.ready = true
+		// Before Ready, as the test hint follows Ready at once; plain mode
+		// prints the notice after Ready.
+		if err := n.emit(session.Notice{Text: notice}); err != nil {
+			return err
+		}
 		return n.emit(session.Ready{})
 	}
 	offline := n.now().Sub(n.offlineSince).Round(time.Second)
 	n.offlineSince = time.Time{}
-	return n.emit(session.Reconnected{Offline: offline})
+	if err := n.emit(session.Reconnected{Offline: offline}); err != nil {
+		return err
+	}
+	return n.emit(session.Notice{Text: notice})
 }
 
 // lost reports a failed session. An outage is timed from its first failed

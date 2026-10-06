@@ -117,7 +117,7 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
 
-	client := New(wsURL, "test-key", "project:proj_1", []string{"stripe"}, "")
+	client := New(wsURL, "test-key", "", "project:proj_1", []string{"stripe"}, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -289,8 +289,8 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 
 			wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
 
-			client := New(wsURL, "test-key", "project:proj_1", nil, "")
-			client.OnJoined = func() error {
+			client := New(wsURL, "test-key", "", "project:proj_1", nil, "")
+			client.OnJoined = func(string) error {
 				t.Error("OnJoined ran for a rejected join")
 				return nil
 			}
@@ -327,9 +327,9 @@ func TestClientOnJoinedRunsOncePerAcceptedJoinBeforeDeliveries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions())
+	client := newClient(testWebSocketURL(server), "test-key", "", "project:proj_1", nil, "", testClientOptions())
 	joins := 0
-	client.OnJoined = func() error {
+	client.OnJoined = func(string) error {
 		joins++
 		return nil
 	}
@@ -361,9 +361,9 @@ func TestClientOnJoinedFailureEndsSessionBeforeDeliveries(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newClient(testWebSocketURL(server), "test-key", "project:proj_1", nil, "", testClientOptions())
+	client := newClient(testWebSocketURL(server), "test-key", "", "project:proj_1", nil, "", testClientOptions())
 	wantErr := errors.New("stdout closed")
-	client.OnJoined = func() error { return wantErr }
+	client.OnJoined = func(string) error { return wantErr }
 	err := client.Listen(context.Background(), func(Delivery) (Response, error) {
 		t.Error("delivery handled after OnJoined failed")
 		return Response{Status: http.StatusOK}, nil
@@ -381,7 +381,7 @@ func TestClient_Listen_HandshakeAuthenticationErrorReturns(t *testing.T) {
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
-	err := New(wsURL, "bad-key", "project:proj_1", nil, "").Listen(
+	err := New(wsURL, "bad-key", "", "project:proj_1", nil, "").Listen(
 		context.Background(),
 		func(Delivery) (Response, error) { return Response{}, nil },
 	)

@@ -31,7 +31,7 @@ func TestClientReturnsStructuredAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "expired-key").Me(context.Background())
+	_, err := New(testEndpoint(t, server.URL), "expired-key", "").Me(context.Background())
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %T %v, want *api.Error", err, err)
@@ -66,8 +66,8 @@ func TestAPIErrorMessageFormats(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := apiErrorMessage([]byte(test.body)); got != test.want {
-				t.Fatalf("apiErrorMessage() = %q, want %q", got, test.want)
+			if got, _ := apiErrorDetails([]byte(test.body)); got != test.want {
+				t.Fatalf("apiErrorDetails() = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -87,7 +87,7 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(testEndpoint(t, server.URL), "test-key")
+	client := New(testEndpoint(t, server.URL), "test-key", "")
 
 	user, err := client.Me(context.Background())
 	if err != nil {
@@ -107,7 +107,7 @@ func TestClientRejectsOversizedSuccessfulJSONResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "test-key").Me(context.Background())
+	_, err := New(testEndpoint(t, server.URL), "test-key", "").Me(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "response exceeds 1 MiB limit") {
 		t.Fatalf("Me error = %v, want response limit error", err)
 	}
@@ -131,7 +131,7 @@ func TestClient_ListProjects_ReturnsProjects(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(testEndpoint(t, server.URL), "test-key")
+	client := New(testEndpoint(t, server.URL), "test-key", "")
 
 	projects, err := client.ListProjects(context.Background())
 	if err != nil {
@@ -177,7 +177,7 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(testEndpoint(t, server.URL), "test-key")
+	client := New(testEndpoint(t, server.URL), "test-key", "")
 
 	project, err := client.GetProject(context.Background(), "proj_1")
 	if err != nil {
@@ -232,7 +232,7 @@ func TestClient_ListProjectSources_ReturnsSourcesWithRoutes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sources, err := New(testEndpoint(t, server.URL), "test-key").ListProjectSources(context.Background(), "proj_1")
+	sources, err := New(testEndpoint(t, server.URL), "test-key", "").ListProjectSources(context.Background(), "proj_1")
 	if err != nil {
 		t.Fatalf("ListProjectSources: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestClient_GetProjectBySlugs_ReturnsMatchingProject(t *testing.T) {
 	}))
 	defer server.Close()
 
-	project, err := New(testEndpoint(t, server.URL), "test-key").GetProjectBySlugs(context.Background(), "acme", "payments")
+	project, err := New(testEndpoint(t, server.URL), "test-key", "").GetProjectBySlugs(context.Background(), "acme", "payments")
 	if err != nil {
 		t.Fatalf("GetProjectBySlugs: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestClient_GetProjectBySlugs_ReturnsErrorWhenNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "test-key").GetProjectBySlugs(context.Background(), "acme", "missing")
+	_, err := New(testEndpoint(t, server.URL), "test-key", "").GetProjectBySlugs(context.Background(), "acme", "missing")
 	if err == nil {
 		t.Fatal("GetProjectBySlugs returned nil error")
 	}
@@ -328,7 +328,7 @@ func TestClientPreservesDeploymentPrefix(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL+"/gateway/hookspot/"), "test-key").Me(context.Background())
+	_, err := New(testEndpoint(t, server.URL+"/gateway/hookspot/"), "test-key", "").Me(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestClientRejectsRedirectsWithoutLeakingCLIKey(t *testing.T) {
 			}))
 			defer origin.Close()
 
-			_, err := New(testEndpoint(t, origin.URL), "credential-sentinel").Me(context.Background())
+			_, err := New(testEndpoint(t, origin.URL), "credential-sentinel", "").Me(context.Background())
 			var apiErr *Error
 			if !errors.As(err, &apiErr) || apiErr.StatusCode != status {
 				t.Fatalf("error = %T %v", err, err)
@@ -371,7 +371,7 @@ func TestClientRejectsInvalidIdentifiersBeforeRequest(t *testing.T) {
 		requests.Add(1)
 	}))
 	defer server.Close()
-	client := New(testEndpoint(t, server.URL), "test-key")
+	client := New(testEndpoint(t, server.URL), "test-key", "")
 
 	if _, err := client.GetProject(context.Background(), "../other"); err == nil {
 		t.Fatal("GetProject accepted an unsafe UID")
@@ -385,7 +385,7 @@ func TestClientRejectsInvalidIdentifiersBeforeRequest(t *testing.T) {
 }
 
 func TestZeroEndpointDoesNotIssueRequest(t *testing.T) {
-	_, err := New(endpoint.Base{}, "test-key").Me(context.Background())
+	_, err := New(endpoint.Base{}, "test-key", "").Me(context.Background())
 	if err == nil {
 		t.Fatal("Me succeeded with zero endpoint")
 	}
@@ -419,7 +419,7 @@ func TestClient_StartLogin_SendsDeviceNameWithoutCLIKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	attempt, err := New(testEndpoint(t, server.URL), "").StartLogin(context.Background(), "mbp")
+	attempt, err := New(testEndpoint(t, server.URL), "", "").StartLogin(context.Background(), "mbp")
 	if err != nil {
 		t.Fatalf("StartLogin: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestClient_StartLogin_PreservesDeploymentPrefix(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL+"/gateway/hookspot/"), "").StartLogin(context.Background(), "mbp")
+	_, err := New(testEndpoint(t, server.URL+"/gateway/hookspot/"), "", "").StartLogin(context.Background(), "mbp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestClient_StartLogin_ReturnsStructuredAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "").StartLogin(context.Background(), "mbp")
+	_, err := New(testEndpoint(t, server.URL), "", "").StartLogin(context.Background(), "mbp")
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %T %v, want *api.Error", err, err)
@@ -500,7 +500,7 @@ func TestClient_PollLogin_Pending(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := New(testEndpoint(t, server.URL), "").PollLogin(context.Background(), "poll-token")
+	result, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
 	if err != nil {
 		t.Fatalf("PollLogin: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestClient_PollLogin_ApprovedWithProject(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := New(testEndpoint(t, server.URL), "").PollLogin(context.Background(), "poll-token")
+	result, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
 	if err != nil {
 		t.Fatalf("PollLogin: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestClient_PollLogin_ApprovedWithoutProject(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := New(testEndpoint(t, server.URL), "").PollLogin(context.Background(), "poll-token")
+	result, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
 	if err != nil {
 		t.Fatalf("PollLogin: %v", err)
 	}
@@ -582,7 +582,7 @@ func TestClient_PollLogin_ReturnsStructuredAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "").PollLogin(context.Background(), "poll-token")
+	_, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %T %v, want *api.Error", err, err)
@@ -604,7 +604,7 @@ func TestClient_PollLogin_RejectsOversizedSuccessfulJSONResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(testEndpoint(t, server.URL), "").PollLogin(context.Background(), "poll-token")
+	_, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
 	if err == nil || !strings.Contains(err.Error(), "response exceeds 1 MiB limit") {
 		t.Fatalf("PollLogin error = %v, want response limit error", err)
 	}

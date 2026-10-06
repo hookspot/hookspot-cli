@@ -26,6 +26,9 @@ type Error struct {
 	Method     string
 	URL        string
 	Message    string
+	// Outdated is set when the server refused this release as below its
+	// minimum CLI version.
+	Outdated bool
 }
 
 func (e *Error) Error() string {
@@ -47,16 +50,19 @@ func (e *Error) Status() string {
 
 // Client is a small REST client for the hookspot API.
 type Client struct {
-	base   endpoint.Base
-	cliKey string
-	http   *http.Client
+	base      endpoint.Base
+	cliKey    string
+	userAgent string
+	http      *http.Client
 }
 
-// New returns a Client configured for base, authenticating with cliKey.
-func New(base endpoint.Base, cliKey string) *Client {
+// New returns a Client configured for base, authenticating with cliKey and
+// naming the CLI release in userAgent.
+func New(base endpoint.Base, cliKey, userAgent string) *Client {
 	return &Client{
-		base:   base,
-		cliKey: cliKey,
+		base:      base,
+		cliKey:    cliKey,
+		userAgent: userAgent,
 		http: &http.Client{
 			Timeout: 10 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -246,6 +252,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out interface{
 	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", c.userAgent)
 	if c.cliKey != "" {
 		req.Header.Set("X-CLI-KEY", c.cliKey)
 	}
@@ -283,18 +290,22 @@ func decodeErrorResponse(req *http.Request, resp *http.Response) error {
 		return fmt.Errorf("read Hookspot API error response: %w", readErr)
 	}
 
+	message, reason := apiErrorDetails(body)
 	return &Error{
 		StatusCode: resp.StatusCode,
 		Method:     req.Method,
 		URL:        req.URL.String(),
-		Message:    apiErrorMessage(body),
+		Message:    message,
+		Outdated:   strings.EqualFold(reason, "cli_outdated"),
 	}
 }
 
-func apiErrorMessage(body []byte) string {
+// apiErrorDetails reads an error body: its message, else its reason, nested
+// error or text; then its top-level reason.
+func apiErrorDetails(body []byte) (string, string) {
 	trimmed := strings.TrimSpace(string(body))
 	if trimmed == "" {
-		return ""
+		return "", ""
 	}
 
 	var payload struct {
@@ -304,15 +315,15 @@ func apiErrorMessage(body []byte) string {
 	}
 	if json.Unmarshal(body, &payload) == nil {
 		if payload.Message != "" {
-			return payload.Message
+			return payload.Message, payload.Reason
 		}
 		if payload.Reason != "" {
-			return payload.Reason
+			return payload.Reason, payload.Reason
 		}
 		if len(payload.Error) > 0 {
 			var message string
 			if json.Unmarshal(payload.Error, &message) == nil && message != "" {
-				return message
+				return message, ""
 			}
 			var nested struct {
 				Message string `json:"message"`
@@ -320,14 +331,14 @@ func apiErrorMessage(body []byte) string {
 			}
 			if json.Unmarshal(payload.Error, &nested) == nil {
 				if nested.Message != "" {
-					return nested.Message
+					return nested.Message, ""
 				}
 				if nested.Reason != "" {
-					return nested.Reason
+					return nested.Reason, ""
 				}
 			}
 		}
 	}
 
-	return trimmed
+	return trimmed, ""
 }

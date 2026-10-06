@@ -23,6 +23,8 @@ type Writer struct {
 	out, errOut stream
 	ready       bool
 	updateAlert string
+	// notice is the latest join's, as the server wrote it.
+	notice string
 	// mu keeps replies, which don't come through the session, whole.
 	mu sync.Mutex
 }
@@ -50,7 +52,7 @@ func (w *Writer) Banner(project string, routes []BannerRoute, hints []string) er
 }
 
 // Emit writes each event in one write, so a terminal never shows part of a
-// card. The update alert follows Ready.
+// card. The join's notice and the update alert follow Ready.
 func (w *Writer) Emit(event session.Event) error {
 	switch e := event.(type) {
 	case session.Connecting:
@@ -60,8 +62,18 @@ func (w *Writer) Emit(event session.Event) error {
 			return err
 		}
 		w.ready = true
+		if err := w.writeNotice(); err != nil {
+			return err
+		}
 		w.writeUpdateAlert()
 		return nil
+	case session.Notice:
+		// A rejoin's notice prints only when it changed.
+		if e.Text == w.notice {
+			return nil
+		}
+		w.notice = e.Text
+		return w.writeNotice()
 	case session.UpdateAvailable:
 		w.updateAlert = UpdateAlert(e).whole
 		w.writeUpdateAlert()
@@ -82,6 +94,15 @@ func (w *Writer) Emit(event session.Event) error {
 		return w.write(w.out, w.listen.Entry(e.Entry, Width(w.out.w)))
 	}
 	return nil
+}
+
+// writeNotice writes the join's notice once both it and Ready are in, on
+// errOut with the other notices.
+func (w *Writer) writeNotice() error {
+	if !w.ready || w.notice == "" {
+		return nil
+	}
+	return w.write(w.errOut, NoticeAlert(w.notice).whole)
 }
 
 // writeUpdateAlert writes the update alert once both it and Ready are in, on
