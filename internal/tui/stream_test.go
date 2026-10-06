@@ -340,6 +340,135 @@ func TestStreamStatusLine(t *testing.T) {
 	}
 }
 
+// TestStreamStatusLineAtEveryWidth renders the status line in every state,
+// with and without the update alert, at every width from 20 to 140 columns.
+// Nothing overflows. Without the alert, the hint shows whole while the line
+// fits beside it, and then the line is cut. The alert takes the hint's place
+// and the details' after the request count, one whole part at a time, before
+// it shrinks; only to its short form does the count give way, and where even
+// that doesn't fit, the line is as without it. The state and project always
+// stay; offline, so do the counts and the reason. Once listening stops the
+// alert goes, so the stopping hint and the totals stay.
+func TestStreamStatusLineAtEveryWidth(t *testing.T) {
+	const whole, short = "↑ 1.3.0 · brew upgrade hookspot-cli", "↑ update available"
+	lost := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
+	states := []struct {
+		name, state string
+		events      []tea.Msg
+		offline     bool
+		stopping    bool
+		// hint is the status line's hint without the prompt, promptHint with it.
+		hint, promptHint string
+	}{
+		{name: "connecting", state: "○ connecting…", hint: QuitHint},
+		{name: "live", state: "● live", events: []tea.Msg{session.Ready{}}, hint: QuitHint},
+		{name: "offline", state: "○ reconnecting", events: []tea.Msg{session.Ready{}, lost}, offline: true, hint: QuitHint},
+		{name: "stopping", state: "◌ stopping…", events: []tea.Msg{session.Ready{}, stoppingMsg{}}, stopping: true, hint: QuitHint, promptHint: "ctrl-c force quit"},
+		{name: "stopped", state: "■ stopped", events: []tea.Msg{session.Ready{}, stoppingMsg{}, stoppedMsg{}}, stopping: true},
+	}
+	totals := []struct {
+		name  string
+		stats session.Stats
+		parts []string
+	}{
+		{name: "no requests", parts: []string{"0 requests"}},
+		{
+			name:  "requests",
+			stats: session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond},
+			parts: []string{"12 requests", "10 ok · 2 failed", "p50 41ms"},
+		},
+	}
+	width := ansi.StringWidth
+	for _, s := range states {
+		for _, total := range totals {
+			for _, prompt := range []bool{false, true} {
+				t.Run(s.name+"/"+total.name+"/prompt "+strconv.FormatBool(prompt), func(t *testing.T) {
+					parts := append([]string{s.state, "Acme | Payments"}, total.parts...)
+					if s.offline {
+						parts = append(parts, lost.Err.Error())
+					}
+					joined := func(n int) string { return strings.Join(parts[:n], " · ") }
+					hint := s.hint
+					if prompt {
+						hint = s.promptHint
+					}
+					// The alert keeps at least the state and project, or offline every
+					// part, and shows whole beside the count, or offline every part,
+					// before it shrinks.
+					least, beforeShrinking := 2, 3
+					if s.offline {
+						least, beforeShrinking = len(parts), len(parts)
+					}
+					events := append([]tea.Msg{session.Recorded{Totals: total.stats}}, s.events...)
+					shownBefore := ""
+					for columns := 20; columns <= 140; columns++ {
+						without := streamView(prompt, columns, events...)
+						with := streamView(prompt, columns, append([]tea.Msg{updateAvailable}, events...)...)
+						for _, line := range append(without, with...) {
+							if width(line) > columns {
+								t.Fatalf("at %d columns, %q overflows", columns, line)
+							}
+						}
+
+						want := ansi.Truncate(joined(len(parts)), columns, "…")
+						if gap := columns - width(joined(len(parts))) - width(hint); hint != "" && gap >= 2 {
+							want = joined(len(parts)) + strings.Repeat(" ", gap) + hint
+						}
+						if without[0] != want {
+							t.Fatalf("at %d columns, without the alert:\n got %q\nwant %q", columns, without[0], want)
+						}
+
+						// shown is the alert's form at the line's end, and n the whole
+						// parts before it, or 0.
+						line, shown, n := with[0], "", 0
+						for _, form := range []string{whole, short} {
+							if left, ok := strings.CutSuffix(line, form); ok && strings.HasSuffix(left, "  ") {
+								shown = form
+								for i := 2; i <= len(parts); i++ {
+									if strings.TrimRight(left, " ") == joined(i) {
+										n = i
+									}
+								}
+								break
+							}
+						}
+						switch {
+						case s.stopping || shown == "":
+							if line != without[0] {
+								t.Fatalf("at %d columns, the alert changed the line:\n got %q\nwant %q", columns, line, without[0])
+							}
+							if !s.stopping && width(joined(least))+2+width(short) <= columns {
+								t.Fatalf("at %d columns, the alert's short form fits beside %q but doesn't show", columns, joined(least))
+							}
+						case n < least || shown == whole && n < 3:
+							t.Fatalf("at %d columns, %q gave way to %q", columns, line, shown)
+						case shown == short && width(joined(beforeShrinking))+2+width(whole) <= columns:
+							t.Fatalf("at %d columns, the alert shrank where the details could give way: %q", columns, line)
+						case n < len(parts) && width(joined(n+1))+2+width(shown) <= columns:
+							t.Fatalf("at %d columns, a part that fits stays out: %q", columns, line)
+						}
+
+						// The alert's form changes steadily with the width.
+						if shownBefore == whole && shown != whole || shownBefore == short && shown == "" {
+							t.Fatalf("at %d columns, the alert went from %q to %q", columns, shownBefore, shown)
+						}
+						shownBefore = shown
+					}
+				})
+			}
+		}
+	}
+}
+
+// streamView is the plain view of a stream that got events at width.
+func streamView(prompt bool, width int, events ...tea.Msg) []string {
+	var model tea.Model = Stream{Project: "Acme | Payments", Prompt: prompt}
+	for _, msg := range append([]tea.Msg{tea.WindowSizeMsg{Width: width}}, events...) {
+		model, _ = model.Update(msg)
+	}
+	return strings.Split(ansi.Strip(model.View().Content), "\n")
+}
+
 // ingest is a fake Hookspot ingest endpoint: it answers 202, or 404 under
 // /missing, and hands each accepted test event's id to deliver.
 func ingest(t *testing.T, deliver func(id string)) string {
