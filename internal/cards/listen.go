@@ -227,8 +227,8 @@ func AtRightEnd(line, end string, width int) string {
 }
 
 // Alert is what listen keeps at the right end of a line, in its widest form
-// that fits: the server's notice, else the update alert. Unlike the
-// full-screen view's alerts, esc never dismisses it.
+// that fits: the server's notice, else the update alert, or the stream's
+// stopping hint. Unlike the full-screen view's alerts, esc never dismisses it.
 type Alert struct {
 	whole, short string
 	// cut is set for a notice, which has no short form: it is cut to fit.
@@ -244,13 +244,10 @@ func NoticeAlert(notice string) Alert {
 	return Alert{whole: warnStyle.Render("⚠ " + Line(notice)), cut: true}
 }
 
-// HintAlert holds hints the details give way to, as to an alert. They show
-// whole or not at all. "" is no alert.
-func HintAlert(hints []string) Alert {
-	if len(hints) == 0 {
-		return Alert{}
-	}
-	hint := faintStyle.Render(strings.Join(hints, " · "))
+// HintAlert is a hint the details give way to, as to an alert. It shows
+// whole or not at all.
+func HintAlert(hint string) Alert {
+	hint = faintStyle.Render(hint)
 	return Alert{whole: hint, short: hint}
 }
 
