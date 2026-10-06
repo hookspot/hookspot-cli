@@ -182,9 +182,9 @@ func (s Status) Render(width int) string {
 // shrunk if need be. Where they don't fit, the hints and then the totals,
 // last first, give way whole to the reason, which only the width cuts;
 // where even beside the state and project alone it would be cut to fewer
-// than minCut columns, nothing gives way.
+// than minCut columns, nothing gives way. An error without a message gives
+// no reason, so a blank one never takes the totals' place.
 func (s Status) offline(parts []string, separator string, width int) string {
-	// An error without a message gives no reason to show.
 	reason := ""
 	if s.Err != nil && s.Err.Error() != "" {
 		reason = faintStyle.Render(Line(s.Err.Error()))
@@ -270,8 +270,8 @@ func NoticeAlert(notice string) Alert {
 	return Alert{whole: warnStyle.Render("⚠ " + Line(notice)), cut: true}
 }
 
-// HintAlert is a hint the details give way to, as to an alert. It shows
-// whole or not at all.
+// HintAlert is a hint the details, then the count, give way to, as to an
+// alert. It shows whole or not at all.
 func HintAlert(hint string) Alert {
 	hint = faintStyle.Render(hint)
 	return Alert{whole: hint, short: hint}
@@ -306,8 +306,8 @@ func (a Alert) shrunk(width int) string {
 	return a.short
 }
 
-// minCut is the fewest columns a cut notice keeps, and an offline reason must
-// keep for the totals to give way to it.
+// minCut is the fewest columns a cut notice keeps, and the fewest an offline
+// reason may be cut to for the totals to give way to it.
 const minCut = 20
 
 // fit is the alert's widest form within width columns, or "".

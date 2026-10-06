@@ -27,7 +27,7 @@ LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X
 # -run pattern keeps its $; run and dev pass it to the CLI.
 ARGS ?=
 # The packages ARGS names, such as . or ./internal/tui; test and golden
-# default to theirs without any.
+# default to theirs without any. A flag's path goes as -flag=./path.
 ARGS_PKGS = $(filter . ./% hookspot%,$(value ARGS))
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 # The packages whose tests compare output with testdata/*.golden files.
