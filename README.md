@@ -74,8 +74,7 @@ In CI, set `HOOKSPOT_CLI_KEY` instead of running `hookspot login`.
 ## Development
 
 [`AGENTS.md`](AGENTS.md) covers the toolchain, the `make` targets, golden files
-and end-to-end builds. Release builds embed the service URL; `.invalid`
-endpoints are placeholders, not live services.
+and end-to-end builds.
 
 ## Releasing
 
