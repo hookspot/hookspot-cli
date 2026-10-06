@@ -13,8 +13,8 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    # No dependency caching: Go's module and build caches, on the runner and in
-    # the Makefile's Docker volumes, start empty on every run.
+    # mise-action caches the tools, but Go's module and build caches, on the
+    # runner and in the Makefile's Docker volumes, start empty on every run.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,8 +32,6 @@ jobs:
         with:
           node-version: 22
 
-      # lint (gofmt and golangci-lint), vet, test, the release snapshot and
-      # image, and the npm and smoke tests.
       - run: make check
 
   # Runs the terminal tests on each platform's own pseudo-terminal (ConPTY on
