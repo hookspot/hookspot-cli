@@ -154,45 +154,51 @@ func (s Status) Render(width int) string {
 	if s.Totals.Max > 0 {
 		parts = append(parts, "p50 "+FormatLatency(s.Totals.P50))
 	}
-	if s.State == StateOffline && s.Err != nil {
-		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
+	if s.State == StateOffline {
+		return s.offline(parts, separator, width)
 	}
 	// The details after the request count, parts[3:], give way whole to the
 	// alert, as the full-screen keys do; then the count, but only to the
 	// alert's short form or a notice too wide for the room beside it, cut if
-	// need be. The state and project stay. Offline, the alert shows only
-	// beside every part, shrunk if need be; without it, the totals give way
-	// to the reason.
+	// need be. The state and project stay.
 	kept := 3
-	if s.State == StateOffline {
-		kept = len(parts)
-	}
 	alert := s.Alert.fit(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	if alert == "" {
-		if s.State != StateOffline {
-			kept = 2
-		}
+		kept = 2
 		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
 	if alert == "" {
-		line := strings.Join(parts, separator)
-		if s.State == StateOffline && s.Err != nil && lipgloss.Width(line) > width {
-			// The hints went first; now the totals give way whole, last first,
-			// to the reason, which only the width cuts.
-			totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
-			for len(totals) > 0 && lipgloss.Width(line) > width {
-				totals = totals[:len(totals)-1]
-				line = strings.Join(slices.Concat(parts[:2], totals, []string{reason}), separator)
-			}
-			return truncate(line, width)
-		}
-		return withHints(line, s.Hints, width)
+		return withHints(strings.Join(parts, separator), s.Hints, width)
 	}
 	// Then as many details as fit come back.
 	for kept < len(parts) && lipgloss.Width(strings.Join(parts[:kept+1], separator))+endGap+lipgloss.Width(alert) <= width {
 		kept++
 	}
 	return AtRightEnd(strings.Join(parts[:kept], separator), alert, width)
+}
+
+// offline draws the status while reconnecting, with the reason after the
+// parts. Every part stays over the alert, which shows only beside them all,
+// shrunk if need be. Where they don't fit, the hints and then the totals,
+// last first, give way whole to the reason, which only the width cuts.
+func (s Status) offline(parts []string, separator string, width int) string {
+	if s.Err != nil {
+		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
+	}
+	line := strings.Join(parts, separator)
+	room := width - lipgloss.Width(line) - endGap
+	if alert := cmp.Or(s.Alert.fit(room), s.Alert.shrunk(room)); alert != "" {
+		return AtRightEnd(line, alert, width)
+	}
+	if s.Err == nil || lipgloss.Width(line) <= width {
+		return withHints(line, s.Hints, width)
+	}
+	totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
+	for len(totals) > 0 && lipgloss.Width(line) > width {
+		totals = totals[:len(totals)-1]
+		line = strings.Join(slices.Concat(parts[:2], totals, []string{reason}), separator)
+	}
+	return truncate(line, width)
 }
 
 func (s Status) state() string {

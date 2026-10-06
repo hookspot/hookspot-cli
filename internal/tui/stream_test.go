@@ -344,8 +344,8 @@ func TestStreamStatusLine(t *testing.T) {
 
 // TestStreamStatusLineAtEveryWidth renders the status line in every state,
 // with the update alert and with the server's notice, at every width from 20
-// to 140 columns, and compares it with the line the give-way order of
-// hookspot/hookspot#125 and #126 gives, as Status.Render's comment states it.
+// to 140 columns, and compares it with the line the give-way rules in the
+// comments of Status.Render, Status.offline and statusAlert give.
 func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 	const project = "Acme | Payments"
 	lost := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
