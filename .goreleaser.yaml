@@ -86,10 +86,10 @@ changelog:
   disable: '{{ not .PreviousTag }}'
   groups:
     - title: Features
-      regexp: '^feat(\(.+\))?!?:'
+      regexp: '^feat:'
       order: 0
     - title: Fixes
-      regexp: '^fix(\(.+\))?!?:'
+      regexp: '^fix:'
       order: 1
 
 release:
