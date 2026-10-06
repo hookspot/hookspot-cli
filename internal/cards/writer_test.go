@@ -142,6 +142,33 @@ func TestWriterReturnsWriteFailures(t *testing.T) {
 	}
 }
 
+// TestWriterKeepsReadyWhenTheUpdateAlertFails covers an alert that waited
+// for Ready and fails to write: Ready still succeeds.
+func TestWriterKeepsReadyWhenTheUpdateAlertFails(t *testing.T) {
+	out := &failingAfter{writes: 1, err: errors.New("stdout unavailable")}
+	w := NewWriter(out, io.Discard, testListen(), "")
+	if err := w.Emit(session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Emit(session.Ready{}); err != nil || out.writes != -1 {
+		t.Fatalf("Ready = %v after %d writes left, want nil after the alert's", err, out.writes)
+	}
+}
+
+// failingAfter fails every write after its first writes.
+type failingAfter struct {
+	writes int
+	err    error
+}
+
+func (w *failingAfter) Write(p []byte) (int, error) {
+	w.writes--
+	if w.writes < 0 {
+		return 0, w.err
+	}
+	return len(p), nil
+}
+
 type failingWriter struct{ err error }
 
 func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }

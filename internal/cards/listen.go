@@ -242,9 +242,6 @@ func UpdateAlert(update session.UpdateAvailable) Alert {
 // left before it.
 func (a Alert) Claim(width, keep int) (string, int) {
 	alert := a.fit(width - keep - endGap)
-	if alert == "" {
-		return "", width
-	}
 	return alert, width - lipgloss.Width(alert) - endGap
 }
 

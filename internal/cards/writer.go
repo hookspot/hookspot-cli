@@ -60,12 +60,12 @@ func (w *Writer) Emit(event session.Event) error {
 			return err
 		}
 		w.ready = true
-		// Like the update check's failures, the alert's never stop listening.
-		_ = w.writeUpdateAlert()
+		w.writeUpdateAlert()
 		return nil
 	case session.UpdateAvailable:
 		w.updateAlert = UpdateAlert(e).whole
-		return w.writeUpdateAlert()
+		w.writeUpdateAlert()
+		return nil
 	case session.ConnectionLost:
 		return w.write(w.errOut, ConnectionLost(e.Err, e.RetryIn))
 	case session.Reconnected:
@@ -85,12 +85,12 @@ func (w *Writer) Emit(event session.Event) error {
 }
 
 // writeUpdateAlert writes the update alert once both it and Ready are in, on
-// out: the terminal the update check asked about.
-func (w *Writer) writeUpdateAlert() error {
-	if !w.ready || w.updateAlert == "" {
-		return nil
+// out: the terminal the update check asked about. Like the check's failures,
+// a failed write never stops listening.
+func (w *Writer) writeUpdateAlert() {
+	if w.ready && w.updateAlert != "" {
+		_ = w.write(w.out, w.updateAlert)
 	}
-	return w.write(w.out, w.updateAlert)
 }
 
 // Reply answers a line command.
