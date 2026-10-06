@@ -136,8 +136,8 @@ type Status struct {
 	Alert Alert
 }
 
-// Render draws the status at width: state, project, counts and p50, then the
-// alert, or the hints while they fit.
+// Render draws the status at width: state, project, counts and p50, offline
+// the reason, then the alert, or the hints while they fit.
 func (s Status) Render(width int) string {
 	separator := faintStyle.Render(" · ")
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
@@ -160,8 +160,9 @@ func (s Status) Render(width int) string {
 	// The details after the request count, parts[3:], give way whole to the
 	// alert, as the full-screen keys do; then the count, but only to the
 	// alert's short form or a notice too wide for the room beside it, cut if
-	// need be. The state and project stay. Offline, every part stays and the
-	// alert shrinks beside them.
+	// need be. The state and project stay. Offline, the alert shows only
+	// beside every part, shrunk if need be; without it, the totals give way
+	// to the reason.
 	kept := 3
 	if s.State == StateOffline {
 		kept = len(parts)
@@ -173,16 +174,18 @@ func (s Status) Render(width int) string {
 		}
 		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
-	line := strings.Join(parts, separator)
-	if alert == "" && s.State == StateOffline && s.Err != nil && lipgloss.Width(line) > width {
-		// The hints went first; now the details give way whole to the reason,
-		// which only the width cuts.
-		for len(parts) > 4 && lipgloss.Width(strings.Join(parts, separator)) > width {
-			parts = slices.Delete(parts, len(parts)-2, len(parts)-1)
-		}
-		return truncate(strings.Join(parts, separator), width)
-	}
 	if alert == "" {
+		line := strings.Join(parts, separator)
+		if s.State == StateOffline && s.Err != nil && lipgloss.Width(line) > width {
+			// The hints went first; now the totals give way whole, last first,
+			// to the reason, which only the width cuts.
+			totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
+			for len(totals) > 0 && lipgloss.Width(line) > width {
+				totals = totals[:len(totals)-1]
+				line = strings.Join(slices.Concat(parts[:2], totals, []string{reason}), separator)
+			}
+			return truncate(line, width)
+		}
 		return withHints(line, s.Hints, width)
 	}
 	// Then as many details as fit come back.
