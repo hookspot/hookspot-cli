@@ -1,5 +1,9 @@
 include release/toolchain.env
 
+# check's prerequisites run in order, even under -j: release-snapshot needs
+# release-tools' image, and release-image the binaries release-snapshot stages.
+.NOTPARALLEL:
+
 # Go and golangci-lint run on the host at mise.toml's versions; DOCKER=1 runs
 # them in release/toolchain.env's images instead. run and dev always use Docker.
 DOCKER ?=
