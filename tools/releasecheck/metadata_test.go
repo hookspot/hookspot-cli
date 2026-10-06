@@ -70,7 +70,7 @@ func TestRunMetadataWritesSnapshotBuildInfoToAbsoluteOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Windows keeps no Unix mode: Go reports any writable file as 0666.
-	if got := info.Mode().Perm(); got != 0o644 && runtime.GOOS != "windows" {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o644 {
 		t.Fatalf("metadata mode = %04o, want 0644", got)
 	}
 }

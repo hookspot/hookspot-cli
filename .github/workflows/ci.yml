@@ -52,4 +52,3 @@ jobs:
           go-version-file: go.mod
 
       - run: go test ./...
-        shell: bash
