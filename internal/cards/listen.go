@@ -160,14 +160,16 @@ func (s Status) Render(width int) string {
 	// The details after the request count, parts[3:], give way whole to the
 	// alert, as the full-screen keys do; then the count, but only to its
 	// short form or a cut notice. The state and project stay, and offline,
-	// so does the reason.
+	// every part, beside which the alert shrinks too.
 	kept := 3
 	if s.State == StateOffline {
 		kept = len(parts)
 	}
 	alert := s.Alert.fit(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
-	if alert == "" && s.State != StateOffline {
-		kept = 2
+	if alert == "" {
+		if s.State != StateOffline {
+			kept = 2
+		}
 		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
 	if alert == "" {
