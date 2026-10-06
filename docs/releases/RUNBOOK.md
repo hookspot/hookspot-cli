@@ -176,7 +176,7 @@ working tree because the build embeds VCS metadata; a before hook clears
 `npm/binaries/` inside the container, so the run is repeatable on Linux hosts
 where the bind mount leaves those files root-owned. The snapshot formula in
 `dist/homebrew/` names the newest reachable tag in its download URLs
-(`v0.0.0-stage.1` today); a real `v*` tag push fills in the right one.
+(`v0.0.0` without one); a real `v*` tag push fills in the right one.
 
 `make release-image` then builds the image from those binaries for both
 platforms without pushing. It needs a Buildx builder that supports
