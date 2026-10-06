@@ -300,6 +300,8 @@ func TestStreamStatusLine(t *testing.T) {
 			})
 		}},
 		{name: "notice", events: func(t *testing.T, h *harness, _ func(string)) {
+			// Over the update alert.
+			h.emit(t, updateAvailable)
 			h.emit(t, session.Notice{Text: deprecation})
 			h.emit(t, session.Ready{})
 		}},

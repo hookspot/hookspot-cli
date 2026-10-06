@@ -376,8 +376,8 @@ func newConnectionNotices(emit func(session.Event) error) *connectionNotices {
 func (n *connectionNotices) joined(notice string) error {
 	if !n.ready {
 		n.ready = true
-		// Before Ready, as the test hint follows Ready at once; the plain
-		// stream prints the notice after Ready.
+		// Before Ready, as the test hint follows Ready at once; plain mode
+		// prints the notice after Ready.
 		if err := n.emit(session.Notice{Text: notice}); err != nil {
 			return err
 		}
