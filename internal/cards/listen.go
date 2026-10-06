@@ -158,9 +158,10 @@ func (s Status) Render(width int) string {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
 	// The details after the request count, parts[3:], give way whole to the
-	// alert, as the full-screen keys do; then the count, but only to its
-	// short form or a cut notice. The state and project stay, and offline,
-	// every part, beside which the alert shrinks too.
+	// alert, as the full-screen keys do; then the count, but only to the
+	// alert's short form or a notice too wide for the room beside it, cut if
+	// need be. The state and project stay. Offline, every part stays and the
+	// alert shrinks beside them.
 	kept := 3
 	if s.State == StateOffline {
 		kept = len(parts)
