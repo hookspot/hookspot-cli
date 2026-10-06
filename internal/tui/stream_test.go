@@ -376,6 +376,8 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 		},
 	}
 	notice := "⚠ " + deprecation
+	// Cut below minCut columns, a notice or a reason would say nothing.
+	const minCut = 20
 	alerts := []struct {
 		name  string
 		event tea.Msg
@@ -390,8 +392,7 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 			return ""
 		}},
 		{name: "notice", event: session.Notice{Text: deprecation}, whole: notice, shrunk: func(room int) string {
-			// Cut below 20 columns, a notice would say nothing.
-			if room < 20 {
+			if room < minCut {
 				return ""
 			}
 			return ansi.Truncate(notice, room, "…")
@@ -449,13 +450,14 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 							// Live, the hint shows while every part fits beside it; stopping,
 							// the details give way to it as to an alert. Offline, where the
 							// parts don't fit, the reason keeps the most leading totals that
-							// fit beside it, and only the width cuts it.
+							// fit beside it, and only the width cuts it, to no fewer than
+							// minCut columns.
 							want := ending(len(parts), len(parts), hint, wholeOnly)
 							if s.stopping {
 								want = ending(2, 2, hint, wholeOnly)
 							}
 							shown := parts
-							if s.offline {
+							if s.offline && columns-ansi.StringWidth(s.state+" · "+project+" · ") >= minCut {
 								for n := len(parts) - 1; n >= 2; n-- {
 									shown = append(slices.Clone(parts[:n]), lost.Err.Error())
 									if ansi.StringWidth(strings.Join(shown, " · ")) <= columns {

@@ -180,7 +180,8 @@ func (s Status) Render(width int) string {
 // offline draws the status while reconnecting, with the reason after the
 // parts. Every part stays over the alert, which shows only beside them all,
 // shrunk if need be. Where they don't fit, the hints and then the totals,
-// last first, give way whole to the reason, which only the width cuts.
+// last first, give way whole to the reason, which only the width cuts;
+// where the reason would keep fewer than minCut columns, nothing gives way.
 func (s Status) offline(parts []string, separator string, width int) string {
 	if s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
@@ -190,7 +191,7 @@ func (s Status) offline(parts []string, separator string, width int) string {
 	if alert := cmp.Or(s.Alert.fit(room), s.Alert.shrunk(room)); alert != "" {
 		return AtRightEnd(line, alert, width)
 	}
-	if s.Err == nil || lipgloss.Width(line) <= width {
+	if s.Err == nil || lipgloss.Width(line) <= width || width-lipgloss.Width(strings.Join(parts[:2], separator)+separator) < minCut {
 		return withHints(line, s.Hints, width)
 	}
 	totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
