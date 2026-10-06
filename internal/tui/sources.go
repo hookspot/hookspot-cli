@@ -440,7 +440,7 @@ func sparkline(counts [session.StatsMinutes]int) string {
 
 // sourcesFooter lists the page's keys, or all of them in columns after ?.
 func (m Fullscreen) sourcesFooter(width int) []string {
-	return helpView(sourcesKeyMap{copying: m.sources.copying}, m.help && !m.sources.copying, width)
+	return m.keyLines(sourcesKeyMap{copying: m.sources.copying}, m.help && !m.sources.copying, width)
 }
 
 // sourcesKeyMap lists the page's keys; after c, only the field numbers.
@@ -450,7 +450,9 @@ func (k sourcesKeyMap) ShortHelp() []key.Binding {
 	if k.copying {
 		return []key.Binding{sourcesKeys.field, sourcesKeys.cancel}
 	}
-	return []key.Binding{keys.up, sourcesKeys.copy, keys.test, sourcesKeys.back, keys.help, keys.quit}
+	// The line is cut from its end, for the update alert too, so help and
+	// quit come first.
+	return []key.Binding{keys.help, keys.quit, keys.up, sourcesKeys.copy, keys.test, sourcesKeys.back}
 }
 
 func (k sourcesKeyMap) FullHelp() [][]key.Binding {

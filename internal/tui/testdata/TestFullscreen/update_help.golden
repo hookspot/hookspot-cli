@@ -1,0 +1,24 @@
+● live · Acme | Payments · 1 request · 1 ok · 0 failed · p50 4ms
+● stripe   ● github   following newest
+╭─ Requests ─────────────────────────────────────────────────────────────── 1 ─╮
+│   #  TIME      SOURCE  METHOD  PATH                   STATUS   LATENCY       │
+│ › 1  14:02:01  stripe  POST    /hooks                 200          7ms       │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ #1 stripe · POST /hooks ──────────────────────────────────────────── req_1 ─╮
+│ Overview   Request   Response   Timing                                       │
+│ ━━━━━━━━                                                                     │
+│  200 OK  7ms  → http://localhost:3000/hooks                                  │
+│                                                                              │
+│ source    stripe                                                             │
+│ route     payments → http://localhost:3000/hooks                             │
+│ received  14:02:01.000                                                       │
+│ … 2 more lines · pgdn scrolls                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+↑↓        select a request     r replay locally       s sources and routes
+←→        switch tabs          w wait, then replay    ? close help        
+pgup pgdn scroll the detail    c copy as cURL         q stop listening    
+f         follow the newest    e export a fixture                         
+/         filter the list      t send a test event                        
+                                             ↑ 1.3.0 · brew upgrade hookspot-cli

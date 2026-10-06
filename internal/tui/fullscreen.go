@@ -99,6 +99,9 @@ type Fullscreen struct {
 	toast   string
 	toastID int
 	help    bool
+
+	// updateAlert names GitHub's newer release, once the check finds one.
+	updateAlert cards.Alert
 }
 
 type (
@@ -144,6 +147,8 @@ func (m Fullscreen) update(msg tea.Msg) (Fullscreen, tea.Cmd) {
 		m.hint = &msg
 	case session.RootNotFound:
 		m.notFound = &msg
+	case session.UpdateAvailable:
+		m.updateAlert = cards.UpdateAlert(msg)
 	case session.Recorded:
 		return m.record(msg)
 	case stoppingMsg:
@@ -530,18 +535,44 @@ var helpStyles = help.Styles{
 
 // footer lists the keys on one line, or all of them in columns after ?.
 func (m Fullscreen) footer(width int) []string {
-	return helpView(keyMap{forwarding: m.forwarding()}, m.help, width)
+	return m.keyLines(keyMap{forwarding: m.forwarding()}, m.help, width)
+}
+
+// keyLines lists bindings as helpView does, with the update alert at the
+// right end of the bottom line. The keys on one line give way to it, all but
+// the first; the columns keep every key, above it.
+func (m Fullscreen) keyLines(bindings help.KeyMap, all bool, width int) []string {
+	if all {
+		lines := helpView(bindings, true, width)
+		if alert, _ := m.updateAlert.Claim(width, 0); alert != "" {
+			lines = append(lines, cards.AtRightEnd("", alert, width))
+		}
+		return lines
+	}
+	first := lipgloss.Width(newHelp(false, 0).ShortHelpView(bindings.ShortHelp()[:1]))
+	alert, room := m.updateAlert.Claim(width, first)
+	if alert == "" {
+		return helpView(bindings, false, width)
+	}
+	// help overruns a width too narrow for its ellipsis.
+	keys := ansi.Truncate(helpView(bindings, false, room)[0], room, "")
+	return []string{cards.AtRightEnd(keys, alert, width)}
 }
 
 // helpView lists the keys on one line, or with all set, all of them in
 // columns.
 func helpView(bindings help.KeyMap, all bool, width int) []string {
+	return strings.Split(newHelp(all, width).View(bindings), "\n")
+}
+
+// newHelp is the help model the views list keys with.
+func newHelp(all bool, width int) help.Model {
 	h := help.New()
 	h.ShowAll = all
 	h.ShortSeparator = "  "
 	h.Styles = helpStyles
 	h.SetWidth(width)
-	return strings.Split(h.View(bindings), "\n")
+	return h
 }
 
 // keyMap lists the keys; nothing replays without --forward-to.

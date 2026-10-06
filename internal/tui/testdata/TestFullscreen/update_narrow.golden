@@ -1,0 +1,16 @@
+● live · Acme | Payments …
+● stripe   ● github   fol…
+╭─ Requests ───────── 1 ─╮
+│   #  SOURCE    STATUS… │
+│ › 1  stripe    200   … │
+│                        │
+│                        │
+╰────────────────────────╯
+╭─ #1 stripe · POST /… ──╮
+│ Overview   Request   … │
+│ ━━━━━━━━             … │
+│  200 OK  7ms  → http:… │
+│                        │
+│ … 8 more lines · pgdn… │
+╰────────────────────────╯
+? help  ↑ update available

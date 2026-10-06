@@ -30,6 +30,9 @@ func TestCommandHelper(t *testing.T) {
 	// cobra's copy has to be refreshed by hand.
 	rootCmd.Version = version
 	githubAPIBaseURL = os.Getenv("TEST_GITHUB_API_URL")
+	// The test binary is in no package manager's tree, so the upgrade command
+	// is the docs' on every machine.
+	dockerEnvPath = ""
 
 	separator := 0
 	for i, arg := range os.Args {
@@ -297,7 +300,8 @@ func TestVersionPrintsUpdateCard(t *testing.T) {
 	want := "hookspot version 1.2.3\n" +
 		"╭─ Update available ──╮\n" +
 		"│ 1.2.3 → 1.3.0       │\n" +
-		"╰─────────────────────╯\n"
+		"╰─────────────────────╯\n" +
+		upgradeDocsURL + "\n"
 	if result.stdout != want {
 		t.Fatalf("stdout = %q, want %q", result.stdout, want)
 	}

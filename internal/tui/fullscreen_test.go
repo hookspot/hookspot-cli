@@ -142,6 +142,8 @@ var (
 	left     = tea.KeyPressMsg{Code: tea.KeyLeft}
 	right    = tea.KeyPressMsg{Code: tea.KeyRight}
 	pageDown = tea.KeyPressMsg{Code: tea.KeyPgDown}
+
+	updateAvailable = session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}
 )
 
 func letter(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
@@ -257,6 +259,13 @@ func TestFullscreen(t *testing.T) {
 				lost, session.Reconnected{Offline: 2 * time.Second},
 				r.recorded(replay),
 			}
+		}},
+		{name: "update narrow", width: 26, height: 16, events: func(r *tally) []tea.Msg {
+			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable}
+		}},
+		{name: "update help", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			// The help keeps every key, above the alert.
+			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), updateAvailable, letter('?')}
 		}},
 		{name: "esc dismisses alerts", width: 80, height: 24, events: func(r *tally) []tea.Msg {
 			msgs := []tea.Msg{

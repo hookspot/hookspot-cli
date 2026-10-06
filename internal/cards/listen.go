@@ -132,18 +132,23 @@ type Status struct {
 	Project string
 	Totals  session.Stats
 	Hints   []string
+	// Alert takes the hints' place where it fits.
+	Alert Alert
 }
 
 // Render draws the status at width: state, project, counts and p50, then the
-// hints while they fit.
+// alert, or the hints while they fit.
 func (s Status) Render(width int) string {
+	separator := faintStyle.Render(" · ")
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
 	if t := s.Totals; t.OK+t.Failed > 0 {
 		failed := strconv.Itoa(t.Failed) + " failed"
 		if t.Failed > 0 {
 			failed = errorStyle.Render(failed)
 		}
-		parts = append(parts, okStyle.Render(strconv.Itoa(t.OK)+" ok"), failed)
+		// One part, so a line that gives way never shows one without the
+		// other.
+		parts = append(parts, okStyle.Render(strconv.Itoa(t.OK)+" ok")+separator+failed)
 	}
 	// Max is zero until a request got a response or timed out.
 	if s.Totals.Max > 0 {
@@ -152,7 +157,27 @@ func (s Status) Render(width int) string {
 	if s.State == StateOffline && s.Err != nil {
 		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
 	}
-	return withHints(strings.Join(parts, faintStyle.Render(" · ")), s.Hints, width)
+	// The details after the request count, parts[3:], give way whole to the
+	// alert, as the full-screen keys do; then the count, but only to its
+	// short form. The state and project stay, and offline, so does the
+	// reason.
+	kept := 3
+	if s.State == StateOffline {
+		kept = len(parts)
+	}
+	alert := s.Alert.fit(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
+	if alert == "" && s.State != StateOffline {
+		kept = 2
+		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
+	}
+	if alert == "" {
+		return withHints(strings.Join(parts, separator), s.Hints, width)
+	}
+	// Then as many details as fit come back.
+	for kept < len(parts) && lipgloss.Width(strings.Join(parts[:kept+1], separator))+endGap+lipgloss.Width(alert) <= width {
+		kept++
+	}
+	return AtRightEnd(strings.Join(parts[:kept], separator), alert, width)
 }
 
 func (s Status) state() string {
@@ -179,13 +204,63 @@ func Prompt(input string, hints []string, width int) string {
 // withHints puts hints at the right end of line while they fit, then cuts the
 // line to width.
 func withHints(line string, hints []string, width int) string {
+	end := ""
 	if len(hints) > 0 {
-		joined := faintStyle.Render(strings.Join(hints, " · "))
-		if gap := width - lipgloss.Width(line) - lipgloss.Width(joined); gap >= 2 {
-			line += strings.Repeat(" ", gap) + joined
-		}
+		end = faintStyle.Render(strings.Join(hints, " · "))
+	}
+	return AtRightEnd(line, end, width)
+}
+
+// endGap is the fewest columns between a line and what ends it.
+const endGap = 2
+
+// AtRightEnd puts end at the right end of line when it fits, then cuts the
+// line to width.
+func AtRightEnd(line, end string, width int) string {
+	if gap := width - lipgloss.Width(line) - lipgloss.Width(end); end != "" && gap >= endGap {
+		line += strings.Repeat(" ", gap) + end
 	}
 	return truncate(line, width)
+}
+
+// Alert is what listen keeps at the right end of a line, in its widest form
+// that fits: the update alert. Unlike the full-screen view's alerts, esc
+// never dismisses it.
+type Alert struct{ whole, short string }
+
+// UpdateAlert names the newer release and how to upgrade to it, or only that
+// an update is available where that doesn't fit.
+func UpdateAlert(update session.UpdateAvailable) Alert {
+	return Alert{
+		whole: okStyle.Render("↑ "+Line(update.Latest)) + faintStyle.Render(" · ") + Line(update.Upgrade),
+		short: okStyle.Render("↑ update available"),
+	}
+}
+
+// Claim fits the alert at the right end of a width-column line that keeps
+// its first columns: it returns the alert, "" when none fits, and the room
+// left before it.
+func (a Alert) Claim(width, keep int) (string, int) {
+	alert := a.fit(width - keep - endGap)
+	return alert, width - lipgloss.Width(alert) - endGap
+}
+
+// shrunk is the alert's short form within width columns, or "".
+func (a Alert) shrunk(width int) string {
+	if lipgloss.Width(a.short) > width {
+		return ""
+	}
+	return a.short
+}
+
+// fit is the alert's widest form within width columns, or "".
+func (a Alert) fit(width int) string {
+	for _, text := range []string{a.whole, a.short} {
+		if lipgloss.Width(text) <= width {
+			return text
+		}
+	}
+	return ""
 }
 
 // DisabledSource warns that a listened source rejects its requests.

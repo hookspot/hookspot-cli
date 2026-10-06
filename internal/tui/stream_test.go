@@ -284,6 +284,8 @@ func TestStreamStatusLine(t *testing.T) {
 		{name: "offline", events: func(t *testing.T, h *harness, _ func(string)) {
 			h.emit(t, session.Ready{})
 			h.handle(t, delivery(1, "/hooks"))
+			// The reason stays; the update alert doesn't fit beside it.
+			h.emit(t, updateAvailable)
 			h.emit(t, lost)
 		}},
 		{name: "reconnected", events: func(t *testing.T, h *harness, _ func(string)) {
@@ -299,7 +301,9 @@ func TestStreamStatusLine(t *testing.T) {
 		}},
 		{name: "stopping with a prompt", prompt: true, events: func(t *testing.T, h *harness, typeKeys func(string)) {
 			h.emit(t, session.Ready{})
-			// The prompt goes, and the status line says a second Ctrl-C kills.
+			// The prompt goes, and the status line says a second Ctrl-C kills,
+			// over the update alert.
+			h.emit(t, updateAvailable)
 			typeKeys("\x03")
 			receive(t, h.ctx.Done())
 		}},

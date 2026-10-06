@@ -21,6 +21,8 @@ type Writer struct {
 	listen      Listen
 	requestsURL string
 	out, errOut stream
+	ready       bool
+	updateAlert string
 	// mu keeps replies, which don't come through the session, whole.
 	mu sync.Mutex
 }
@@ -48,13 +50,22 @@ func (w *Writer) Banner(project string, routes []BannerRoute, hints []string) er
 }
 
 // Emit writes each event in one write, so a terminal never shows part of a
-// card.
+// card. The update alert follows Ready.
 func (w *Writer) Emit(event session.Event) error {
 	switch e := event.(type) {
 	case session.Connecting:
 		return w.write(w.out, Connecting())
 	case session.Ready:
-		return w.write(w.out, Ready())
+		if err := w.write(w.out, Ready()); err != nil {
+			return err
+		}
+		w.ready = true
+		w.writeUpdateAlert()
+		return nil
+	case session.UpdateAvailable:
+		w.updateAlert = UpdateAlert(e).whole
+		w.writeUpdateAlert()
+		return nil
 	case session.ConnectionLost:
 		return w.write(w.errOut, ConnectionLost(e.Err, e.RetryIn))
 	case session.Reconnected:
@@ -71,6 +82,15 @@ func (w *Writer) Emit(event session.Event) error {
 		return w.write(w.out, w.listen.Entry(e.Entry, Width(w.out.w)))
 	}
 	return nil
+}
+
+// writeUpdateAlert writes the update alert once both it and Ready are in, on
+// out: the terminal the update check asked about. Like the check's failures,
+// a failed write never stops listening.
+func (w *Writer) writeUpdateAlert() {
+	if w.ready && w.updateAlert != "" {
+		_ = w.write(w.out, w.updateAlert)
+	}
 }
 
 // Reply answers a line command.

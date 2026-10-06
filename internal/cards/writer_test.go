@@ -29,9 +29,11 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	var out, errOut countingWriter
 	w := NewWriter(&out, &errOut, testListen(), "https://hookspot.test/acme/payments/requests")
 	entry := session.Entry{Number: 2, Delivery: testDelivery(), Received: received, Target: "http://localhost:3000/api/webhooks", Response: ws.Response{Status: http.StatusBadGateway}, ReplayOf: 1, Replay: &session.Comparison{Original: 1, Status: http.StatusOK}}
+	update := session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}
 	events := []session.Event{
 		session.DisabledSource{Name: "github"},
 		session.SkippedSource{Name: "shopify"},
+		update,
 		session.Connecting{},
 		session.Ready{},
 		session.Recorded{Entry: entry},
@@ -48,7 +50,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if want := noColor(t, Connecting()) + noColor(t, Ready()) + noColor(t, testListen().Entry(entry, DefaultWidth)); out.String() != want {
+	if want := noColor(t, Connecting()) + noColor(t, Ready()) + noColor(t, UpdateAlert(update).whole) + noColor(t, testListen().Entry(entry, DefaultWidth)); out.String() != want {
 		t.Errorf("out:\n%s\nwant:\n%s", out.String(), want)
 	}
 	wantErr := noColor(t, DisabledSource("github")) +
@@ -60,7 +62,7 @@ func TestWriterSendsEachEventToItsStreamInOneWrite(t *testing.T) {
 	if errOut.String() != wantErr {
 		t.Errorf("errOut:\n%s\nwant:\n%s", errOut.String(), wantErr)
 	}
-	if out.writes != 3 || errOut.writes != 6 {
+	if out.writes != 4 || errOut.writes != 6 {
 		t.Errorf("writes = %d and %d, want one per event", out.writes, errOut.writes)
 	}
 }
@@ -138,6 +140,33 @@ func TestWriterReturnsWriteFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWriterKeepsReadyWhenTheUpdateAlertFails covers an alert that waited
+// for Ready and fails to write: Ready still succeeds.
+func TestWriterKeepsReadyWhenTheUpdateAlertFails(t *testing.T) {
+	out := &failingAfter{writes: 1, err: errors.New("stdout unavailable")}
+	w := NewWriter(out, io.Discard, testListen(), "")
+	if err := w.Emit(session.UpdateAvailable{Latest: "1.3.0", Upgrade: "brew upgrade hookspot-cli"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Emit(session.Ready{}); err != nil || out.writes != -1 {
+		t.Fatalf("Ready = %v after %d writes left, want nil after the alert's", err, out.writes)
+	}
+}
+
+// failingAfter fails every write after its first writes.
+type failingAfter struct {
+	writes int
+	err    error
+}
+
+func (w *failingAfter) Write(p []byte) (int, error) {
+	w.writes--
+	if w.writes < 0 {
+		return 0, w.err
+	}
+	return len(p), nil
 }
 
 type failingWriter struct{ err error }

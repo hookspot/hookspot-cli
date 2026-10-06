@@ -127,6 +127,9 @@ var listenCmd = &cobra.Command{
 			target = forwarder.String()
 		}
 		wsClient := ws.New(wsURL.String(), cfg.CLIKey, "project:"+project.UID, sourceUIDs, target)
+		// Piped output may feed a script: it gets plain mode and no update
+		// alert.
+		piped := !cards.Terminal(cmd.OutOrStdout())
 		setup := listenSetup{
 			ctx:         listenContext,
 			stop:        stopListening,
@@ -138,6 +141,9 @@ var listenCmd = &cobra.Command{
 			routes:      routes,
 			requestsURL: requestsURL,
 			listen: func(sess *session.Session) error {
+				if !piped {
+					defer announceUpdate(listenContext, sess)()
+				}
 				if err := sess.Emit(session.Connecting{}); err != nil {
 					return err
 				}
@@ -152,7 +158,6 @@ var listenCmd = &cobra.Command{
 
 		// A dumb terminal, such as Emacs' M-x shell, has no cursor control
 		// for the full-screen or stream view.
-		piped := !cards.Terminal(cmd.OutOrStdout())
 		if piped || os.Getenv("TERM") == "dumb" {
 			return runPlain(setup, cmd.InOrStdin(), piped)
 		}
@@ -277,6 +282,24 @@ func runInTerminal(program *tui.Program, model tea.Model, listen func() error) e
 		return runErr
 	}
 	return listenErr
+}
+
+// announceUpdate tells sess about a newer release on GitHub alongside
+// listening. The returned stop cancels the check and waits for it, so no
+// alert follows listening. An alert that can't be written never stops it.
+func announceUpdate(ctx context.Context, sess *session.Session) (stop func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if latest := newerRelease(ctx, version); latest != "" && ctx.Err() == nil {
+			_ = sess.Emit(session.UpdateAvailable{Latest: latest, Upgrade: upgradeCommand()})
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 type websocketListener interface {
