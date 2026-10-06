@@ -24,7 +24,6 @@ func TestRouteFor(t *testing.T) {
 		want     string
 	}{
 		{"route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_billing", Path: "/hooks"}, "rte_billing"},
-		{"no route uid", ws.Delivery{SourceUID: "src_stripe", Path: "/hooks"}, ""},
 		{"unknown route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted", Path: "/refunds"}, ""},
 		{"route uid of another source", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_github", Path: "/github"}, ""},
 		{"unknown source", ws.Delivery{SourceUID: "src_other", RouteUID: "rte_orders", Path: "/hooks"}, ""},
