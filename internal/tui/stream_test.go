@@ -454,8 +454,9 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 							// Live, the hint shows while every part fits beside it; stopping,
 							// the details give way to it as to an alert. Offline, where the
 							// parts don't fit, the reason keeps the most leading totals that
-							// fit beside it, and only the width cuts it, unless to fewer than
-							// minCut columns.
+							// fit beside it, and only the width cuts it; where even beside the
+							// state and project alone it would be cut to fewer than minCut
+							// columns, nothing gives way.
 							want := ending(len(parts), len(parts), hint, wholeOnly)
 							if s.stopping {
 								want = ending(2, 2, hint, wholeOnly)

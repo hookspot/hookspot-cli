@@ -174,8 +174,8 @@ func (m Stream) statusHints() []string {
 
 // statusAlert ends the status line. While listening it's the server's notice,
 // else the update alert, in place of the hints. While stopping it says what
-// a second Ctrl-C does, and the details give way to that. Once stopped it's
-// empty, so the line keeps the run's totals.
+// a second Ctrl-C does, and the details, then the count, give way to that.
+// Once stopped it's empty, so the line keeps the run's totals.
 func (m Stream) statusAlert() cards.Alert {
 	switch {
 	case m.state == cards.StateStopped:
