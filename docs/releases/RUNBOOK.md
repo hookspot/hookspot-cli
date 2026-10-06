@@ -40,6 +40,19 @@ git push origin v1.2.3
 gh run watch
 ```
 
+## Release notes
+
+GoReleaser writes them from the commits since the previous tag: `feat:`
+commits under Features, `fix:` commits under Fixes, and no others. The first
+release has no previous tag, so it goes out without notes; write them once
+`release` is green:
+
+```sh
+gh release edit v0.1.0 --repo hookspot/hookspot-cli --notes-file notes.md
+```
+
+A re-run of the job keeps them (`mode: keep-existing`).
+
 ## What the workflow does
 
 `release` (ubuntu, `contents: write`, `id-token: write`):
@@ -56,7 +69,7 @@ gh run watch
    `npm/binaries/<os>-<arch>/`, packs
    `hookspot_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) plus
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
-   seven assets, and pushes `Formula/hookspot-cli.rb` to
+   seven assets and its notes, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
 4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
    `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and

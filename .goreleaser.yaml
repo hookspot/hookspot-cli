@@ -80,8 +80,18 @@ checksum:
 snapshot:
   version_template: '0.0.0-snapshot.{{ .ShortCommit }}'
 
+# Release notes list the feat: and fix: commits since the previous tag; the
+# rest (test:, refactor:, docs:, chore:, ci:, build:, merges) match no group
+# and are left out. Without a previous tag (v0.1.0), they're written by hand.
 changelog:
-  disable: true
+  disable: '{{ not .PreviousTag }}'
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
 
 release:
   github:
