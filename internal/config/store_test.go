@@ -379,6 +379,7 @@ func TestNewValidatesMarkedRecordBeforeResolution(t *testing.T) {
 		wantErr  bool
 	}{
 		{"valid", "schema_version = 1\ncli_key = 'file-key'\nproject = 'proj_1'\n", false},
+		{"a later release's key", "schema_version = 1\ncli_key = 'file-key'\nproject = 'proj_1'\nadded_later = true\n", false},
 		{"wrong schema", "schema_version = 2\ncli_key = 'file-key'\n", true},
 		{"markerless", "cli_key = 'file-key'\nproject = 'proj_1'\n", true},
 		{"malformed", "schema_version = [", true},
