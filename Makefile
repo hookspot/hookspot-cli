@@ -74,8 +74,7 @@ toolchain-check:
 		&& grep -q "^GOLANGCI_LINT_IMAGE=golangci/golangci-lint:v$$lint@" release/toolchain.env \
 		|| { echo "go.mod, mise.toml and release/toolchain.env pin different Go or golangci-lint versions" >&2; exit 1; }
 
-# Everything CI's ci job runs. release-snapshot needs a clean tree, and release-image
-# the binaries it stages.
+# Everything CI's ci job runs. release-snapshot needs a clean tree.
 check: toolchain-check lint vet test release-tools release-check release-snapshot release-image npm-test
 	scripts/smoke_test.sh
 	cd npm && npm pack --dry-run
