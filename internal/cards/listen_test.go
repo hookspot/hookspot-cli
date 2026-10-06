@@ -140,6 +140,8 @@ func TestStatus(t *testing.T) {
 		Prompt("r 4\x1b", hints, 80),
 		Status{State: StateLive, Project: "Acme | Payments", Totals: session.Stats{Count: 3}, Hints: []string{"ctrl-c quit"}}.Render(80),
 		Status{State: StateOffline, Err: errors.New("dial tcp: connection refused\x1b[2J"), Project: "Acme | Payments", Totals: forwarded}.Render(80),
+		// An error without a message gives no reason, so nothing gives way.
+		Status{State: StateOffline, Err: errors.New(""), Project: "Acme | Payments", Totals: forwarded}.Render(60),
 		Status{State: StateStopping, Project: "evil\x1b]0;title\x07\n", Hints: []string{"ctrl-c force quit"}}.Render(80),
 		// Hints go first when a line doesn't fit, then the rest is cut.
 		Status{State: StateLive, Project: "Acme | Payments", Totals: forwarded, Hints: hints}.Render(40),

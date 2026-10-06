@@ -184,17 +184,20 @@ func (s Status) Render(width int) string {
 // where even beside the state and project alone it would be cut to fewer
 // than minCut columns, nothing gives way.
 func (s Status) offline(parts []string, separator string, width int) string {
-	if s.Err != nil {
-		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
+	// An error without a message gives no reason to show.
+	reason := ""
+	if s.Err != nil && s.Err.Error() != "" {
+		reason = faintStyle.Render(Line(s.Err.Error()))
+		parts = append(parts, reason)
 	}
 	line := strings.Join(parts, separator)
 	if alert, _ := s.Alert.Claim(width, lipgloss.Width(line)); alert != "" {
 		return AtRightEnd(line, alert, width)
 	}
-	if s.Err == nil || lipgloss.Width(line) <= width {
+	if reason == "" || lipgloss.Width(line) <= width {
 		return withHints(line, s.Hints, width)
 	}
-	totals, reason := parts[2:len(parts)-1], parts[len(parts)-1]
+	totals := parts[2 : len(parts)-1]
 	reasonRoom := width - lipgloss.Width(strings.Join(parts[:2], separator)+separator)
 	if reasonRoom < min(minCut, lipgloss.Width(reason)) {
 		return truncate(line, width)
@@ -303,7 +306,8 @@ func (a Alert) shrunk(width int) string {
 	return a.short
 }
 
-// minCut is the fewest columns a cut notice or offline reason keeps.
+// minCut is the fewest columns a cut notice keeps, and an offline reason must
+// keep for the totals to give way to it.
 const minCut = 20
 
 // fit is the alert's widest form within width columns, or "".
