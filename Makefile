@@ -3,7 +3,10 @@ include release/toolchain.env
 # Go and golangci-lint run on the host at mise.toml's versions; DOCKER=1 runs
 # them in release/toolchain.env's images instead. run and dev always use Docker.
 DOCKER ?=
-DOCKER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build
+# A worktree's .git points into the main checkout's, which Git, GoReleaser and
+# Go's VCS stamping read inside the container.
+GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+DOCKER_RUN := docker run --rm -v "$(CURDIR)":/src -w /src $(if $(GIT_COMMON_DIR),-v "$(GIT_COMMON_DIR)":"$(GIT_COMMON_DIR)") -v hookspot-gomod:/go/pkg/mod -v hookspot-gocache:/root/.cache/go-build
 GO := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -e GOARCH $(GO_IMAGE) )go
 LINT := $(if $(DOCKER),$(DOCKER_RUN) -e GOOS -v hookspot-golangci-cache:/root/.cache/golangci-lint $(GOLANGCI_LINT_IMAGE) )golangci-lint
 RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT_SLUG -e HOOKSPOT_CONFIG_FILE
