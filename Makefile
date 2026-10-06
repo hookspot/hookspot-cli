@@ -19,8 +19,8 @@ COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
 # Only GoReleaser builds anything other than a dev binary.
 LDFLAGS = -X hookspot/cmd.version=dev -X hookspot/cmd.serverURL=$(SERVER_URL) -X hookspot/cmd.commit=$(COMMIT) -X hookspot/cmd.sourceDate=$(SOURCE_DATE) -X hookspot/cmd.buildKind=dev
-# test, golden and lint pass ARGS to go test or golangci-lint run; run and dev
-# to the CLI.
+# test, golden, fmt and lint pass ARGS to go or golangci-lint unexpanded, so a
+# -run pattern keeps its $; run and dev pass it to the CLI.
 ARGS ?=
 DEV_ARGS ?= $(if $(ARGS),$(ARGS),listen)
 # The packages whose tests compare output with testdata/*.golden files.
@@ -40,22 +40,22 @@ endif
 
 # e.g. make test ARGS='-run TestStatus ./internal/cards'
 test:
-	$(GO) test $(or $(ARGS),./...)
+	$(GO) test $(or $(value ARGS),./...)
 
 # Rewrites the golden files of the tests ARGS names (default: all of them);
 # review the diff. e.g. make golden ARGS='-run TestStatus ./internal/cards'
 golden:
-	$(GO) test $(or $(ARGS),$(GOLDEN_PKGS)) -update
+	$(GO) test $(or $(value ARGS),$(GOLDEN_PKGS)) -update
 
 vet:
 	$(GO) vet ./...
 
 fmt:
-	$(LINT) fmt $(ARGS)
+	$(LINT) fmt $(value ARGS)
 
 # Includes the gofmt check. Each GOOS has its own config and terminal code.
 lint:
-	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(ARGS) || exit 1; done
+	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(value ARGS) || exit 1; done
 
 # Everything CI runs. release-snapshot needs a clean tree, and release-image
 # the binaries it stages.
