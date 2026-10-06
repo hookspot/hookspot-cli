@@ -25,8 +25,10 @@ var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{
 	{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
 }}}
 
+// delivery is one to path, through the testSources route whose destination
+// it is, if any.
 func delivery(path string) ws.Delivery {
-	return ws.Delivery{
+	d := ws.Delivery{
 		AttemptUID: "att_1",
 		RequestUID: "req_1",
 		SourceUID:  "src_stripe",
@@ -36,6 +38,12 @@ func delivery(path string) ws.Delivery {
 		Headers:    http.Header{"X-Test": []string{"original"}},
 		Body:       []byte(`{"type":"created"}`),
 	}
+	for _, route := range testSources[0].Routes {
+		if route.Destination.Path == path {
+			d.RouteUID = route.UID
+		}
+	}
+	return d
 }
 
 type clock struct {

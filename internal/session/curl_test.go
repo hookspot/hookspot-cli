@@ -51,7 +51,7 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	text := ws.Delivery{
-		AttemptUID: "att_1", RequestUID: "req_text", SourceUID: "src_stripe", Method: http.MethodPatch, Path: "/orders",
+		AttemptUID: "att_1", RequestUID: "req_text", SourceUID: "src_stripe", RouteUID: "rte_orders", Method: http.MethodPatch, Path: "/orders",
 		// Rails and PHP style parameters look like curl URL globs.
 		Query: "a=1&b=it%27s&items[0]=1&f={id,name}",
 		Headers: http.Header{
@@ -67,17 +67,17 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 		Body: []byte("{\"note\":\"it's\n  \\\"quoted\\\"\"}"),
 	}
 	binary := ws.Delivery{
-		AttemptUID: "att_2", RequestUID: "req_binary", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/refunds",
+		AttemptUID: "att_2", RequestUID: "req_binary", SourceUID: "src_stripe", RouteUID: "rte_refunds", Method: http.MethodPost, Path: "/refunds",
 		Headers: http.Header{"X-Signature": []string{"sig\u009bvalue"}, "X-Tab": []string{"a\tb"}, "X-Plain": []string{"plain"}},
 		Body:    []byte{0, 0x1b, '[', '2', 'J', 0xff},
 	}
 	// curl reads a body starting with @ as a file name.
-	at := ws.Delivery{AttemptUID: "att_3", RequestUID: "req_at", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("@/etc/hostname")}
+	at := ws.Delivery{AttemptUID: "att_3", RequestUID: "req_at", SourceUID: "src_stripe", RouteUID: "rte_orders", Method: http.MethodPost, Path: "/orders", Body: []byte("@/etc/hostname")}
 	// Pasting turns a carriage return into a newline, and terminals copy tabs as spaces.
-	crlf := ws.Delivery{AttemptUID: "att_4", RequestUID: "req_crlf", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: []byte("a=1\r\n\tb=2")}
-	large := ws.Delivery{AttemptUID: "att_5", RequestUID: "req_large", SourceUID: "src_stripe", Method: http.MethodPost, Path: "/orders", Body: bytes.Repeat([]byte("x"), maxInlineBodyBytes+1)}
+	crlf := ws.Delivery{AttemptUID: "att_4", RequestUID: "req_crlf", SourceUID: "src_stripe", RouteUID: "rte_orders", Method: http.MethodPost, Path: "/orders", Body: []byte("a=1\r\n\tb=2")}
+	large := ws.Delivery{AttemptUID: "att_5", RequestUID: "req_large", SourceUID: "src_stripe", RouteUID: "rte_orders", Method: http.MethodPost, Path: "/orders", Body: bytes.Repeat([]byte("x"), maxInlineBodyBytes+1)}
 	// Whoever posts to a source picks the method; these are all HTTP token characters.
-	method := ws.Delivery{AttemptUID: "att_6", RequestUID: "req_method", SourceUID: "src_stripe", Method: "X`touch$IFS'pwned'`|$HOME", Path: "/orders"}
+	method := ws.Delivery{AttemptUID: "att_6", RequestUID: "req_method", SourceUID: "src_stripe", RouteUID: "rte_orders", Method: "X`touch$IFS'pwned'`|$HOME", Path: "/orders"}
 
 	for _, mode := range []struct {
 		name    string

@@ -60,8 +60,8 @@ func TestProjects(t *testing.T) {
 }
 
 func TestError(t *testing.T) {
-	message := "resolve project: GET https://example.test/cli/projects/01jfrawprojectuid: 404 Not Found: not_found"
-	hint := "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. " +
+	message := "resolve project: GET https://example.test/cli/projects/proj_1: 404 Not Found: not_found"
+	hint := "The project may have been deleted or your access removed. " +
 		"Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 	for _, width := range []int{80, 120} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {

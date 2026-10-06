@@ -809,7 +809,7 @@ func TestLineCommandsCopyAndExportInInspectMode(t *testing.T) {
 	writer := cards.NewWriter(&stdout, &stderr, cards.Listen{Sources: sourceNamesByUID(sources)}, "")
 	sess := session.New(context.Background(), sources, nil, writer)
 	if _, err := sess.Handle(ws.Delivery{
-		AttemptUID: "att_1", RequestUID: "req_1", SourceUID: "src_stripe", Method: "POST", Path: "/hooks",
+		AttemptUID: "att_1", RequestUID: "req_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/hooks",
 		Headers: http.Header{"Authorization": []string{"Bearer secret"}}, Body: []byte(`{"type":"paid"}`),
 	}); err != nil {
 		t.Fatal(err)

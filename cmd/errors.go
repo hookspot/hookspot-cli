@@ -132,8 +132,6 @@ func fatalErrorMessage(err error) (string, string) {
 	return err.Error(), ""
 }
 
-// projectNotFoundHint also covers configs from older CLI versions, which may
-// hold an unprefixed project UID that the server no longer accepts.
 func projectNotFoundHint() string {
-	return "The project may have been deleted, your access removed, or its UID saved by an older Hookspot CLI. Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
+	return "The project may have been deleted or your access removed. Select a project with 'hookspot project use', 'hookspot login', --project, or HOOKSPOT_ORGANIZATION_SLUG and HOOKSPOT_PROJECT_SLUG."
 }

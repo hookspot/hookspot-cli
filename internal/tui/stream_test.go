@@ -36,8 +36,16 @@ import (
 
 var sources = []api.Source{{UID: "src_stripe", Name: "stripe", Routes: []api.Route{{UID: "rte_stripe", Destination: api.Destination{Path: "/hooks"}}}}}
 
+// delivery is one to path, through the sources route whose destination it
+// is, if any.
 func delivery(attempt int, path string) ws.Delivery {
-	return ws.Delivery{AttemptUID: "att_" + strconv.Itoa(attempt), SourceUID: "src_stripe", Method: "POST", Path: path}
+	d := ws.Delivery{AttemptUID: "att_" + strconv.Itoa(attempt), SourceUID: "src_stripe", Method: "POST", Path: path}
+	for _, route := range sources[0].Routes {
+		if route.Destination.Path == path {
+			d.RouteUID = route.UID
+		}
+	}
+	return d
 }
 
 // forwarder answers 200, or 500 for /fail, a millisecond later. When set,

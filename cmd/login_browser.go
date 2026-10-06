@@ -54,10 +54,6 @@ func runBrowserLogin(ctx context.Context, deps browserLoginDeps) error {
 
 	attempt, err := deps.api.StartLogin(ctx, deviceName)
 	if err != nil {
-		var apiErr *api.Error
-		if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed) {
-			return newCommandError("this Hookspot server does not support browser login", "Run 'hookspot login -i' or set HOOKSPOT_CLI_KEY.")
-		}
 		return fmt.Errorf("start browser login: %w", err)
 	}
 

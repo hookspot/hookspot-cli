@@ -24,11 +24,9 @@ func TestRouteFor(t *testing.T) {
 		want     string
 	}{
 		{"route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_billing", Path: "/hooks"}, "rte_billing"},
-		{"no route uid uses the first path match", ws.Delivery{SourceUID: "src_stripe", Path: "/hooks"}, "rte_orders"},
-		{"unknown route uid falls back to the path", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted", Path: "/refunds"}, "rte_refunds"},
-		{"route uid of another source falls back to the path", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_github", Path: "/refunds"}, "rte_refunds"},
-		{"path of another source", ws.Delivery{SourceUID: "src_stripe", Path: "/github"}, ""},
-		{"unknown path", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted", Path: "/other"}, ""},
+		{"no route uid", ws.Delivery{SourceUID: "src_stripe", Path: "/hooks"}, ""},
+		{"unknown route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted", Path: "/refunds"}, ""},
+		{"route uid of another source", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_github", Path: "/github"}, ""},
 		{"unknown source", ws.Delivery{SourceUID: "src_other", RouteUID: "rte_orders", Path: "/hooks"}, ""},
 	}
 	for _, test := range tests {

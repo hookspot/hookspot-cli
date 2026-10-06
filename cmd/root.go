@@ -89,10 +89,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer HOOKSPOT_CLI_KEY)")
 	rootCmd.PersistentFlags().String("project", "", "active hookspot project ID")
-	rootCmd.PersistentFlags().String("log-level", "", "deprecated; retained for compatibility")
-	if err := rootCmd.PersistentFlags().MarkDeprecated("log-level", "logging is no longer configurable"); err != nil {
-		panic(err)
-	}
 }
 
 func resolveCommandConfig(cmd *cobra.Command, needProject bool) (config.Config, error) {

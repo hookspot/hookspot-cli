@@ -89,7 +89,7 @@ func sessionError(kind SessionErrorKind, connected bool, err error) error {
 // Delivery is the payload of a delivery event: a captured webhook request to
 // replay against the local target. AttemptUID is internal protocol correlation;
 // RequestUID identifies the captured request and SourceUID selects its label.
-// RouteUID names the route that produced it; older servers omit it.
+// RouteUID names the route that produced it.
 //
 // Body is padded or unpadded standard Base64 on the wire. Delivery's JSON
 // boundary decodes either form, so Body holds the raw request bytes.
