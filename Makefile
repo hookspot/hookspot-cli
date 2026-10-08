@@ -36,7 +36,7 @@ E2E_OUTPUT ?= tmp/e2e/hookspot
 E2E_GOOS ?= darwin
 E2E_GOARCH ?= $(shell uname -m | sed s/x86_64/amd64/)
 
-.PHONY: tidy build test golden vet fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot release-publish release-image release-image-publish
+.PHONY: tidy build test golden vet vuln fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot release-publish release-image release-image-publish
 
 tidy:
 	$(GO) mod tidy
@@ -59,10 +59,16 @@ golden:
 vet:
 	$(GO) vet ./...
 
+# Known vulnerabilities the code each GOOS builds reaches, in its modules and
+# the standard library. -exec hands GOOS to govulncheck alone, so go run still
+# builds govulncheck for this machine.
+vuln:
+	for goos in darwin linux windows; do $(GO) run -exec "env GOOS=$$goos" golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./... || exit 1; done
+
 fmt:
 	$(LINT) fmt $(value ARGS)
 
-# Includes the gofmt check. Each GOOS has its own config and terminal code.
+# Includes gofmt and staticcheck. Each GOOS has its own config and terminal code.
 lint:
 	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(value ARGS) || exit 1; done
 
@@ -77,7 +83,7 @@ toolchain-check:
 		|| { echo "go.mod, mise.toml and release/toolchain.env pin different Go or golangci-lint versions" >&2; exit 1; }
 
 # Everything CI's ci job runs. release-snapshot needs a clean tree.
-check: toolchain-check lint vet test release-tools release-check release-snapshot release-image npm-test
+check: toolchain-check lint vet vuln test release-tools release-check release-snapshot release-image npm-test
 	scripts/smoke_test.sh
 	cd npm && npm pack --dry-run
 

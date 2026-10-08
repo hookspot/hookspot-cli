@@ -332,7 +332,7 @@ func TestHelpAndDevelopmentVersionStayOffline(t *testing.T) {
 func TestHelpAndVersionIgnoreMalformedLocalConfig(t *testing.T) {
 	working := t.TempDir()
 	localPath := filepath.Join(working, ".hookspot", "dev", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
+	if err := makePrivateTestDirs(filepath.Dir(localPath)); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeCommandFixture(localPath, []byte("schema_version = [")); err != nil {

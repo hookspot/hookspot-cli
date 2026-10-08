@@ -310,7 +310,7 @@ func TestProjectUseLocalFailureDoesNotCreateRecordOrChangeGlobal(t *testing.T) {
 	working := t.TempDir()
 	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
 	original := "schema_version = 1\ncli_key = 'global-key'\nproject = 'proj_storefront'\n"
-	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+	if err := makePrivateTestDirs(filepath.Dir(globalPath)); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeCommandFixture(globalPath, []byte(original)); err != nil {
@@ -388,7 +388,7 @@ func TestProjectUseLocalCreatesRecordFromPersistedValuesOnly(t *testing.T) {
 			working := t.TempDir()
 			globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
 			if test.global != "" {
-				if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+				if err := makePrivateTestDirs(filepath.Dir(globalPath)); err != nil {
 					t.Fatal(err)
 				}
 				if err := writeCommandFixture(globalPath, []byte(test.global)); err != nil {
@@ -456,7 +456,7 @@ func TestProjectUseUpdatesAutomaticLocalUnlessExplicitConfigWins(t *testing.T) {
 		localPath:    "schema_version = 1\ncli_key = 'local-key'\nproject = 'local-project'\n",
 		explicitPath: "schema_version = 1\ncli_key = 'explicit-key'\nproject = 'explicit-project'\n",
 	} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		if err := makePrivateTestDirs(filepath.Dir(path)); err != nil {
 			t.Fatal(err)
 		}
 		if err := writeCommandFixture(path, []byte(contents)); err != nil {
@@ -511,7 +511,7 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 
 	globalPath := filepath.Join(home, ".config", "hookspot", "dev", "config.toml")
 	globalBefore := []byte("schema_version = 1\ncli_key = 'fixture-key'\nproject = 'global_g'\n")
-	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+	if err := makePrivateTestDirs(filepath.Dir(globalPath)); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeCommandFixture(globalPath, globalBefore); err != nil {
