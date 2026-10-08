@@ -190,19 +190,6 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	}
 }
 
-func TestDelivery_UnmarshalRemainsCompatibleWithoutRequestAndRouteUIDs(t *testing.T) {
-	var delivery Delivery
-	if err := json.Unmarshal([]byte(`{"attempt_uid":"att_1","source_uid":"src_1","body":""}`), &delivery); err != nil {
-		t.Fatalf("unmarshal delivery: %v", err)
-	}
-	if delivery.RequestUID != "" || delivery.RouteUID != "" {
-		t.Fatalf("request_uid = %q, route_uid = %q, want both empty", delivery.RequestUID, delivery.RouteUID)
-	}
-	if delivery.SourceUID != "src_1" {
-		t.Fatalf("source_uid = %q, want src_1", delivery.SourceUID)
-	}
-}
-
 func TestDeliveryUnmarshalAcceptsBackendBase64Bodies(t *testing.T) {
 	tests := []struct {
 		name string

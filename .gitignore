@@ -1,4 +1,4 @@
-# Local build output: air's live reloads, make local-build and e2e-build
+# Local build output: air's live reloads and e2e-build
 /tmp/
 
 # GoReleaser build output

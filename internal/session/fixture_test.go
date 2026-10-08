@@ -16,17 +16,17 @@ func TestExportFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _, _ := newTestSession()
-	d := delivery("/orders")
+	d := delivery("rte_orders", "/orders")
 	d.Headers["Authorization"] = []string{"Bearer secret"}
 	d.Body = []byte{0, 0x1b, 0xff}
-	traversal := delivery("/orders")
+	traversal := delivery("rte_orders", "/orders")
 	traversal.RequestUID = "../../etc/passwd"
-	noRequest := delivery("/orders")
+	noRequest := delivery("rte_orders", "/orders")
 	noRequest.RequestUID = ""
-	newRoute := delivery("/unmatched")
+	newRoute := delivery("", "/unmatched")
 	newRoute.RouteUID = "rte_new"
 	// Hookspot delivers one request to each route of its source.
-	for _, sent := range []ws.Delivery{d, delivery("/refunds"), delivery("/unmatched"), traversal, noRequest, newRoute} {
+	for _, sent := range []ws.Delivery{d, delivery("rte_refunds", "/refunds"), delivery("", "/unmatched"), traversal, noRequest, newRoute} {
 		if _, err := s.Handle(sent); err != nil {
 			t.Fatal(err)
 		}

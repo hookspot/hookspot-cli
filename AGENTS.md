@@ -5,6 +5,7 @@
 - `make check` is the gate: everything CI's `ci` job runs. Commit first; its release snapshot needs a clean tree, and its image a multi-platform Buildx builder (`BUILDX_BUILDER=<a docker-container builder>`).
 - `make test ARGS='-run ^TestX$ ./internal/tui'`; `make lint` (gofmt and golangci-lint's linters, staticcheck among them, for darwin, linux and windows); `make vuln` (govulncheck, for the same three); `make fmt`.
 - Goldens (`testdata/*.golden`): `make golden`, or `make golden ARGS='-run TestX ./internal/tui'`, then review the diff.
+- Release notes list the `feat:` and `fix:` commits since the previous tag by their subjects; no other commit reaches them.
 - E2E build: `make e2e-build VERSION=1.2.0 SERVER_URL=https://hookspot.localhost:4443 UPDATE_API_URL=http://127.0.0.1:8080` writes `tmp/e2e/hookspot`. Its update check asks `$UPDATE_API_URL/repos/hookspot/hookspot-cli/releases/latest`.
 
 ## Agent skills

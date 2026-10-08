@@ -256,37 +256,6 @@ func TestRunBrowserLoginRejectsMalformedBrowserToken(t *testing.T) {
 	}
 }
 
-func TestRunBrowserLoginRejectsUnsupportedServer(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusMethodNotAllowed} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			loginAPI := &fakeLoginAPI{
-				start: func(context.Context, string) (*api.LoginAttempt, error) {
-					return nil, &api.Error{StatusCode: status, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth"}
-				},
-			}
-
-			err := runBrowserLogin(context.Background(), browserLoginDeps{
-				api:          loginAPI,
-				endpoint:     loginTestEndpoint(t),
-				openBrowser:  func(string) error { t.Fatal("opened a browser"); return nil },
-				store:        &fakeLoginStore{},
-				pollInterval: time.Millisecond,
-				out:          io.Discard,
-			})
-			if err == nil {
-				t.Fatal("runBrowserLogin accepted an unsupported server")
-			}
-			message, hint := fatalErrorMessage(err)
-			if message != "this Hookspot server does not support browser login" {
-				t.Fatalf("message = %q", message)
-			}
-			if hint != "Run 'hookspot login -i' or set HOOKSPOT_CLI_KEY." {
-				t.Fatalf("hint = %q", hint)
-			}
-		})
-	}
-}
-
 func TestRunBrowserLoginRejectsExpiredAttempt(t *testing.T) {
 	for _, test := range []struct {
 		name      string
@@ -646,8 +615,8 @@ func TestLoginWithSavedKeyStartsBrowserFlow(t *testing.T) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "" {
 			t.Errorf("X-CLI-KEY = %q, want empty", got)
 		}
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"status":"not_found"}`)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprint(w, `{"status":"error"}`)
 	}))
 	defer server.Close()
 
@@ -660,8 +629,7 @@ func TestLoginWithSavedKeyStartsBrowserFlow(t *testing.T) {
 	if result.err == nil {
 		t.Fatal("login unexpectedly succeeded")
 	}
-	if !strings.Contains(result.stderr, "this Hookspot server does not support browser login") ||
-		!strings.Contains(result.stderr, "hookspot login -i") {
+	if !strings.Contains(result.stderr, "start browser login") {
 		t.Fatalf("unexpected output:\n%s", result.stderr)
 	}
 	contents, err := os.ReadFile(path)

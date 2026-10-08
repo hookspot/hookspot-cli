@@ -3,9 +3,7 @@ version: 2
 project_name: hookspot
 
 env:
-  # `make local-build` overrides these for local binaries.
-  - SERVER_URL={{ envOrDefault "SERVER_URL" "https://app.hookspot.dev/" }}
-  - CONFIG_PREFIX={{ envOrDefault "CONFIG_PREFIX" "" }}
+  - SERVER_URL=https://app.hookspot.dev/
   - GOTOOLCHAIN=local
   - GOFLAGS=-mod=readonly
 
@@ -26,12 +24,13 @@ builds:
     flags:
       - -trimpath
       - -buildvcs=true
+    # An empty configPrefix puts a release's config in the root folder, not dev/.
     ldflags:
       - >-
         -s -w
         -X hookspot/cmd.version={{ .Version }}
         -X hookspot/cmd.serverURL={{ .Env.SERVER_URL }}
-        -X hookspot/cmd.configPrefix={{ .Env.CONFIG_PREFIX }}
+        -X hookspot/cmd.configPrefix=
         -X hookspot/cmd.commit={{ .FullCommit }}
         -X hookspot/cmd.sourceDate={{ .CommitDate }}
         -X hookspot/cmd.buildKind={{ if .IsSnapshot }}snapshot{{ else }}release{{ end }}
@@ -81,8 +80,17 @@ checksum:
 snapshot:
   version_template: '0.0.0-snapshot.{{ .ShortCommit }}'
 
+# Commits matching no group are left out of the release notes. Without a
+# previous tag (v0.1.0), the notes are written by hand.
 changelog:
-  disable: true
+  disable: '{{ not .PreviousTag }}'
+  groups:
+    - title: Features
+      regexp: '^feat:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix:'
+      order: 1
 
 release:
   github:

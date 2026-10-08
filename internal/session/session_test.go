@@ -25,11 +25,12 @@ var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{
 	{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
 }}}
 
-func delivery(path string) ws.Delivery {
+func delivery(route, path string) ws.Delivery {
 	return ws.Delivery{
 		AttemptUID: "att_1",
 		RequestUID: "req_1",
 		SourceUID:  "src_stripe",
+		RouteUID:   route,
 		Method:     http.MethodPut,
 		Path:       path,
 		Query:      "a=1",
@@ -143,13 +144,13 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
 	)
 
-	response, err := s.Handle(delivery("/orders"))
+	response, err := s.Handle(delivery("rte_orders", "/orders"))
 	want := ws.Response{Status: http.StatusCreated, Headers: http.Header{"X-Reply": []string{"yes"}}, Body: []byte("created"), LatencyMS: 3}
 	if err != nil || !reflect.DeepEqual(response, want) {
 		t.Fatalf("Handle = %#v, %v; want %#v", response, err, want)
 	}
 
-	response, err = s.Handle(delivery("/orders"))
+	response, err = s.Handle(delivery("rte_orders", "/orders"))
 	if err != nil || !reflect.DeepEqual(response, ws.Response{Status: http.StatusBadGateway, LatencyMS: 7}) {
 		t.Fatalf("Handle after a transport failure = %#v, %v; want 502", response, err)
 	}
@@ -159,7 +160,7 @@ func TestHandleAnswersHookspot(t *testing.T) {
 	}
 
 	// A target that drops the connection mid-body failed to answer; listen goes on.
-	response, err = s.Handle(delivery("/orders"))
+	response, err = s.Handle(delivery("rte_orders", "/orders"))
 	if err != nil || response.Status != http.StatusBadGateway {
 		t.Fatalf("Handle after a failed response body = %#v, %v; want 502", response, err)
 	}
@@ -167,7 +168,7 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		t.Fatalf("failed response body entry = %#v, want a transport failure", cut)
 	}
 
-	response, err = s.Handle(delivery("/orders"))
+	response, err = s.Handle(delivery("rte_orders", "/orders"))
 	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") || response.Status != 0 {
 		t.Fatalf("Handle with an oversized response = %#v, %v; want no acknowledgement", response.Status, err)
 	}
@@ -180,7 +181,7 @@ func TestInspectModeAnswers200(t *testing.T) {
 	sink := &recorder{}
 	s := New(context.Background(), testSources, nil, sink)
 
-	response, err := s.Handle(delivery("/orders"))
+	response, err := s.Handle(delivery("rte_orders", "/orders"))
 	if err != nil || !reflect.DeepEqual(response, ws.Response{Status: http.StatusOK}) {
 		t.Fatalf("Handle = %#v, %v; want 200", response, err)
 	}
@@ -205,13 +206,13 @@ func TestReplaysAreNumberedEntriesOfTheirOriginal(t *testing.T) {
 		t.Fatalf("ReplayLast before any request = %v with %d forwards, want a no-op", err, len(forwarder.calls))
 	}
 
-	d := delivery("/orders")
+	d := delivery("rte_orders", "/orders")
 	if _, err := s.Handle(d); err != nil {
 		t.Fatal(err)
 	}
 	d.Body[0] = 'X'
 	d.Headers.Set("X-Test", "mutated")
-	if _, err := s.Handle(delivery("/refunds")); err != nil {
+	if _, err := s.Handle(delivery("rte_refunds", "/refunds")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Replay(1); err != nil {
@@ -254,7 +255,7 @@ func TestHistoryEviction(t *testing.T) {
 		s, _, sink := newTestSession()
 		s.history.maxEntries = 3
 		for range 5 {
-			if _, err := s.Handle(delivery("/orders")); err != nil {
+			if _, err := s.Handle(delivery("rte_orders", "/orders")); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -283,7 +284,7 @@ func TestHistoryEviction(t *testing.T) {
 		s, _, sink := newTestSession(replies...)
 		s.history.maxBytes = 13
 		for _, body := range []string{"1111", "2222", "3333", "4444", strings.Repeat("5", 20)} {
-			d := delivery("/orders")
+			d := delivery("rte_orders", "/orders")
 			d.Body = []byte(body)
 			if _, err := s.Handle(d); err != nil {
 				t.Fatal(err)
@@ -311,12 +312,12 @@ func TestStats(t *testing.T) {
 		reply{status: http.StatusOK, latency: time.Second},
 	)
 	for range 6 {
-		if _, err := s.Handle(delivery("/orders")); err != nil {
+		if _, err := s.Handle(delivery("rte_orders", "/orders")); err != nil {
 			t.Fatal(err)
 		}
 	}
 	forwarder.clock.Add(2 * time.Minute)
-	if _, err := s.Handle(delivery("/unmatched")); err != nil {
+	if _, err := s.Handle(delivery("", "/unmatched")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Replay(1); err != nil {
@@ -421,7 +422,7 @@ func TestSinkErrorIsReturned(t *testing.T) {
 	})
 	sink.err = wantErr
 
-	response, err := s.Handle(delivery("/orders"))
+	response, err := s.Handle(delivery("rte_orders", "/orders"))
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Handle error = %v, want the sink error", err)
 	}
@@ -433,7 +434,7 @@ func TestSinkErrorIsReturned(t *testing.T) {
 	}
 
 	inspect := New(context.Background(), testSources, nil, sink)
-	if response, err := inspect.Handle(delivery("/orders")); !errors.Is(err, wantErr) || response.Status != 0 {
+	if response, err := inspect.Handle(delivery("rte_orders", "/orders")); !errors.Is(err, wantErr) || response.Status != 0 {
 		t.Fatalf("inspect Handle = %#v, %v; want no acknowledgement", response, err)
 	}
 }

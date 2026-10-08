@@ -2,7 +2,6 @@ package session
 
 import (
 	"bytes"
-	"cmp"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -107,8 +106,8 @@ func redactHeaders(headers http.Header, redact bool) (http.Header, bool) {
 // entry-<N> without a request UID or when the name isn't a safe file name.
 func fixtureName(entry Entry) string {
 	name := entry.Delivery.RequestUID
-	if route := cmp.Or(entry.RouteUID, entry.Delivery.RouteUID); route != "" {
-		name += "_" + route
+	if entry.Delivery.RouteUID != "" {
+		name += "_" + entry.Delivery.RouteUID
 	}
 	if entry.Delivery.RequestUID != "" && plainName.MatchString(name) {
 		return name

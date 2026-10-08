@@ -30,10 +30,6 @@ Before the first release, and worth re-checking when a release fails early:
 - The `HOMEBREW_TAP_TOKEN`, `DOCKERHUB_USERNAME`, and `DOCKERHUB_TOKEN`
   Actions secrets are set (see Secrets below).
 - The npm package `@hookspot/cli` exists and trusts `release.yml` (see Secrets below).
-- The old `stage_*` and `v0.0.0-stage.1` tags on origin are harmless but
-  clutter the release list, and the newest reachable one is what
-  `make release-snapshot` names in its formula (see Local snapshot); delete
-  them when convenient.
 
 ## Tag and push
 
@@ -43,6 +39,20 @@ git tag -a v1.2.3 -m "v1.2.3"
 git push origin v1.2.3
 gh run watch
 ```
+
+## Release notes
+
+GoReleaser writes them from the commits since the previous tag: `feat:`
+commits under Features, `fix:` commits under Fixes, and no others. A
+pre-release tag counts, so after `v1.2.3-rc.1`, `v1.2.3`'s notes list only the
+commits since it. The first release has no previous tag, so it goes out
+without notes; write them once `release` is green:
+
+```sh
+gh release edit v0.1.0 --repo hookspot/hookspot-cli --notes-file notes.md
+```
+
+A re-run of the job keeps them (`mode: keep-existing`).
 
 ## What the workflow does
 
@@ -60,7 +70,7 @@ gh run watch
    `npm/binaries/<os>-<arch>/`, packs
    `hookspot_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows) plus
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
-   seven assets, and pushes `Formula/hookspot-cli.rb` to
+   seven assets and its notes, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
 4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
    `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and
@@ -167,7 +177,7 @@ working tree because the build embeds VCS metadata; a before hook clears
 `npm/binaries/` inside the container, so the run is repeatable on Linux hosts
 where the bind mount leaves those files root-owned. The snapshot formula in
 `dist/homebrew/` names the newest reachable tag in its download URLs
-(`v0.0.0-stage.1` today); a real `v*` tag push fills in the right one.
+(`v0.0.0` without one); a real `v*` tag push fills in the right one.
 
 `make release-image` then builds the image from those binaries for both
 platforms without pushing. It needs a Buildx builder that supports

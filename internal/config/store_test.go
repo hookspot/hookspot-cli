@@ -378,9 +378,10 @@ func TestNewValidatesMarkedRecordBeforeResolution(t *testing.T) {
 		contents string
 		wantErr  bool
 	}{
-		{"valid", "schema_version = 1\ncli_key = 'file-key'\nproject = 'proj_1'\nlog_level = 'obsolete'\n", false},
+		{"valid", "schema_version = 1\ncli_key = 'file-key'\nproject = 'proj_1'\n", false},
+		{"a later release's key", "schema_version = 1\ncli_key = 'file-key'\nproject = 'proj_1'\nadded_later = true\n", false},
 		{"wrong schema", "schema_version = 2\ncli_key = 'file-key'\n", true},
-		{"markerless", "cli_key = 'file-key'\nproject = 'proj_1'\n", false},
+		{"markerless", "cli_key = 'file-key'\nproject = 'proj_1'\n", true},
 		{"malformed", "schema_version = [", true},
 	}
 	for _, test := range tests {
@@ -415,10 +416,6 @@ func TestPrefixStoresRemainIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage, err := New(Options{Prefix: "stage", Intent: LoginCreate})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err = dev.SaveCLIKey("dev-key"); err != nil {
 		t.Fatal(err)
 	}
@@ -432,24 +429,20 @@ func TestPrefixStoresRemainIndependent(t *testing.T) {
 	if err = dev.SaveProject("dev-project"); err != nil {
 		t.Fatal(err)
 	}
-	if err = stage.SaveCLIKey("stage-key"); err != nil {
-		t.Fatal(err)
-	}
 	prodAfter, err := os.ReadFile(prod.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(prodAfter) != string(prodBefore) {
-		t.Fatal("dev or stage mutation changed prod config")
+		t.Fatal("dev mutation changed prod config")
 	}
 	effectiveHome, err := effectiveTestDir(home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if dev.Path() != filepath.Join(effectiveHome, ".config", "hookspot", "dev", "config.toml") ||
-		prod.Path() != filepath.Join(effectiveHome, ".config", "hookspot", "config.toml") ||
-		stage.Path() != filepath.Join(effectiveHome, ".config", "hookspot", "stage", "config.toml") {
-		t.Fatalf("unexpected namespace paths: %q %q %q", dev.Path(), prod.Path(), stage.Path())
+		prod.Path() != filepath.Join(effectiveHome, ".config", "hookspot", "config.toml") {
+		t.Fatalf("unexpected namespace paths: %q %q", dev.Path(), prod.Path())
 	}
 }
 

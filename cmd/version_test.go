@@ -347,16 +347,6 @@ func TestHelpAndVersionIgnoreMalformedLocalConfig(t *testing.T) {
 	}
 }
 
-func TestDeprecatedLogLevelFlagRemainsAccepted(t *testing.T) {
-	result := runCommandProcess(t, "", developmentMetadata(""), "--log-level", "debug", "version")
-	if result.err != nil {
-		t.Fatalf("deprecated flag failed: %v\n%s", result.err, result.stderr)
-	}
-	if !strings.Contains(result.stderr, "deprecated") {
-		t.Fatalf("deprecated flag did not warn: %q", result.stderr)
-	}
-}
-
 func TestVersionDoesNotPrintMalformedCredentialBearingEndpoint(t *testing.T) {
 	metadata := map[string]string{
 		"version": "dev", "server_url": "https://credential-sentinel@example.invalid",

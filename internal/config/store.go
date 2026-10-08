@@ -76,10 +76,6 @@ func newStoreAt(path string, managed bool, intent Intent) (*Store, error) {
 	if err := toml.Unmarshal(contents, &record); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
-	// Files written before the schema marker hold the same fields.
-	if record.SchemaVersion == 0 {
-		record.SchemaVersion = currentSchemaVersion
-	}
 	if record.SchemaVersion != currentSchemaVersion {
 		return nil, fmt.Errorf("unsupported config schema %d", record.SchemaVersion)
 	}
