@@ -36,7 +36,7 @@ func readLoginKey(ctx context.Context, in io.Reader, out io.Writer) (string, err
 }
 
 func (r *credentialReader) read(ctx context.Context, in io.Reader, out io.Writer) (value string, err error) {
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return "", err
 	}
 	if !r.started.CompareAndSwap(false, true) {

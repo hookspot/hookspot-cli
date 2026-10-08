@@ -163,22 +163,27 @@ func (m Stream) commands() []string {
 	return hints(m.Forwarding, ReplayLastKey, ReplayKey, TestKey, HelpKey)
 }
 
-// statusHints are the keys the status line names; the prompt names its own.
+// statusHints are the keys the status line names while listening; the
+// prompt names its own.
 func (m Stream) statusHints() []string {
-	switch {
-	case m.state == cards.StateStopped, m.prompting():
+	if m.state >= cards.StateStopping || m.prompting() {
 		return nil
-	case m.Prompt:
-		return []string{"ctrl-c force quit"}
 	}
 	return []string{QuitHint}
 }
 
-// statusAlert takes the status line's hint, except once listening stops,
-// when the line says what a second Ctrl-C does, and then the run's totals.
+// statusAlert ends the status line. While listening it's the server's notice,
+// else the update alert, in place of the hints. While stopping it says what
+// a second Ctrl-C does, and the details, then the count, give way to that.
+// Once stopped it's empty, so the line keeps the run's totals.
 func (m Stream) statusAlert() cards.Alert {
-	if m.state >= cards.StateStopping {
+	switch {
+	case m.state == cards.StateStopped:
 		return cards.Alert{}
+	case m.state == cards.StateStopping && m.Prompt:
+		return cards.HintAlert("ctrl-c force quit")
+	case m.state == cards.StateStopping:
+		return cards.HintAlert(QuitHint)
 	}
 	return cmp.Or(m.noticeAlert, m.updateAlert)
 }

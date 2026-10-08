@@ -1,4 +1,4 @@
-○ reconnecting · Acme | Payments · 1 request · 0 ok · 1 failed · p50 4ms · dial…
+○ reconnecting · Acme | Payments · 1 request · dial tcp: connection refused
 http://localhost:3000/ returned 404. If your webhook route is elsewhere, include
 it in --forward-to, e.g. --forward-to http://localhost:3000/webhooks · esc
 dismisses

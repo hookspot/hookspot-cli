@@ -45,18 +45,18 @@ func TestWindowsStoreCreatesPrivateFileAndPreservesParentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveCLIKey("saved-key"); err != nil {
+	if err = store.SaveCLIKey("saved-key"); err != nil {
 		t.Fatal(err)
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateWindowsHandleAccess(file, true, true); err != nil {
+	if err = validateWindowsHandleAccess(file, true, true); err != nil {
 		_ = file.Close()
 		t.Fatalf("created config access = %v", err)
 	}
-	if err := file.Close(); err != nil {
+	if err = file.Close(); err != nil {
 		t.Fatal(err)
 	}
 	after, err := windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.OWNER_SECURITY_INFORMATION)

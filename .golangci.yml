@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  enable:
+    - unparam
+  settings:
+    govet:
+      enable:
+        - shadow
+  exclusions:
+    # Unchecked errors Go code commonly leaves, such as Close's, Print's and os.Remove's.
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

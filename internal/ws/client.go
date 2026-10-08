@@ -538,7 +538,7 @@ func (c *Client) join(ctx context.Context, conn *websocket.Conn, writer *connWri
 		return "", "", fmt.Errorf("encode join payload: %w", err)
 	}
 
-	if err := conn.SetReadDeadline(time.Now().Add(c.options.joinTimeout)); err != nil {
+	if err = conn.SetReadDeadline(time.Now().Add(c.options.joinTimeout)); err != nil {
 		return "", "", fmt.Errorf("set join deadline: %w", err)
 	}
 	ref, err := writer.sendJoin(message{

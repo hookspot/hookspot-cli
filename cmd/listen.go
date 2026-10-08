@@ -86,7 +86,7 @@ var listenCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("list project sources: %w", err)
 		}
-		sources, sourceUIDs, warnings, err := resolveSources(activeEndpoint, project, availableSources, sourceNames)
+		sources, sourceUIDs, warnings, sourcesErr := resolveSources(activeEndpoint, project, availableSources, sourceNames)
 		requestsURL := dashboardRequestsURL(activeEndpoint, project)
 		listenCards := cards.Listen{
 			Sources:              sourceNamesByUID(sources),
@@ -102,12 +102,12 @@ var listenCmd = &cobra.Command{
 		// Warnings print even when no source is left; nothing else writes
 		// yet, so they skip the session.
 		for _, warning := range warnings {
-			if err := writer.Emit(warning); err != nil {
+			if err = writer.Emit(warning); err != nil {
 				return fmt.Errorf("write source warnings: %w", err)
 			}
 		}
-		if err != nil {
-			return err
+		if sourcesErr != nil {
+			return sourcesErr
 		}
 
 		wsURL := activeEndpoint.WebSocket()
@@ -351,8 +351,8 @@ func superviseListen(ctx context.Context, notices *connectionNotices, listener w
 		}
 
 		delay := policy.Delay(failures)
-		if err := notices.lost(err, delay); err != nil {
-			return fmt.Errorf("write reconnect notice: %w", err)
+		if writeErr := notices.lost(err, delay); writeErr != nil {
+			return fmt.Errorf("write reconnect notice: %w", writeErr)
 		}
 		if !waitForReconnect(ctx, delay) {
 			return nil

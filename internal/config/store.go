@@ -65,7 +65,7 @@ func newStoreAt(path string, managed bool, intent Intent) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect config file: %w", err)
 	}
-	if err := validateConfigFileType(path, info); err != nil {
+	if err = validateConfigFileType(path, info); err != nil {
 		return nil, err
 	}
 	contents, err := readValidatedConfig(path, info)
@@ -101,7 +101,7 @@ func newLocalStore(opts Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := os.Lstat(localPath); err == nil {
+	if _, err = os.Lstat(localPath); err == nil {
 		return newStoreAt(localPath, true, opts.Intent)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("inspect local config file: %w", err)
@@ -140,7 +140,7 @@ func readValidatedConfig(path string, info os.FileInfo) ([]byte, error) {
 	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
 		return nil, errors.New("config file changed while it was being opened")
 	}
-	if err := validateConfigFile(path, file, info); err != nil {
+	if err = validateConfigFile(path, file, info); err != nil {
 		return nil, err
 	}
 	contents, err := io.ReadAll(file)
@@ -266,7 +266,7 @@ func selectPath(opts Options) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if _, err := os.Lstat(localPath); err == nil {
+	if _, err = os.Lstat(localPath); err == nil {
 		return localPath, true, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", false, fmt.Errorf("inspect local config file: %w", err)

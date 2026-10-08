@@ -457,9 +457,9 @@ func (r *terminalRun) waitFor(what string, condition func(screen string) bool) s
 	}
 }
 
-func (r *terminalRun) waitForText(text string) string {
+func (r *terminalRun) waitForText(text string) {
 	r.t.Helper()
-	return r.waitFor(text, func(screen string) bool { return strings.Contains(screen, text) })
+	r.waitFor(text, func(screen string) bool { return strings.Contains(screen, text) })
 }
 
 // wait waits for the command to exit and its output to end, and returns its

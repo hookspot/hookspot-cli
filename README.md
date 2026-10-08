@@ -73,18 +73,8 @@ In CI, set `HOOKSPOT_CLI_KEY` instead of running `hookspot login`.
 
 ## Development
 
-The `make` targets run Go in the pinned Docker toolchain. Release builds embed
-the service URL; `.invalid` endpoints are placeholders, not live services.
-
-```sh
-make build SERVER_URL=https://api.example.invalid
-make test
-make vet
-```
-
-Golden files under `testdata/` pin rendered output. After an intended output
-change, regenerate them with `go test ./cmd ./internal/cards ./internal/tui -update`
-and review the diff.
+[`AGENTS.md`](AGENTS.md) covers the toolchain, the `make` targets, golden files
+and end-to-end builds.
 
 ## Releasing
 

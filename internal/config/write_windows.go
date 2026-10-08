@@ -77,7 +77,7 @@ func canonicalConfigPath(path string) (string, error) {
 
 func writeFileAtomic(path string, contents []byte, noOverwrite bool) error {
 	if info, err := os.Lstat(path); err == nil {
-		if err := validateConfigFileType(path, info); err != nil {
+		if err = validateConfigFileType(path, info); err != nil {
 			return err
 		}
 		file, openErr := os.Open(path)
@@ -113,7 +113,7 @@ func writeFileAtomic(path string, contents []byte, noOverwrite bool) error {
 		}
 		_ = os.Remove(tempPath)
 	}()
-	if err := validateWindowsHandleAccess(temp, true, true); err != nil {
+	if err = validateWindowsHandleAccess(temp, true, true); err != nil {
 		return err
 	}
 	written, err := temp.Write(contents)
@@ -318,12 +318,7 @@ func privateSecurityAttributes() (*windows.SecurityAttributes, error) {
 }
 
 func trustedWindowsSIDs() (*windows.SID, *windows.SID, *windows.SID, error) {
-	token, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	defer token.Close()
-	user, err := token.GetTokenUser()
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return nil, nil, nil, err
 	}

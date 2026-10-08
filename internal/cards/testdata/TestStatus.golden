@@ -1,15 +1,8 @@
-○ connecting… · Acme | Payments · 0 requests
 ›                           ↵ replay last · r N replay #N · ? help · ctrl-c quit
-● live · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms
 › r 4\x1b                   ↵ replay last · r N replay #N · ? help · ctrl-c quit
 ● live · Acme | Payments · 3 requests                                ctrl-c quit
-○ reconnecting · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms · …
+○ reconnecting · Acme | Payments · dial tcp: connection refused\x1b[2J
+○ reconnecting · Acme | Payments · 12 requests · 10 ok · 2 …
 ◌ stopping… · evil\x1b]0;title\x07\n · 0 requests              ctrl-c force quit
-■ stopped · Acme | Payments · 12 requests · 10 ok · 2 failed · p50 41ms
 ● live · Acme | Payments · 12 requests …
 › r 4 
-● live · Acme | Payments · 12 requests                 ↑ 1.3.0 · brew upgrade hookspot-cli
-● live · Acme | Payments · 12 requests         ↑ update available
-● live · Acme | Payments · 12 requests · 10 ok · 2 failed     ↑ update available
-● live · Acme | Payments        ↑ update available
-● live · Acme | Payments · 12 requests …

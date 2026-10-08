@@ -136,8 +136,8 @@ type Status struct {
 	Alert Alert
 }
 
-// Render draws the status at width: state, project, counts and p50, then the
-// alert, or the hints while they fit.
+// Render draws the status at width: state, project, counts and p50, offline
+// the reason, then the alert, or the hints while they fit.
 func (s Status) Render(width int) string {
 	separator := faintStyle.Render(" · ")
 	parts := []string{s.state(), boldStyle.Render(Line(s.Project)), Count(s.Totals.Count, "request")}
@@ -154,19 +154,16 @@ func (s Status) Render(width int) string {
 	if s.Totals.Max > 0 {
 		parts = append(parts, "p50 "+FormatLatency(s.Totals.P50))
 	}
-	if s.State == StateOffline && s.Err != nil {
-		parts = append(parts, faintStyle.Render(Line(s.Err.Error())))
+	if s.State == StateOffline {
+		return s.offline(parts, separator, width)
 	}
 	// The details after the request count, parts[3:], give way whole to the
-	// alert, as the full-screen keys do; then the count, but only to its
-	// short form or a cut notice. The state and project stay, and offline,
-	// so does the reason.
+	// alert, as the full-screen keys do; then the count, but only to the
+	// alert's short form or a notice too wide for the room beside it, cut if
+	// need be. The state and project stay.
 	kept := 3
-	if s.State == StateOffline {
-		kept = len(parts)
-	}
 	alert := s.Alert.fit(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
-	if alert == "" && s.State != StateOffline {
+	if alert == "" {
 		kept = 2
 		alert = s.Alert.shrunk(width - lipgloss.Width(strings.Join(parts[:kept], separator)) - endGap)
 	}
@@ -178,6 +175,38 @@ func (s Status) Render(width int) string {
 		kept++
 	}
 	return AtRightEnd(strings.Join(parts[:kept], separator), alert, width)
+}
+
+// offline draws the status while reconnecting, with the reason after the
+// parts. Every part stays over the alert, which shows only beside them all,
+// shrunk if need be. Where they don't fit, the hints and then the totals,
+// last first, give way whole to the reason, which only the width cuts;
+// where even beside the state and project alone it would be cut to fewer
+// than minCut columns, nothing gives way. An error without a message gives
+// no reason, so a blank one never takes the totals' place.
+func (s Status) offline(parts []string, separator string, width int) string {
+	reason := ""
+	if s.Err != nil && s.Err.Error() != "" {
+		reason = faintStyle.Render(Line(s.Err.Error()))
+		parts = append(parts, reason)
+	}
+	line := strings.Join(parts, separator)
+	if alert, _ := s.Alert.Claim(width, lipgloss.Width(line)); alert != "" {
+		return AtRightEnd(line, alert, width)
+	}
+	if reason == "" || lipgloss.Width(line) <= width {
+		return withHints(line, s.Hints, width)
+	}
+	totals := parts[2 : len(parts)-1]
+	reasonRoom := width - lipgloss.Width(strings.Join(parts[:2], separator)+separator)
+	if reasonRoom < min(minCut, lipgloss.Width(reason)) {
+		return truncate(line, width)
+	}
+	for len(totals) > 0 && lipgloss.Width(line) > width {
+		totals = totals[:len(totals)-1]
+		line = strings.Join(slices.Concat(parts[:2], totals, []string{reason}), separator)
+	}
+	return truncate(line, width)
 }
 
 func (s Status) state() string {
@@ -224,8 +253,8 @@ func AtRightEnd(line, end string, width int) string {
 }
 
 // Alert is what listen keeps at the right end of a line, in its widest form
-// that fits: the server's notice, else the update alert. Unlike the
-// full-screen view's alerts, esc never dismisses it.
+// that fits: the server's notice, else the update alert, or the stream's
+// stopping hint. Unlike the full-screen view's alerts, esc never dismisses it.
 type Alert struct {
 	whole, short string
 	// cut is set for a notice, which has no short form: it is cut to fit.
@@ -239,6 +268,13 @@ func NoticeAlert(notice string) Alert {
 		return Alert{}
 	}
 	return Alert{whole: warnStyle.Render("⚠ " + Line(notice)), cut: true}
+}
+
+// HintAlert is a hint the details, then the count, give way to, as to an
+// alert. It shows whole or not at all.
+func HintAlert(hint string) Alert {
+	hint = faintStyle.Render(hint)
+	return Alert{whole: hint, short: hint}
 }
 
 // UpdateAlert names the newer release and how to upgrade to it, or only that
@@ -270,7 +306,8 @@ func (a Alert) shrunk(width int) string {
 	return a.short
 }
 
-// minCut is the fewest columns a cut notice keeps.
+// minCut is the fewest columns a cut notice keeps, and the fewest an offline
+// reason may be cut to for the totals to give way to it.
 const minCut = 20
 
 // fit is the alert's widest form within width columns, or "".
