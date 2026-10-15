@@ -1,6 +1,6 @@
 THIRD-PARTY NOTICES
 
-This file covers the dependencies shipped by the Hookspot CLI for the fixed darwin/linux/windows amd64/arm64 release matrix built with Go 1.26.8. It is an engineering inventory of upstream notices, not legal advice and not a license for Hookspot CLI itself.
+This file covers the dependencies shipped by the Hookspot CLI for the fixed darwin/linux/windows amd64/arm64 release matrix built with Go 1.26.9. It is an engineering inventory of upstream notices, not legal advice and not a license for Hookspot CLI itself.
 
 Included module versions:
 - charm.land/bubbles/v2 v2.2.1
@@ -855,7 +855,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ===============================================================================
-Go 1.26.8 distribution; also byte-identical module licenses for golang.org/x/mod v0.41.0, golang.org/x/sync v0.22.0 and golang.org/x/sys v0.47.0
+Go 1.26.9 distribution; also byte-identical module licenses for golang.org/x/mod v0.41.0, golang.org/x/sync v0.22.0 and golang.org/x/sys v0.47.0
 ===============================================================================
 
 Copyright 2009 The Go Authors.
