@@ -631,19 +631,6 @@ func TestProjectUseLocalRejectsCustomConfigBeforeAPI(t *testing.T) {
 	}
 }
 
-func TestProjectDisplayName_OnlyShowsOrganizationAndProject(t *testing.T) {
-	project := api.Project{
-		UID:          "proj_payments",
-		Name:         "Payments",
-		Slug:         "payments",
-		Organization: api.Organization{Name: "Acme", Slug: "acme"},
-	}
-
-	if got, want := projectDisplayName(project), "Acme | Payments"; got != want {
-		t.Fatalf("projectDisplayName() = %q, want %q", got, want)
-	}
-}
-
 func TestProjectDisplayNameEscapesBackendControls(t *testing.T) {
 	project := api.Project{
 		Name:         "Payments\nInjected\x1b",

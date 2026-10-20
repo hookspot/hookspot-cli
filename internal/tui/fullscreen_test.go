@@ -225,9 +225,11 @@ func TestFullscreen(t *testing.T) {
 			return []tea.Msg{session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_github", 500)), r.recorded(refused(3))}
 		}},
 		{name: "evicted", width: 80, height: 24, events: func(r *tally) []tea.Msg {
+			// Paused on #1, which history drops with #2: the oldest left, #3, is
+			// selected.
 			return []tea.Msg{
 				session.Ready{}, r.recorded(entry(1, "src_stripe", 200)), r.recorded(entry(2, "src_stripe", 200)), r.recorded(entry(3, "src_github", 200)),
-				r.recorded(entry(4, "src_stripe", 200), 1, 2),
+				up, up, r.recorded(entry(4, "src_stripe", 200), 1, 2),
 			}
 		}},
 		{name: "help", width: 80, height: 24, events: func(r *tally) []tea.Msg {
@@ -304,25 +306,6 @@ func TestFullscreenNoticeFollowsTheLatestJoin(t *testing.T) {
 	}
 	if view := ansi.Strip(model.View().Content); strings.Contains(view, "⚠") {
 		t.Fatalf("a rejoin without a notice kept the last one:\n%s", view)
-	}
-}
-
-func TestFullscreenKeepsOnlyHistorysEntries(t *testing.T) {
-	r := &tally{}
-	model := tea.Model(screen())
-	for n := 1; n <= 3; n++ {
-		model, _ = model.Update(r.recorded(entry(n, "src_stripe", 200)))
-	}
-	// Paused on #1, which history then drops with #2.
-	model, _ = model.Update(up)
-	model, _ = model.Update(up)
-	model, _ = model.Update(r.recorded(entry(4, "src_stripe", 200), 1, 2))
-	m := model.(Fullscreen)
-	if len(m.entries) != 2 || m.entries[0].Number != 3 {
-		t.Fatalf("entries = %d from #%d, want #3 and #4", len(m.entries), m.entries[0].Number)
-	}
-	if i := m.selectedIndex(); m.entries[i].Number != 3 {
-		t.Fatalf("selected #%d, want the oldest left, #3", m.entries[i].Number)
 	}
 }
 

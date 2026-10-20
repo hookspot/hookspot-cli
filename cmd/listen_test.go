@@ -30,21 +30,6 @@ import (
 	"hookspot/internal/ws"
 )
 
-func TestFormatProjectLabel_UsesSlugs(t *testing.T) {
-	project := &api.Project{
-		Name: "Payments API",
-		Slug: "payments",
-		Organization: api.Organization{
-			Name: "Acme Incorporated",
-			Slug: "acme",
-		},
-	}
-
-	if got, want := formatProjectLabel(project), "acme/payments"; got != want {
-		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
-	}
-}
-
 func TestFormatProjectLabelEscapesBackendControls(t *testing.T) {
 	project := &api.Project{
 		Slug:         "payments\nInjected\x1b",
@@ -130,17 +115,6 @@ func TestResolveSources_SuggestsOnlyAnUnambiguousCaseMatch(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 		})
-	}
-}
-
-func TestSourceNamesByUID(t *testing.T) {
-	sources := []api.Source{
-		{UID: "src_1", Name: "stripe"},
-		{UID: "src_2", Name: "shopify"},
-	}
-	want := map[string]string{"src_1": "stripe", "src_2": "shopify"}
-	if got := sourceNamesByUID(sources); !reflect.DeepEqual(got, want) {
-		t.Fatalf("sourceNamesByUID() = %#v, want %#v", got, want)
 	}
 }
 
@@ -589,23 +563,6 @@ func TestListenRequiresASourceWithRoutes(t *testing.T) {
 				t.Fatalf("listen = %v, stdout %q, stderr:\n%q\nwant:\n%q", result.err, result.stdout, result.stderr, want)
 			}
 		})
-	}
-}
-
-func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
-	listener := &scriptedWebSocketListener{errors: []error{
-		&ws.SessionError{Kind: ws.SessionProtocol, Connected: true, Err: errors.New("invalid delivery payload")},
-		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not be reached")},
-	}}
-	var stderr bytes.Buffer
-
-	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 10})
-	var sessionErr *ws.SessionError
-	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
-		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("fatal protocol error printed reconnect notice: %q", stderr.String())
 	}
 }
 

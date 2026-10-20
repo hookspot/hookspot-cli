@@ -86,32 +86,6 @@ func TestForwarder_Forward_ReplaysRequest(t *testing.T) {
 	}
 }
 
-func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
-	var gotPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	_, resp, err := mustForwarder(t, server.URL+"/local").Forward(
-		context.Background(),
-		http.MethodPost,
-		"/webhooks/shopify",
-		"",
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("Forward: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if got, want := gotPath, "/local/webhooks/shopify"; got != want {
-		t.Fatalf("path = %q, want %q", got, want)
-	}
-}
-
 func TestForwarderDestinationURL(t *testing.T) {
 	tests := []struct {
 		name string

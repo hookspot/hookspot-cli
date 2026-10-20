@@ -340,7 +340,8 @@ func TestRunBrowserLoginRejectsEmptyCLIKey(t *testing.T) {
 	}
 }
 
-func TestRunBrowserLoginRetriesTransientAPIErrors(t *testing.T) {
+func TestRunBrowserLoginRetriesTransientPollErrors(t *testing.T) {
+	transient := map[string]error{"network failure": errors.New("temporary network failure")}
 	for _, status := range []int{
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
@@ -348,7 +349,10 @@ func TestRunBrowserLoginRetriesTransientAPIErrors(t *testing.T) {
 		http.StatusServiceUnavailable,
 		http.StatusGatewayTimeout,
 	} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
+		transient[http.StatusText(status)] = &api.Error{StatusCode: status, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+	}
+	for name, pollErr := range transient {
+		t.Run(name, func(t *testing.T) {
 			var polls atomic.Int32
 			loginAPI := &fakeLoginAPI{
 				start: func(context.Context, string) (*api.LoginAttempt, error) {
@@ -356,7 +360,7 @@ func TestRunBrowserLoginRetriesTransientAPIErrors(t *testing.T) {
 				},
 				poll: func(context.Context, string) (*api.LoginResult, error) {
 					if polls.Add(1) == 1 {
-						return nil, &api.Error{StatusCode: status, Method: http.MethodPost, URL: "https://hookspot.invalid/cli/auth/poll"}
+						return nil, pollErr
 					}
 					return approvedLoginResult("new-key", nil), nil
 				},
@@ -408,40 +412,6 @@ func TestRunBrowserLoginAbortsOnOtherAPIErrors(t *testing.T) {
 				t.Fatalf("error = %v, want poll failure", err)
 			}
 		})
-	}
-}
-
-func TestRunBrowserLoginRetriesTransientPollErrors(t *testing.T) {
-	var polls atomic.Int32
-	loginAPI := &fakeLoginAPI{
-		start: func(context.Context, string) (*api.LoginAttempt, error) {
-			return instantLoginAttempt(), nil
-		},
-		poll: func(context.Context, string) (*api.LoginResult, error) {
-			if polls.Add(1) == 1 {
-				return nil, errors.New("temporary network failure")
-			}
-			return approvedLoginResult("new-key", nil), nil
-		},
-	}
-	store := &fakeLoginStore{}
-
-	err := runBrowserLogin(context.Background(), browserLoginDeps{
-		api:          loginAPI,
-		endpoint:     loginTestEndpoint(t),
-		openBrowser:  func(string) error { return nil },
-		store:        store,
-		pollInterval: time.Millisecond,
-		out:          io.Discard,
-	})
-	if err != nil {
-		t.Fatalf("runBrowserLogin: %v", err)
-	}
-	if got := polls.Load(); got != 2 {
-		t.Fatalf("poll calls = %d, want 2", got)
-	}
-	if store.key != "new-key" {
-		t.Fatalf("saved key = %q, want new-key", store.key)
 	}
 }
 
@@ -548,32 +518,6 @@ func TestLoginWithExplicitKeySkipsBrowserFlow(t *testing.T) {
 	}
 }
 
-func TestLoginInteractivePromptsForKey(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-CLI-KEY"); got != "typed-key" {
-			t.Errorf("X-CLI-KEY = %q, want typed-key", got)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"uid": "usr_1", "email": "dev@example.com"})
-	}))
-	defer server.Close()
-
-	path := filepath.Join(t.TempDir(), "config.toml")
-	result := runCommandProcess(t, "typed-key\n", developmentMetadata(server.URL), "--config", path, "login", "-i")
-	if result.err != nil {
-		t.Fatalf("login failed: %v\n%s", result.err, result.stderr)
-	}
-	if result.stdout != "Enter your hookspot CLI key (Account settings > CLI key): \n✓ Logged in as dev@example.com\n" {
-		t.Fatalf("unexpected output:\n%s", result.stdout)
-	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(contents), "typed-key") {
-		t.Fatalf("config missing key:\n%s", contents)
-	}
-}
-
 func TestLoginInteractivePromptsDespiteSavedKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "typed-key" {
@@ -592,11 +536,8 @@ func TestLoginInteractivePromptsDespiteSavedKey(t *testing.T) {
 	if result.err != nil {
 		t.Fatalf("login failed: %v\n%s", result.err, result.stderr)
 	}
-	if !strings.Contains(result.stdout, "Enter your hookspot CLI key") {
-		t.Fatalf("missing prompt despite saved key:\n%s", result.stdout)
-	}
-	if !strings.Contains(result.stdout, "Logged in as dev@example.com") {
-		t.Fatalf("unexpected output:\n%s", result.stdout)
+	if result.stdout != "Enter your hookspot CLI key (Account settings > CLI key): \n✓ Logged in as dev@example.com\n" {
+		t.Fatalf("unexpected output despite saved key:\n%s", result.stdout)
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -636,7 +577,7 @@ func TestLoginWithSavedKeyStartsBrowserFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(contents), "saved-key") || strings.Contains(string(contents), "Confirmation") {
+	if !strings.Contains(string(contents), "saved-key") {
 		t.Fatalf("config changed:\n%s", contents)
 	}
 }

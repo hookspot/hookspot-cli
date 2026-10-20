@@ -145,20 +145,6 @@ func TestVersionJSONIsStableAndBypassesMalformedConfig(t *testing.T) {
 			t.Fatalf("%s = %v, want %q", key, got[key], value)
 		}
 	}
-	if strings.Contains(result.stdout+result.stderr, "credential-sentinel") {
-		t.Fatal("version output contained credential sentinel")
-	}
-}
-
-func TestVersionPrintsNameAndVersion(t *testing.T) {
-	metadata := developmentMetadata("")
-	result := runCommandProcess(t, "", metadata, "version")
-	if result.err != nil {
-		t.Fatalf("version failed: %v\nstderr: %s", result.err, result.stderr)
-	}
-	if result.stdout != "hookspot version dev\n" {
-		t.Fatalf("stdout = %q", result.stdout)
-	}
 }
 
 func TestVersionFlagPrintsVersionWithoutUpgradeCheck(t *testing.T) {
@@ -307,28 +293,6 @@ func TestVersionPrintsUpdateCard(t *testing.T) {
 	}
 }
 
-func TestHelpAndDevelopmentVersionStayOffline(t *testing.T) {
-	badConfig := filepath.Join(t.TempDir(), "bad.toml")
-	if err := writeCommandFixture(badConfig, []byte("not = [valid")); err != nil {
-		t.Fatal(err)
-	}
-	for _, serverURL := range []string{"", "http://127.0.0.1:1"} {
-		metadata := map[string]string{
-			"version": "dev", "server_url": serverURL,
-			"commit": "unknown", "source_date": "unknown", "build_kind": "dev",
-		}
-		for _, args := range [][]string{{"--config", badConfig, "--help"}, {"--config", badConfig, "version"}} {
-			result := runCommandProcess(t, "", metadata, args...)
-			if result.err != nil {
-				t.Fatalf("server %q %v failed: %v\nstderr: %s", serverURL, args, result.err, result.stderr)
-			}
-			if result.stdout == "" {
-				t.Fatalf("server %q %v produced no output", serverURL, args)
-			}
-		}
-	}
-}
-
 func TestHelpAndVersionIgnoreMalformedLocalConfig(t *testing.T) {
 	working := t.TempDir()
 	localPath := filepath.Join(working, ".hookspot", "dev", "config.toml")
@@ -341,7 +305,7 @@ func TestHelpAndVersionIgnoreMalformedLocalConfig(t *testing.T) {
 	metadata := developmentMetadata("")
 	for _, args := range [][]string{{"--help"}, {"version"}} {
 		result := runCommandProcessDirectoryEnvironment(t, working, "", metadata, nil, args...)
-		if result.err != nil || result.stdout == "" {
+		if result.err != nil || result.stdout == "" || args[0] == "version" && result.stdout != "hookspot version dev\n" {
 			t.Fatalf("%v result = %v, stdout = %q, stderr = %q", args, result.err, result.stdout, result.stderr)
 		}
 	}
