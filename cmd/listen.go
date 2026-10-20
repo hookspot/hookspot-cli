@@ -190,13 +190,12 @@ type listenSetup struct {
 func runFullscreen(setup listenSetup, program *tui.Program, warnings []session.Event) error {
 	sess := session.New(setup.ctx, setup.sources, setup.local, program.FullscreenSink())
 	screen := tui.Fullscreen{
-		Requests:             sess,
-		Listen:               setup.listenCards,
-		Project:              setup.project,
-		Routes:               setup.routes,
-		RequestsURL:          setup.requestsURL,
-		ShowSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
-		Target:               setup.target,
+		Requests:    sess,
+		Listen:      setup.listenCards,
+		Project:     setup.project,
+		Routes:      setup.routes,
+		RequestsURL: setup.requestsURL,
+		Target:      setup.target,
 	}
 	return runInTerminal(program, screen, func() error {
 		// The alt screen hides the warnings printed before it.

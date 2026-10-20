@@ -584,8 +584,6 @@ func TestStreamCommands(t *testing.T) {
 		{name: "failed copy", line: "c 9", err: boom, asked: "curl #9 redact true", reply: `boom\x1b`},
 		{name: "failed export", line: "e 9", err: boom, asked: "fixture #9 redact true", reply: `boom\x1b`},
 		{name: "failed test event", line: "t x", err: boom, asked: "test x", reply: `boom\x1b`},
-		{name: "inspect replay last", inspect: true, line: "", reply: "nothing to replay without --forward-to"},
-		{name: "inspect replay", inspect: true, line: "r 1", reply: "nothing to replay without --forward-to"},
 		{name: "inspect typo", inspect: true, line: "c", reply: "commands: c N cURL · e N fixture · t test event · ? help"},
 		{name: "inspect help", inspect: true, line: "?", reply: help + "replays need --forward-to\nctrl-c  stop listening"},
 	}

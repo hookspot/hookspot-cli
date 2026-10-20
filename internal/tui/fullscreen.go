@@ -60,9 +60,6 @@ type Fullscreen struct {
 	Target string
 	// RequestsURL is where to retry requests missed while offline.
 	RequestsURL string
-	// ShowSensitiveHeaders keeps sensitive header values in copied commands
-	// and fixtures.
-	ShowSensitiveHeaders bool
 
 	// now, toastFor and dialEvery are time.Now, 4s and 1s unless a test sets
 	// them.
@@ -280,11 +277,11 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		}
 	case key.Matches(msg, keys.copy):
 		if i >= 0 {
-			return m, copyCurl(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, copyCurl(m.Requests, m.entries[i].Number, !m.Listen.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.export):
 		if i >= 0 {
-			return m, exportFixture(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, exportFixture(m.Requests, m.entries[i].Number, !m.Listen.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.test):
 		return m, sendTest(m.Requests, m.testSource())
