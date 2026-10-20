@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
+	"hookspot/internal/api"
 	"hookspot/internal/config"
 	"hookspot/internal/endpoint"
 )
@@ -103,6 +104,19 @@ func resolveCommandConfig(cmd *cobra.Command, needProject bool) (config.Config, 
 		overrides.Project = &value
 	}
 	return store.Resolve(overrides)
+}
+
+// apiClient resolves command's configuration and returns it with a client
+// for its CLI key; command names it in a resolution error.
+func apiClient(cmd *cobra.Command, command string, needProject bool) (config.Config, *api.Client, error) {
+	cfg, err := resolveCommandConfig(cmd, needProject)
+	if err != nil {
+		return config.Config{}, nil, wrapCommandError("resolve "+command+" configuration", configRecoveryHint(), err)
+	}
+	if cfg.CLIKey == "" {
+		return config.Config{}, nil, loginRequiredError()
+	}
+	return cfg, api.New(activeEndpoint, cfg.CLIKey, userAgent()), nil
 }
 
 func configRecoveryHint() string {

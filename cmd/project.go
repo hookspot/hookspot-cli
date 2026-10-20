@@ -31,15 +31,10 @@ var projectListCmd = &cobra.Command{
 	Short:       "List projects accessible to your account",
 	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := resolveCommandConfig(cmd, false)
+		_, client, err := apiClient(cmd, "project", false)
 		if err != nil {
-			return wrapCommandError("resolve project configuration", configRecoveryHint(), err)
+			return err
 		}
-		if cfg.CLIKey == "" {
-			return loginRequiredError()
-		}
-
-		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		projects, err := client.ListProjects(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("list projects: %w", err)
@@ -80,15 +75,10 @@ names. Name matching ignores case.`,
 	},
 	Annotations: commandAnnotations(true),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := resolveCommandConfig(cmd, false)
+		_, client, err := apiClient(cmd, "project", false)
 		if err != nil {
-			return wrapCommandError("resolve project configuration", configRecoveryHint(), err)
+			return err
 		}
-		if cfg.CLIKey == "" {
-			return loginRequiredError()
-		}
-
-		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		project, err := resolveProjectSelection(cmd.Context(), client, args, store.SavedProject(), cmd.InOrStdin(), cmd.OutOrStdout())
 		if err != nil {
 			return err

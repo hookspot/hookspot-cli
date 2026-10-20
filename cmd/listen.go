@@ -57,12 +57,9 @@ var listenCmd = &cobra.Command{
 			}
 		}
 
-		cfg, err := resolveCommandConfig(cmd, true)
+		cfg, client, err := apiClient(cmd, "listen", true)
 		if err != nil {
-			return wrapCommandError("resolve listen configuration", configRecoveryHint(), err)
-		}
-		if cfg.CLIKey == "" {
-			return loginRequiredError()
+			return err
 		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
@@ -71,7 +68,6 @@ var listenCmd = &cobra.Command{
 			)
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		var project *api.Project
 		if cfg.OrganizationSlug != "" {
 			project, err = client.GetProjectBySlugs(cmd.Context(), cfg.OrganizationSlug, cfg.ProjectSlug)
