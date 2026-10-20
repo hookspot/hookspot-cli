@@ -54,35 +54,19 @@ type SessionError struct {
 }
 
 func (e *SessionError) Error() string {
-	if e == nil || e.Err == nil {
-		return "WebSocket session error"
-	}
 	return e.Err.Error()
 }
 
 func (e *SessionError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
 	return e.Err
 }
 
 // Retryable reports whether reconnecting can reasonably recover this failure.
 func (e *SessionError) Retryable() bool {
-	return e != nil && (e.Kind == SessionConnect || e.Kind == SessionDisconnected)
+	return e.Kind == SessionConnect || e.Kind == SessionDisconnected
 }
 
 func sessionError(kind SessionErrorKind, connected bool, err error) error {
-	if err == nil {
-		return nil
-	}
-	var existing *SessionError
-	if errors.As(err, &existing) {
-		if connected {
-			existing.Connected = true
-		}
-		return existing
-	}
 	return &SessionError{Kind: kind, Connected: connected, Err: err}
 }
 
