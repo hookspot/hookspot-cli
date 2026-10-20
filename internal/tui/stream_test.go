@@ -335,7 +335,8 @@ func TestStreamStatusLine(t *testing.T) {
 
 // TestStreamStatusLineAtEveryWidth renders the status line in every state,
 // with the update alert and with the server's notice, at every width from 20
-// to 140 columns: no line overflows. The goldens show what gives way.
+// to 140 columns: no line overflows. TestStreamStatusLineGivesWay and the
+// goldens show what gives way.
 func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 	states := []struct {
 		name   string
@@ -368,6 +369,34 @@ func TestStreamStatusLineAtEveryWidth(t *testing.T) {
 						}
 					}
 				}
+			}
+		})
+	}
+}
+
+// TestStreamStatusLineGivesWay checks the status line where its totals give
+// way to the offline reason or to an alert, and where the reason is too
+// narrow for them to.
+func TestStreamStatusLineGivesWay(t *testing.T) {
+	totals := session.Recorded{Totals: session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond}}
+	refused := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
+	tests := []struct {
+		name    string
+		columns int
+		events  []tea.Msg
+		want    string
+	}{
+		// EOF has under minCut columns beside the state and project, but fits.
+		{name: "short reason", columns: 52, events: []tea.Msg{session.Ready{}, session.ConnectionLost{Err: errors.New("EOF")}}, want: "○ reconnecting · Acme | Payments · 12 requests · EOF"},
+		{name: "reason cut to minCut", columns: 55, events: []tea.Msg{session.Ready{}, refused}, want: "○ reconnecting · Acme | Payments · dial tcp: connectio…"},
+		{name: "reason under minCut", columns: 54, events: []tea.Msg{session.Ready{}, refused}, want: "○ reconnecting · Acme | Payments · 12 requests · 10 o…"},
+		{name: "update alert", columns: 80, events: []tea.Msg{session.Ready{}, updateAvailable}, want: "● live · Acme | Payments · 12 requests" + strings.Repeat(" ", 7) + "↑ 1.3.0 · brew upgrade hookspot-cli"},
+		{name: "stopping hint", columns: 50, events: []tea.Msg{session.Ready{}, stoppingMsg{}}, want: "◌ stopping… · Acme | Payments" + strings.Repeat(" ", 10) + "ctrl-c quit"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := streamView(Stream{Project: "Acme | Payments"}, test.columns, append([]tea.Msg{totals}, test.events...)...)[0]; got != test.want {
+				t.Errorf("at %d columns:\n got %q\nwant %q", test.columns, got, test.want)
 			}
 		})
 	}
