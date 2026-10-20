@@ -63,7 +63,8 @@ A re-run of the job keeps them (`mode: keep-existing`).
    anything is published.
 2. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
    `Dockerfile.release` (digests in `release/toolchain.env`).
-3. `make release-publish` runs `goreleaser release --clean` in that image. The
+3. `make release-publish` runs `goreleaser release --clean` in that image for
+   the pushed tag, even when a pre-release tag shares its commit. The
    before hooks clear `npm/binaries/`, run `go mod download`, and run
    `releasecheck metadata`, which writes `build-info.json`. GoReleaser builds
    the six binaries (`serverURL` from `.goreleaser.yaml`), copies each into

@@ -142,7 +142,9 @@ release-snapshot:
 	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
 
-# CI only: publishes the GitHub Release and the Homebrew formula.
+# CI only: publishes the GitHub Release and the Homebrew formula. The pushed
+# tag names the version: on a commit tagged both v1.2.3-rc.1 and v1.2.3,
+# GoReleaser would pick the rc.
 release-publish:
 ifndef GITHUB_TOKEN
 	$(error GITHUB_TOKEN is required to publish the GitHub Release)
@@ -150,8 +152,11 @@ endif
 ifndef HOMEBREW_TAP_TOKEN
 	$(error HOMEBREW_TAP_TOKEN is required to push the Homebrew formula)
 endif
+ifndef GITHUB_REF_NAME
+	$(error GITHUB_REF_NAME is required to name the tag to publish, e.g. GITHUB_REF_NAME=v1.2.3)
+endif
 	$(call require-clean-tree,release-publish)
-	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN $(RELEASE_IMAGE) release --clean
+	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN -e GORELEASER_CURRENT_TAG="$(GITHUB_REF_NAME)" $(RELEASE_IMAGE) release --clean
 
 # Multi-arch image of the Linux binaries that release-snapshot or
 # release-publish staged in npm/binaries/. Builds without pushing.
