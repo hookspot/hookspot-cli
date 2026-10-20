@@ -11,12 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode"
-
-	"hookspot/internal/endpoint"
 )
 
 // ForwardTimeout is how long Forward waits for the local target's response.
@@ -131,7 +130,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	if !strings.Contains(targetBaseURL, "://") {
 		targetBaseURL = "http://" + targetBaseURL
 	}
-	base, err := endpoint.Parse(targetBaseURL)
+	base, err := parseTarget(targetBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid forward target: %w", err)
 	}
@@ -141,7 +140,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	transport.Proxy = nil
 
 	return &Forwarder{
-		targetBaseURL: base.String(),
+		targetBaseURL: base,
 		trailingSlash: strings.HasSuffix(targetBaseURL, "/"),
 		client: &http.Client{
 			Transport: transport,
@@ -151,6 +150,44 @@ func New(targetBaseURL string) (*Forwarder, error) {
 			},
 		},
 	}, nil
+}
+
+// parseTarget returns raw without its trailing slash. Unlike the server URL,
+// its host is whatever the local network resolves, such as a Compose service
+// named web_app, and its path prefix may be escaped.
+func parseTarget(raw string) (string, error) {
+	for _, r := range raw {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "", errors.New("whitespace and control characters are not allowed")
+		}
+	}
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return "", errors.Unwrap(err)
+	case u.Scheme != "http" && u.Scheme != "https":
+		return "", errors.New("scheme must be HTTP or HTTPS")
+	case u.Hostname() == "":
+		return "", errors.New("host is required")
+	case !validPort(u):
+		return "", errors.New("invalid port")
+	case u.User != nil:
+		return "", errors.New("user information is not allowed")
+	case u.RawQuery != "" || u.ForceQuery:
+		return "", errors.New("query parameters are not allowed")
+	case strings.Contains(raw, "#"):
+		return "", errors.New("fragments are not allowed")
+	}
+	origin := url.URL{Scheme: u.Scheme, Host: u.Host}
+	return origin.String() + strings.TrimSuffix(u.EscapedPath(), "/"), nil
+}
+
+func validPort(u *url.URL) bool {
+	if u.Port() == "" {
+		return !strings.HasSuffix(u.Host, ":")
+	}
+	port, err := strconv.Atoi(u.Port())
+	return err == nil && port >= 1 && port <= 65535
 }
 
 // String returns the validated target base URL, with the trailing slash kept

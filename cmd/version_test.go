@@ -375,7 +375,7 @@ func TestListenRejectsForwardTargetBeforeAPIRequest(t *testing.T) {
 		t.Fatal("listen accepted invalid forward target")
 	}
 	combined := result.stdout + result.stderr
-	if !strings.Contains(combined, "invalid --forward-to value") || strings.Contains(combined, "cannot reach") {
+	if !strings.Contains(combined, "invalid --forward-to value: invalid forward target: invalid port") || strings.Contains(combined, "cannot reach") {
 		t.Fatalf("unexpected output:\n%s", combined)
 	}
 }

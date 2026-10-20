@@ -148,6 +148,7 @@ func TestForwarderDestinationURL(t *testing.T) {
 		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "", "http://localhost:8000/webhooks/"},
 		{"root at base path keeps query", "localhost:3000/webhooks/stripe", "/", "a=1", "http://localhost:3000/webhooks/stripe?a=1"},
 		{"root at typed trailing slash keeps query", "localhost:8000/webhooks/", "/", "a=1", "http://localhost:8000/webhooks/?a=1"},
+		{"escaped base path", "localhost:3000/api%20v1", "/hooks", "", "http://localhost:3000/api%20v1/hooks"},
 	}
 
 	for _, tt := range tests {
@@ -174,34 +175,28 @@ func TestForwarderRejectsDestinationPathsThatWouldBeRewritten(t *testing.T) {
 }
 
 func TestNewValidatesForwardTarget(t *testing.T) {
-	for _, valid := range []string{"localhost:4000", "http://localhost:4000", "https://example.invalid/prefix"} {
-		f, err := New(valid)
-		if err != nil {
-			t.Fatalf("New(%q): %v", valid, err)
-		}
-		if !strings.Contains(valid, "://") && f.String() != "http://"+valid {
-			t.Fatalf("String() = %q", f.String())
+	for raw, want := range map[string]string{
+		"3000":                           "http://localhost:3000",
+		"3000/webhooks":                  "http://localhost:3000/webhooks",
+		"localhost:4000":                 "http://localhost:4000",
+		"http://localhost:4000":          "http://localhost:4000",
+		"https://example.invalid/prefix": "https://example.invalid/prefix",
+		// Docker's DNS resolves Compose service names, underscores included.
+		"http://web_app:3000":             "http://web_app:3000",
+		"http://localhost:3000/api%20v1/": "http://localhost:3000/api%20v1/",
+	} {
+		if got := mustForwarder(t, raw).String(); got != want {
+			t.Fatalf("New(%q) = %q, want %q", raw, got, want)
 		}
 	}
 	for _, invalid := range []string{
 		"", "ftp://example.invalid", "http:///missing", "http://user@example.invalid",
-		"http://example.invalid?query=1", "http://example.invalid/#fragment", "http://example.invalid#",
-		"http://example.invalid:", "http://example.invalid:99999", "http://example.invalid/a b",
+		"http://example.invalid?query=1", "http://example.invalid?", "http://example.invalid/#fragment", "http://example.invalid#",
+		"http://example.invalid:", "http://example.invalid:99999", "http://example.invalid:0", "http://example.invalid/a b",
 		"99999", "3000/webhooks?x=1", "3000/webhooks#top",
 	} {
-		if _, err := New(invalid); err == nil {
-			t.Fatalf("New(%q) unexpectedly succeeded", invalid)
-		}
-	}
-}
-
-func TestNewMapsBarePortToLocalhost(t *testing.T) {
-	for raw, want := range map[string]string{
-		"3000":          "http://localhost:3000",
-		"3000/webhooks": "http://localhost:3000/webhooks",
-	} {
-		if got := mustForwarder(t, raw).String(); got != want {
-			t.Fatalf("New(%q) = %q, want %q", raw, got, want)
+		if _, err := New(invalid); err == nil || strings.Contains(err.Error(), "server URL") {
+			t.Fatalf("New(%q) = %v, want a forward target error", invalid, err)
 		}
 	}
 }
