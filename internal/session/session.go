@@ -174,16 +174,12 @@ func (s *Session) Handle(delivery ws.Delivery) (ws.Response, error) {
 		return ws.Response{Status: http.StatusOK}, nil
 	}
 
-	entry, err := s.forward(entry)
-	if err != nil {
-		return ws.Response{}, err
-	}
+	entry = s.forward(entry)
 	response := entry.Response
 	if entry.Failure != nil {
 		response = ws.Response{Status: http.StatusBadGateway, LatencyMS: latencyMilliseconds(entry.Latency)}
 	}
-	err = s.record(entry)
-	return response, err
+	return response, s.record(entry)
 }
 
 // Replay forwards entry n again as a new entry. It's local only: the
@@ -196,10 +192,7 @@ func (s *Session) Replay(n int) error {
 	if err != nil {
 		return err
 	}
-	entry, err := s.forward(Entry{Delivery: original.Delivery, RouteUID: original.RouteUID, Received: s.now(), ReplayOf: n})
-	if err != nil {
-		return err
-	}
+	entry := s.forward(Entry{Delivery: original.Delivery, RouteUID: original.RouteUID, Received: s.now(), ReplayOf: n})
 	comparison := Compare(original, entry)
 	entry.Replay = &comparison
 	return s.record(entry)
@@ -219,7 +212,7 @@ func (s *Session) ReplayLast() error {
 	return s.Replay(last)
 }
 
-func (s *Session) forward(entry Entry) (Entry, error) {
+func (s *Session) forward(entry Entry) Entry {
 	d := entry.Delivery
 	entry.Target = s.forwarder.String()
 	if destination, err := s.forwarder.DestinationURL(d.Path, ""); err == nil {
@@ -230,17 +223,14 @@ func (s *Session) forward(entry Entry) (Entry, error) {
 	if err != nil {
 		entry.Latency = s.now().Sub(started)
 		entry.Failure = proxy.Failure(err)
-		return entry, nil
+		return entry
 	}
 	body, err := readLocalResponseBody(response.Body)
 	_ = response.Body.Close()
 	entry.Latency = s.now().Sub(started)
-	if errors.Is(err, errLocalResponseBodyTooLarge) {
-		return Entry{}, err
-	}
 	if err != nil {
 		entry.Failure = proxy.Failure(err)
-		return entry, nil
+		return entry
 	}
 	entry.Response = ws.Response{
 		Status:    response.StatusCode,
@@ -248,7 +238,7 @@ func (s *Session) forward(entry Entry) (Entry, error) {
 		Body:      body,
 		LatencyMS: latencyMilliseconds(entry.Latency),
 	}
-	return entry, nil
+	return entry
 }
 
 func (s *Session) record(entry Entry) error {

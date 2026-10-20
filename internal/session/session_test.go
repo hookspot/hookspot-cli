@@ -142,6 +142,7 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		reply{err: errors.New("network unavailable"), latency: 7 * time.Millisecond},
 		reply{status: http.StatusOK, bodyErr: errors.New("connection reset mid-body")},
 		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
+		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
 	)
 
 	response, err := s.Handle(delivery("rte_orders", "/orders"))
@@ -168,12 +169,18 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		t.Fatalf("failed response body entry = %#v, want a transport failure", cut)
 	}
 
+	// An oversized body fails like a cut one, and so does its replay.
 	response, err = s.Handle(delivery("rte_orders", "/orders"))
-	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") || response.Status != 0 {
-		t.Fatalf("Handle with an oversized response = %#v, %v; want no acknowledgement", response.Status, err)
+	if err != nil || response.Status != http.StatusBadGateway || response.Body != nil {
+		t.Fatalf("Handle with an oversized response = %#v, %v; want 502", response, err)
 	}
-	if got := len(sink.recorded()); got != 3 {
-		t.Fatalf("recorded %d entries, want the oversized response left out", got)
+	if err := s.Replay(4); err != nil {
+		t.Fatalf("Replay of the oversized response = %v", err)
+	}
+	for _, e := range sink.recorded()[3:] {
+		if e.Entry.Failure == nil || e.Entry.Failure.Error() != "local response body exceeds 16 MiB limit" {
+			t.Fatalf("oversized response entry = %#v, want a transport failure", e.Entry)
+		}
 	}
 }
 

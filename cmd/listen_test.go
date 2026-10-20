@@ -638,6 +638,35 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 	}
 }
 
+func TestListenFailsAnOversizedLocalResponseAndGoesOn(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/webhooks/stripe" {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), 16*1024*1024+1))
+		}
+	}))
+	defer local.Close()
+	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"--forward-to", local.URL},
+		ws.Delivery{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe"},
+		ws.Delivery{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", RouteUID: "rte_github", Method: "POST", Path: "/webhooks/github"},
+	)
+	if !strings.Contains(result.stdout, "✗ transport error") || !strings.Contains(result.stdout, "failed: local response body exceeds 16 MiB limit") {
+		t.Fatalf("stdout = %q, want #1 failed for its oversized body", result.stdout)
+	}
+	if !regexp.MustCompile(`(?m)^#2 +POST +github .* 200 `).MatchString(result.stdout) {
+		t.Fatalf("stdout = %q, want #2 forwarded after #1", result.stdout)
+	}
+	for _, want := range []int{http.StatusBadGateway, http.StatusOK} {
+		select {
+		case response := <-hookspot.responses:
+			if response.Status != want || len(response.Body) != 0 {
+				t.Fatalf("response = %+v, want %d without a body", response, want)
+			}
+		default:
+			t.Fatalf("no response with %d", want)
+		}
+	}
+}
+
 func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 	wantErr := errors.New("replay output unavailable")
 	var lines []string

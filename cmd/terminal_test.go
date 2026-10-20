@@ -539,6 +539,8 @@ type fakeHookspot struct {
 	joins chan []json.RawMessage
 	// joinReplies answers the next joins in place of the plain acceptance.
 	joinReplies chan map[string]any
+	// responses holds the first delivery responses' payloads.
+	responses chan ws.Response
 	// userAgents holds the first requests' User-Agent headers, the
 	// websocket's included.
 	userAgents chan string
@@ -584,6 +586,7 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 		deliveries:  make(chan any),
 		joins:       make(chan []json.RawMessage, 2),
 		joinReplies: make(chan map[string]any, 4),
+		responses:   make(chan ws.Response, 8),
 		userAgents:  make(chan string, 8),
 		release:     make(chan struct{}),
 		done:        make(chan struct{}),
@@ -631,13 +634,21 @@ func startFakeHookspot(t *testing.T, sources string) *fakeHookspot {
 			if reply["status"] != "ok" {
 				return
 			}
-			// Responses and heartbeats are dropped until the command hangs up.
+			// Heartbeats are dropped until the command hangs up.
 			gone := make(chan struct{})
 			go func() {
 				defer close(gone)
 				for {
-					if _, _, err := conn.ReadMessage(); err != nil {
+					var message []json.RawMessage
+					if err := conn.ReadJSON(&message); err != nil {
 						return
+					}
+					var response ws.Response
+					if len(message) == 5 && string(message[3]) == `"delivery_response"` && json.Unmarshal(message[4], &response) == nil {
+						select {
+						case hookspot.responses <- response:
+						default:
+						}
 					}
 				}
 			}()
