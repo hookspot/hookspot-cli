@@ -9,7 +9,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -620,11 +619,7 @@ func replyToReplay(writer *cards.Writer, err error) error {
 // lineCommandReader feeds the lines typed into the stream to its commands.
 type lineCommandReader struct {
 	cancel       context.CancelFunc
-	closeInput   io.Closer
-	producerDone <-chan struct{}
 	consumerDone <-chan error
-	once         sync.Once
-	err          error
 }
 
 // startLineCommands runs each line of input until parent ends. A failed
@@ -633,11 +628,8 @@ func startLineCommands(parent context.Context, input io.Reader, run func(line st
 	ctx, cancel := context.WithCancel(parent)
 	lines := make(chan string, 1)
 	producerResult := make(chan error, 1)
-	producerDone := make(chan struct{})
-	closer, owned := ownedInput(input)
 
 	go func() {
-		defer close(producerDone)
 		defer close(lines)
 		scanner := bufio.NewScanner(input)
 		for scanner.Scan() {
@@ -688,47 +680,15 @@ func startLineCommands(parent context.Context, input io.Reader, run func(line st
 		}
 	}()
 
-	reader := &lineCommandReader{
-		cancel:       cancel,
-		producerDone: producerDone,
-		consumerDone: consumerDone,
-	}
-	if owned {
-		reader.closeInput = closer
-	}
-	return reader
+	return &lineCommandReader{cancel: cancel, consumerDone: consumerDone}
 }
 
-func ownedInput(input io.Reader) (io.Closer, bool) {
-	closer, ok := input.(io.Closer)
-	if !ok {
-		return nil, false
-	}
-	if file, ok := input.(*os.File); ok && file == os.Stdin {
-		// The console reader may remain blocked until process exit. It owns no
-		// callback work, is started once for the command, and global stdin is
-		// never closed.
-		return nil, false
-	}
-	return closer, true
-}
-
+// Stop ends the commands and returns a failed one's error. It leaves a read of
+// input blocked until the process exits: input is stdin, which is never
+// closed, and the read runs no command.
 func (r *lineCommandReader) Stop() error {
-	r.once.Do(func() {
-		r.cancel()
-		var closeErr error
-		if r.closeInput != nil {
-			closeErr = r.closeInput.Close()
-		}
-		r.err = <-r.consumerDone
-		if r.closeInput != nil {
-			<-r.producerDone
-		}
-		if r.err == nil {
-			r.err = closeErr
-		}
-	})
-	return r.err
+	r.cancel()
+	return <-r.consumerDone
 }
 
 func init() {

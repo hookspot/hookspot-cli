@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -688,8 +687,8 @@ func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 	}
 }
 
-func TestLineCommandReaderClosesAndJoinsOwnedReaderOnCancellation(t *testing.T) {
-	reader, writer := io.Pipe()
+func TestLineCommandReaderStopsWhileInputBlocks(t *testing.T) {
+	reader, _ := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	commands := startLineCommands(ctx, reader, func(string) error { return nil }, func() {})
 	cancel()
@@ -701,33 +700,26 @@ func TestLineCommandReaderClosesAndJoinsOwnedReaderOnCancellation(t *testing.T) 
 			t.Fatalf("Stop error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("owned command input did not stop")
-	}
-	if _, err := writer.Write([]byte("\n")); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("write after stop error = %v, want closed pipe", err)
+		t.Fatal("command input did not stop")
 	}
 }
 
-func TestLineCommandReaderStopsAfterBlockedFallbackReadResumes(t *testing.T) {
+func TestLineCommandReaderDoesNotRunLineReadAfterCancellation(t *testing.T) {
 	reader := newGatedLineReader("r 1\nr 2\n")
 	ctx, cancel := context.WithCancel(context.Background())
+	var ran atomic.Bool
 	commands := startLineCommands(ctx, reader, func(string) error {
-		t.Fatal("a line read after cancellation ran")
+		ran.Store(true)
 		return nil
 	}, func() {})
 	<-reader.started
 	cancel()
 	close(reader.release)
-	select {
-	case <-commands.producerDone:
-	case <-time.After(time.Second):
-		t.Fatal("fallback command reader did not stop after its read resumed")
-	}
-	if got := reader.readCount(); got != 1 {
-		t.Fatalf("read count after cancellation = %d, want 1", got)
-	}
 	if err := commands.Stop(); err != nil {
 		t.Fatalf("Stop error = %v", err)
+	}
+	if ran.Load() {
+		t.Fatal("a line read after cancellation ran")
 	}
 }
 
@@ -756,12 +748,12 @@ func TestLineCommandReaderDoesNotRunQueuedLineAfterCancellation(t *testing.T) {
 	}
 }
 
+// gatedLineReader holds its first read until release closes, then ends.
 type gatedLineReader struct {
 	started chan struct{}
 	release chan struct{}
 	data    []byte
-	mu      sync.Mutex
-	reads   int
+	read    bool
 }
 
 func newGatedLineReader(value string) *gatedLineReader {
@@ -773,22 +765,13 @@ func newGatedLineReader(value string) *gatedLineReader {
 }
 
 func (r *gatedLineReader) Read(buffer []byte) (int, error) {
-	r.mu.Lock()
-	r.reads++
-	read := r.reads
-	r.mu.Unlock()
-	if read == 1 {
-		close(r.started)
-		<-r.release
-		return copy(buffer, r.data), nil
+	if r.read {
+		return 0, io.EOF
 	}
-	return 0, io.EOF
-}
-
-func (r *gatedLineReader) readCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.reads
+	r.read = true
+	close(r.started)
+	<-r.release
+	return copy(buffer, r.data), nil
 }
 
 func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {
