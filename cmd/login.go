@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
@@ -50,11 +49,7 @@ var loginCmd = &cobra.Command{
 // the flag or environment. A key that is merely saved in config is not an
 // explicit key and must still start the browser flow.
 func explicitLoginKey(cmd *cobra.Command) bool {
-	if cmd.Flags().Changed("cli-key") {
-		return true
-	}
-	value, set := os.LookupEnv("HOOKSPOT_CLI_KEY")
-	return set && value != ""
+	return cmd.Flags().Changed("cli-key") || store.EnvironmentCLIKeyActive()
 }
 
 func runKeyLogin(ctx context.Context, cliKey string, in io.Reader, out io.Writer) error {
