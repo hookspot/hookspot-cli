@@ -228,20 +228,24 @@ func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, 
 }
 
 // Forward replays a request to targetBaseURL+path with the given method, raw
-// query string, body, and headers. An empty method defaults to POST.
-func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
+// query string, body, and headers. An empty method defaults to POST. It
+// returns the URL it sent to without the query, or the target base URL when
+// path has none.
+func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (string, *http.Response, error) {
 	if method == "" {
 		method = http.MethodPost
 	}
 
-	target, err := f.DestinationURL(path, query)
+	target, err := f.DestinationURL(path, "")
 	if err != nil {
-		return nil, err
+		return f.String(), nil, err
 	}
+	destination := target.String()
+	target.RawQuery = query
 
 	req, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return destination, nil, err
 	}
 
 	for key, values := range Headers(headers) {
@@ -250,7 +254,8 @@ func (f *Forwarder) Forward(ctx context.Context, method, path, query string, bod
 		}
 	}
 
-	return f.client.Do(req)
+	resp, err := f.client.Do(req)
+	return destination, resp, err
 }
 
 // Headers returns the headers Forward sends: canonical names, without

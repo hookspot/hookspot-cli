@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"runtime"
 	"strings"
@@ -76,7 +75,7 @@ type fakeForwarder struct {
 	calls   []ws.Delivery
 }
 
-func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
+func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (string, *http.Response, error) {
 	f.mu.Lock()
 	r := reply{status: http.StatusOK}
 	if len(f.replies) > 0 {
@@ -86,21 +85,16 @@ func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, b
 	f.mu.Unlock()
 	runtime.Gosched()
 	f.clock.Add(r.latency)
+	target := "http://localhost:3000" + path
 	if r.err != nil {
-		return nil, r.err
+		return target, nil, r.err
 	}
 	reader := io.Reader(strings.NewReader(r.body))
 	if r.bodyErr != nil {
 		reader = iotest.ErrReader(r.bodyErr)
 	}
-	return &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(reader)}, nil
+	return target, &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(reader)}, nil
 }
-
-func (f *fakeForwarder) DestinationURL(path, _ string) (*url.URL, error) {
-	return url.Parse("http://localhost:3000" + path)
-}
-
-func (f *fakeForwarder) String() string { return "http://localhost:3000" }
 
 type recorder struct {
 	mu     sync.Mutex

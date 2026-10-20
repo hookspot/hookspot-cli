@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,7 +46,7 @@ type forwarder struct {
 	gate   <-chan struct{}
 }
 
-func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ http.Header) (*http.Response, error) {
+func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ http.Header) (string, *http.Response, error) {
 	if f.called != nil {
 		f.called <- struct{}{}
 	}
@@ -59,18 +58,12 @@ func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ htt
 	if path == "/fail" {
 		status = http.StatusInternalServerError
 	}
-	return &http.Response{
+	return "http://localhost:3000" + path, &http.Response{
 		StatusCode: status,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(`{"error":"boom"}`)),
 	}, nil
 }
-
-func (forwarder) DestinationURL(path, _ string) (*url.URL, error) {
-	return url.Parse("http://localhost:3000" + path)
-}
-
-func (forwarder) String() string { return "http://localhost:3000" }
 
 // output is a program's output, safe to read while it draws.
 type output struct {

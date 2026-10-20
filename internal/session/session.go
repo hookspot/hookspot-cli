@@ -25,12 +25,10 @@ var errLocalResponseBodyTooLarge = fmt.Errorf("local response body exceeds %d Mi
 // ErrNoTarget refuses a replay in inspect mode, where nothing local answers.
 var ErrNoTarget = errors.New("nothing to replay without --forward-to")
 
-// Forwarder sends a delivery to the local target.
+// Forwarder sends a delivery to the local target, and returns the URL it
+// sent to without the query, even when sending failed.
 type Forwarder interface {
-	Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error)
-	DestinationURL(path, query string) (*url.URL, error)
-	// String is the --forward-to base URL.
-	String() string
+	Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (target string, response *http.Response, err error)
 }
 
 // Sink receives events in record order. An error from an entry's event fails
@@ -214,12 +212,9 @@ func (s *Session) ReplayLast() error {
 
 func (s *Session) forward(entry Entry) Entry {
 	d := entry.Delivery
-	entry.Target = s.forwarder.String()
-	if destination, err := s.forwarder.DestinationURL(d.Path, ""); err == nil {
-		entry.Target = destination.String()
-	}
 	started := s.now()
-	response, err := s.forwarder.Forward(s.ctx, d.Method, d.Path, d.Query, d.Body, d.Headers)
+	target, response, err := s.forwarder.Forward(s.ctx, d.Method, d.Path, d.Query, d.Body, d.Headers)
+	entry.Target = target
 	if err != nil {
 		entry.Latency = s.now().Sub(started)
 		entry.Failure = proxy.Failure(err)

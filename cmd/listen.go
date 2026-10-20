@@ -135,6 +135,7 @@ var listenCmd = &cobra.Command{
 			stop:        stopListening,
 			sources:     sources,
 			local:       local,
+			target:      target,
 			listenCards: listenCards,
 			writer:      writer,
 			project:     projectDisplayName(*project),
@@ -178,8 +179,10 @@ type listenSetup struct {
 	ctx     context.Context
 	stop    context.CancelFunc
 	sources []api.Source
-	// local is nil in inspect mode.
+	// local is nil in inspect mode, and target, the --forward-to base URL,
+	// is "".
 	local       session.Forwarder
+	target      string
 	listenCards cards.Listen
 	writer      *cards.Writer
 	project     string
@@ -198,9 +201,7 @@ func runFullscreen(setup listenSetup, program *tui.Program, warnings []session.E
 		Routes:               setup.routes,
 		RequestsURL:          setup.requestsURL,
 		ShowSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
-	}
-	if setup.local != nil {
-		screen.Target = setup.local.String()
+		Target:               setup.target,
 	}
 	return runInTerminal(program, screen, func() error {
 		// The alt screen hides the warnings printed before it.

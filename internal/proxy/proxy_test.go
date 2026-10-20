@@ -55,11 +55,16 @@ func TestForwarder_Forward_ReplaysRequest(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("X-Hookspot-Event", "evt_123")
 
-	resp, err := f.Forward(context.Background(), http.MethodPut, "/webhooks", "a=1&b=2", []byte(`{"id":"evt_123"}`), headers)
+	target, resp, err := f.Forward(context.Background(), http.MethodPut, "/webhooks", "a=1&b=2", []byte(`{"id":"evt_123"}`), headers)
 	if err != nil {
 		t.Fatalf("Forward: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// The query stays out of the target, which entries show next to it.
+	if target != server.URL+"/webhooks" {
+		t.Fatalf("target = %q, want %q", target, server.URL+"/webhooks")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -92,7 +97,7 @@ func TestForwarder_Forward_DefaultsToPOST(t *testing.T) {
 
 	f := mustForwarder(t, server.URL)
 
-	resp, err := f.Forward(context.Background(), "", "/webhooks", "", nil, nil)
+	_, resp, err := f.Forward(context.Background(), "", "/webhooks", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Forward: %v", err)
 	}
@@ -111,7 +116,7 @@ func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	resp, err := mustForwarder(t, server.URL+"/local").Forward(
+	_, resp, err := mustForwarder(t, server.URL+"/local").Forward(
 		context.Background(),
 		http.MethodPost,
 		"/webhooks/shopify",
@@ -168,8 +173,8 @@ func TestForwarderDestinationURL(t *testing.T) {
 func TestForwarderRejectsDestinationPathsThatWouldBeRewritten(t *testing.T) {
 	forwarder := mustForwarder(t, "http://localhost:4000")
 	for _, path := range []string{"/two words", "/path?second=query", "/path#fragment", "/line\nbreak"} {
-		if _, err := forwarder.DestinationURL(path, ""); err == nil {
-			t.Fatalf("DestinationURL(%q) unexpectedly succeeded", path)
+		if target, _, err := forwarder.Forward(context.Background(), http.MethodPost, path, "", nil, nil); err == nil || target != forwarder.String() {
+			t.Fatalf("Forward(%q) = %q, %v; want the base target and an error", path, target, err)
 		}
 	}
 }
@@ -209,7 +214,7 @@ func TestForwarderBypassesEnvironmentProxy(t *testing.T) {
 
 	// Go never proxies loopback hosts; 0.0.0.0 reaches the same server without that exemption.
 	target := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
-	resp, err := mustForwarder(t, target).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
+	_, resp, err := mustForwarder(t, target).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Forward through HTTP_PROXY=%s: %v", os.Getenv("HTTP_PROXY"), err)
 	}
@@ -233,7 +238,7 @@ func TestForwarderReturnsRedirectWithoutFollowing(t *testing.T) {
 			}))
 			defer origin.Close()
 
-			resp, err := mustForwarder(t, origin.URL).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
+			_, resp, err := mustForwarder(t, origin.URL).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -265,7 +270,7 @@ func TestForwarderPreservesRequestAndRemovesHopHeaders(t *testing.T) {
 		"host":              {"untrusted.invalid"},
 	}
 	originalHeaders := headers.Clone()
-	resp, err := mustForwarder(t, server.URL+"/prefix").Forward(
+	_, resp, err := mustForwarder(t, server.URL+"/prefix").Forward(
 		context.Background(), http.MethodPost, "/hooks/a%2Fb", "x=1%2F2&literal=%23", nil, headers,
 	)
 	if err != nil {
