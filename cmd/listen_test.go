@@ -646,6 +646,8 @@ func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 
 func TestLineCommandReaderStopsWhileInputBlocks(t *testing.T) {
 	reader, _ := io.Pipe()
+	// Stop leaves input open, so closing it here ends the blocked read.
+	t.Cleanup(func() { _ = reader.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	commands := startLineCommands(ctx, reader, func(string) error { return nil }, func() {})
 	cancel()
