@@ -30,7 +30,7 @@ func readFrame(t *testing.T, conn *websocket.Conn) message {
 func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 
-	gotResponse := make(chan deliveryResponse, 1)
+	gotResponse := make(chan string, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
@@ -105,11 +105,7 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 		if respFrame.Topic != "project:proj_1" {
 			t.Errorf("topic = %q, want project:proj_1", respFrame.Topic)
 		}
-		var dr deliveryResponse
-		if err := json.Unmarshal(respFrame.Payload, &dr); err != nil {
-			t.Errorf("unmarshal delivery_response: %v", err)
-		}
-		gotResponse <- dr
+		gotResponse <- string(respFrame.Payload)
 
 		time.Sleep(50 * time.Millisecond)
 	}))
@@ -169,21 +165,10 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	}
 
 	select {
-	case dr := <-gotResponse:
-		if dr.AttemptUID != "att_1" {
-			t.Fatalf("attempt_uid = %q, want att_1", dr.AttemptUID)
-		}
-		if dr.Status != 201 {
-			t.Fatalf("status = %d, want 201", dr.Status)
-		}
-		if got := dr.Headers.Get("X-Foo"); got != "bar" {
-			t.Fatalf("X-Foo = %q, want bar", got)
-		}
-		if string(dr.Body) != "ok" {
-			t.Fatalf("body = %q, want %q", dr.Body, "ok")
-		}
-		if dr.LatencyMS != 38 {
-			t.Fatalf("latency_ms = %d, want 38", dr.LatencyMS)
+	case got := <-gotResponse:
+		const want = `{"attempt_uid":"att_1","status":201,"headers":{"X-Foo":["bar"]},"body":"b2s=","latency_ms":38}`
+		if got != want {
+			t.Fatalf("delivery_response payload = %s, want %s", got, want)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for delivery_response")

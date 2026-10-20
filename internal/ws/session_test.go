@@ -723,7 +723,6 @@ func TestClientHandlerFailureWithoutResponseSendsNoAcknowledgement(t *testing.T)
 
 func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T) {
 	responseSeen := make(chan deliveryResponse, 1)
-	paddedBody := make(chan bool, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn := acceptTestConnection(t, w, r)
 		defer conn.Close()
@@ -731,7 +730,6 @@ func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T)
 		writeJoinAccepted(t, conn, join)
 		writeTestMessage(t, conn, message{Topic: join.Topic, Event: deliveryEvent, Payload: backendDelivery("att_1", "POST", "")})
 		frame := readFrame(t, conn)
-		paddedBody <- strings.Contains(string(frame.Payload), `"body":"b2s="`)
 		var response deliveryResponse
 		if err := json.Unmarshal(frame.Payload, &response); err != nil {
 			t.Fatal(err)
@@ -756,9 +754,6 @@ func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T)
 	response := <-responseSeen
 	if response.Status != http.StatusTemporaryRedirect || response.Headers.Get("Location") != "/next" || string(response.Body) != "ok" {
 		t.Fatalf("acknowledged response changed: %#v", response)
-	}
-	if !<-paddedBody {
-		t.Fatal("outgoing response body was not padded standard Base64")
 	}
 }
 
