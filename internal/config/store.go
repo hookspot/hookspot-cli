@@ -128,21 +128,21 @@ func newLocalStore(opts Options) (*Store, error) {
 // openConfigFile opens the file Lstat described as info, refusing one the
 // store must not trust.
 func openConfigFile(path string, info os.FileInfo) (*os.File, error) {
-	if err := validateConfigFileType(path, info); err != nil {
+	if err := validateConfigPath(path, info); err != nil {
 		return nil, err
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config file: %w", err)
 	}
-	if err = validateOpenedConfigFile(path, file, info); err != nil {
+	if err = validateOpenedConfigFile(file, info); err != nil {
 		_ = file.Close()
 		return nil, err
 	}
 	return file, nil
 }
 
-func validateOpenedConfigFile(path string, file *os.File, info os.FileInfo) error {
+func validateOpenedConfigFile(file *os.File, info os.FileInfo) error {
 	openedInfo, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("inspect opened config file: %w", err)
@@ -150,7 +150,7 @@ func validateOpenedConfigFile(path string, file *os.File, info os.FileInfo) erro
 	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
 		return errors.New("config file changed while it was being opened")
 	}
-	return validateConfigFile(path, file, info)
+	return validateConfigFile(file, info)
 }
 
 // validateConfigTarget refuses to replace a file the store would refuse to read.

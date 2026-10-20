@@ -22,7 +22,7 @@ const fileDeleteChild windows.ACCESS_MASK = 0x00000040
 // in a directory it owns.
 const trustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 
-func validateConfigFileType(path string, _ os.FileInfo) error {
+func validateConfigPath(path string, _ os.FileInfo) error {
 	attributes, err := windows.GetFileAttributes(mustUTF16(path))
 	if err != nil {
 		return fmt.Errorf("inspect config file: %w", err)
@@ -36,7 +36,7 @@ func validateConfigFileType(path string, _ os.FileInfo) error {
 	return nil
 }
 
-func validateConfigFile(_ string, file *os.File, _ os.FileInfo) error {
+func validateConfigFile(file *os.File, _ os.FileInfo) error {
 	return validateWindowsHandleAccess(file)
 }
 

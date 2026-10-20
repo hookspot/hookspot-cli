@@ -31,17 +31,19 @@ func canonicalConfigPath(path string) (string, error) {
 	return filepath.Join(resolved, missing), nil
 }
 
-func validateConfigFileType(_ string, info os.FileInfo) error {
+// validateConfigPath checks the folders before the open: in a folder others
+// can write, the file could be swapped for a FIFO, whose open blocks.
+func validateConfigPath(path string, info os.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("config file must not be a symlink")
 	}
 	if !info.Mode().IsRegular() {
 		return errors.New("config path must be a regular file")
 	}
-	return nil
+	return validateUnixAncestry(filepath.Dir(path))
 }
 
-func validateConfigFile(path string, file *os.File, info os.FileInfo) error {
+func validateConfigFile(file *os.File, info os.FileInfo) error {
 	if info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("config file permissions %o are not private", info.Mode().Perm())
 	}
@@ -51,7 +53,7 @@ func validateConfigFile(path string, file *os.File, info os.FileInfo) error {
 	if err := validatePlatformAccess(file, true); err != nil {
 		return fmt.Errorf("config file access is not private: %w", err)
 	}
-	return validateUnixAncestry(filepath.Dir(path))
+	return nil
 }
 
 func prepareConfigDirectory(path string, managed bool) error {

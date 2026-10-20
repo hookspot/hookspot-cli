@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -76,9 +77,14 @@ func TestConfigValidatesEffectiveDirectoryAncestry(t *testing.T) {
 	if err = store.SaveCLIKey("saved-key"); err == nil {
 		t.Fatal("write under a group-writable ancestor was accepted")
 	}
-	writeConfigFixture(t, filepath.Join(shared, "hookspot", "config.toml"), "schema_version = 1\n")
-	if _, err = New(Options{}); err == nil {
-		t.Fatal("existing config under a group-writable ancestor was accepted")
+	existing := filepath.Join(shared, "hookspot", "config.toml")
+	writeConfigFixture(t, existing, "schema_version = 1\n")
+	// Unreadable, so only a folder check made before the open names the folder.
+	if err = os.Chmod(existing, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = New(Options{}); err == nil || !strings.Contains(err.Error(), "allow untrusted mutation") {
+		t.Fatalf("existing config under a group-writable ancestor: %v", err)
 	}
 
 	root := t.TempDir()
