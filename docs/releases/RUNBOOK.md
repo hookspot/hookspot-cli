@@ -73,7 +73,7 @@ A re-run of the job keeps them (`mode: keep-existing`).
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
    seven assets and its notes, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
-4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
+4. `make release-image-publish` builds the image from `Dockerfile` for
    `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and
    pushes `hookspot/cli:<version>`, plus `latest` for a non-pre-release
    version. It runs before npm because image tags can be pushed again and npm

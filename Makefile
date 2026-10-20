@@ -17,7 +17,7 @@ RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
 IMAGE := hookspot/cli
-IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target release --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
+IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
@@ -75,7 +75,6 @@ toolchain-check:
 	@go=$$(sed -n 's/^go = "\(.*\)"$$/\1/p' mise.toml); lint=$$(sed -n 's/^golangci-lint = "\(.*\)"$$/\1/p' mise.toml); \
 	grep -qx "go $$go" go.mod \
 		&& grep -q "^GO_IMAGE=golang:$$go@" release/toolchain.env \
-		&& grep -q "^GO_ALPINE_IMAGE=golang:$$go-" release/toolchain.env \
 		&& grep -q "^GOLANGCI_LINT_IMAGE=golangci/golangci-lint:v$$lint@" release/toolchain.env \
 		|| { echo "go.mod, mise.toml and release/toolchain.env pin different Go or golangci-lint versions" >&2; exit 1; }
 
