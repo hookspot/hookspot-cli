@@ -265,9 +265,6 @@ func (w *connWriter) sendMessage(m message, join bool, pending *heartbeatTracker
 		pending.add(r)
 	}
 	if err := w.conn.WriteMessage(websocket.TextMessage, frame); err != nil {
-		if pending != nil {
-			pending.take(r)
-		}
 		return "", err
 	}
 	return r, nil
@@ -359,13 +356,10 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		c.heartbeat(writer, heartbeats, done, func(err error) {
-			select {
-			case heartbeatErr <- err:
-			default:
-			}
+		if err := c.heartbeat(writer, heartbeats, done); err != nil {
+			heartbeatErr <- err
 			_ = conn.Close()
-		})
+		}
 	}()
 
 	for {
@@ -594,21 +588,21 @@ func shortProtocolText(value string) string {
 	return value
 }
 
-// heartbeat has no reader or deadline ownership. A write failure closes the
-// connection through fail so the single read loop wakes and reports it.
-func (c *Client) heartbeat(writer *connWriter, pending *heartbeatTracker, done <-chan struct{}, fail func(error)) {
+// heartbeat has no reader or deadline ownership. Listen records its write
+// failure before closing the connection, so the single read loop wakes and
+// reports it.
+func (c *Client) heartbeat(writer *connWriter, pending *heartbeatTracker, done <-chan struct{}) error {
 	ticker := time.NewTicker(c.options.heartbeatInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-done:
-			return
+			return nil
 		case <-ticker.C:
 			_, err := writer.sendHeartbeat(pending)
 			if err != nil {
-				fail(err)
-				return
+				return err
 			}
 		}
 	}

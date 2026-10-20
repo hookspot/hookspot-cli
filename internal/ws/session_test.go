@@ -591,24 +591,16 @@ type failingHeartbeatWriter struct{ err error }
 func (w failingHeartbeatWriter) SetWriteDeadline(time.Time) error { return nil }
 func (w failingHeartbeatWriter) WriteMessage(int, []byte) error   { return w.err }
 
-func TestHeartbeatWriteFailureNotifiesSession(t *testing.T) {
+func TestHeartbeatReturnsWriteFailure(t *testing.T) {
 	wantErr := errors.New("write unavailable")
 	client := &Client{options: clientOptions{heartbeatInterval: time.Millisecond}}
-	done := make(chan struct{})
-	failure := make(chan error, 1)
-	go client.heartbeat(
+	err := client.heartbeat(
 		&connWriter{conn: failingHeartbeatWriter{err: wantErr}, timeout: time.Second},
-		newHeartbeatTracker(2), done, func(err error) { failure <- err },
+		newHeartbeatTracker(2), make(chan struct{}),
 	)
-	select {
-	case err := <-failure:
-		if !errors.Is(err, wantErr) {
-			t.Fatalf("heartbeat error = %v, want write failure", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("heartbeat write failure was not reported")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("heartbeat error = %v, want write failure", err)
 	}
-	close(done)
 }
 
 func TestClientSerialSlowDeliveriesRearmIdleThenInactivityExpires(t *testing.T) {
