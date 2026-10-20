@@ -16,36 +16,19 @@ func canonicalConfigPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve config path: %w", err)
 	}
-	effectiveParent, err := resolveEffectiveDirectory(filepath.Dir(absolute))
+	existing, _, err := existingAncestor(filepath.Dir(absolute))
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(effectiveParent, filepath.Base(absolute)), nil
-}
-
-func resolveEffectiveDirectory(path string) (string, error) {
-	missing := make([]string, 0)
-	current := filepath.Clean(path)
-	for {
-		if _, err := os.Lstat(current); err == nil {
-			resolved, resolveErr := filepath.EvalSymlinks(current)
-			if resolveErr != nil {
-				return "", fmt.Errorf("resolve config directory aliases: %w", resolveErr)
-			}
-			for index := len(missing) - 1; index >= 0; index-- {
-				resolved = filepath.Join(resolved, missing[index])
-			}
-			return resolved, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("inspect config directory: %w", err)
-		}
-		missing = append(missing, filepath.Base(current))
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", errors.New("config path has no existing directory ancestor")
-		}
-		current = parent
+	resolved, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", fmt.Errorf("resolve config directory aliases: %w", err)
 	}
+	missing, err := filepath.Rel(existing, absolute)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolved, missing), nil
 }
 
 func validateConfigFileType(_ string, info os.FileInfo) error {
@@ -94,29 +77,18 @@ func prepareConfigDirectory(path string, managed bool) error {
 }
 
 func createUnixDirectories(path string) error {
-	missing := make([]string, 0)
-	current := filepath.Clean(path)
-	for {
-		if _, err := os.Lstat(current); err == nil {
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		missing = append(missing, current)
-		parent := filepath.Dir(current)
-		if parent == current {
-			return errors.New("no existing config directory ancestor")
-		}
-		current = parent
-	}
-	if err := validateUnixAncestry(current); err != nil {
+	existing, missing, err := existingAncestor(path)
+	if err != nil {
 		return err
 	}
-	for index := len(missing) - 1; index >= 0; index-- {
-		if err := os.Mkdir(missing[index], 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+	if err = validateUnixAncestry(existing); err != nil {
+		return err
+	}
+	for _, dir := range missing {
+		if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
-		if err := validateUnixAncestry(missing[index]); err != nil {
+		if err := validateUnixAncestry(dir); err != nil {
 			return err
 		}
 	}
@@ -194,30 +166,8 @@ type unixWriteOperations struct {
 }
 
 func writeFileAtomicWithOperations(path string, contents []byte, noOverwrite bool, operations unixWriteOperations) error {
-	if info, err := os.Lstat(path); err == nil {
-		if err = validateConfigFileType(path, info); err != nil {
-			return err
-		}
-		file, openErr := os.Open(path)
-		if openErr != nil {
-			return openErr
-		}
-		openedInfo, statErr := file.Stat()
-		if statErr != nil {
-			_ = file.Close()
-			return statErr
-		}
-		if !os.SameFile(info, openedInfo) {
-			_ = file.Close()
-			return errors.New("config target changed while it was being opened")
-		}
-		validateErr := validateConfigFile(path, file, info)
-		_ = file.Close()
-		if validateErr != nil {
-			return validateErr
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect config target: %w", err)
+	if err := validateConfigTarget(path); err != nil {
+		return err
 	}
 
 	temp, err := os.CreateTemp(filepath.Dir(path), ".hookspot-config-*")

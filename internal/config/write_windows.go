@@ -37,7 +37,7 @@ func validateConfigFileType(path string, _ os.FileInfo) error {
 }
 
 func validateConfigFile(_ string, file *os.File, _ os.FileInfo) error {
-	return validateWindowsHandleAccess(file, true, true)
+	return validateWindowsHandleAccess(file)
 }
 
 func prepareConfigDirectory(path string, managed bool) error {
@@ -48,7 +48,7 @@ func prepareConfigDirectory(path string, managed bool) error {
 	if err := validateWindowsDirectoryChain(dir); err != nil {
 		return err
 	}
-	return validateWindowsAccess(dir, managed, false)
+	return validateWindowsAccess(dir, managed)
 }
 
 func canonicalConfigPath(path string) (string, error) {
@@ -56,50 +56,19 @@ func canonicalConfigPath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve config path: %w", err)
 	}
-	current := filepath.Dir(absolute)
-	for {
-		if _, err := os.Lstat(current); err == nil {
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("inspect config directory: %w", err)
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", errors.New("config path has no existing directory ancestor")
-		}
-		current = parent
+	existing, _, err := existingAncestor(filepath.Dir(absolute))
+	if err != nil {
+		return "", err
 	}
-	if err := validateWindowsDirectoryChain(current); err != nil {
+	if err := validateWindowsDirectoryChain(existing); err != nil {
 		return "", err
 	}
 	return absolute, nil
 }
 
 func writeFileAtomic(path string, contents []byte, noOverwrite bool) error {
-	if info, err := os.Lstat(path); err == nil {
-		if err = validateConfigFileType(path, info); err != nil {
-			return err
-		}
-		file, openErr := os.Open(path)
-		if openErr != nil {
-			return openErr
-		}
-		openedInfo, statErr := file.Stat()
-		if statErr != nil {
-			_ = file.Close()
-			return statErr
-		}
-		if !os.SameFile(info, openedInfo) {
-			_ = file.Close()
-			return errors.New("config target changed while it was being opened")
-		}
-		validateErr := validateConfigFile(path, file, info)
-		_ = file.Close()
-		if validateErr != nil {
-			return validateErr
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect config target: %w", err)
+	if err := validateConfigTarget(path); err != nil {
+		return err
 	}
 
 	temp, tempPath, err := createPrivateTemp(filepath.Dir(path))
@@ -113,7 +82,7 @@ func writeFileAtomic(path string, contents []byte, noOverwrite bool) error {
 		}
 		_ = os.Remove(tempPath)
 	}()
-	if err = validateWindowsHandleAccess(temp, true, true); err != nil {
+	if err = validateWindowsHandleAccess(temp); err != nil {
 		return err
 	}
 	written, err := temp.Write(contents)
@@ -169,33 +138,22 @@ func createPrivateTemp(dir string) (*os.File, string, error) {
 }
 
 func createPrivateDirectories(path string) error {
-	missing := make([]string, 0)
-	current := filepath.Clean(path)
-	for {
-		if _, err := os.Lstat(current); err == nil {
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		missing = append(missing, current)
-		parent := filepath.Dir(current)
-		if parent == current {
-			return errors.New("no existing config directory ancestor")
-		}
-		current = parent
+	existing, missing, err := existingAncestor(path)
+	if err != nil {
+		return err
 	}
-	if err := validateWindowsDirectoryChain(current); err != nil {
+	if err = validateWindowsDirectoryChain(existing); err != nil {
 		return err
 	}
 	attributes, err := privateSecurityAttributes()
 	if err != nil {
 		return err
 	}
-	for index := len(missing) - 1; index >= 0; index-- {
-		if err := windows.CreateDirectory(mustUTF16(missing[index]), attributes); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+	for _, dir := range missing {
+		if err := windows.CreateDirectory(mustUTF16(dir), attributes); err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 			return err
 		}
-		if err := validateWindowsDirectoryChain(missing[index]); err != nil {
+		if err := validateWindowsDirectoryChain(dir); err != nil {
 			return err
 		}
 	}
@@ -214,7 +172,7 @@ func validateWindowsDirectoryChain(path string) error {
 		if attributes&windows.FILE_ATTRIBUTE_DIRECTORY == 0 {
 			return errors.New("config parent must be a directory")
 		}
-		if err := validateWindowsAccess(current, false, false); err != nil {
+		if err := validateWindowsAccess(current, false); err != nil {
 			return err
 		}
 		parent := filepath.Dir(current)
@@ -224,20 +182,20 @@ func validateWindowsDirectoryChain(path string) error {
 	}
 }
 
-func validateWindowsAccess(path string, requireProtected, file bool) error {
+func validateWindowsAccess(path string, requireProtected bool) error {
 	descriptor, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
 		return fmt.Errorf("inspect config access: %w", err)
 	}
-	return validateWindowsDescriptor(descriptor, requireProtected, file)
+	return validateWindowsDescriptor(descriptor, requireProtected, false)
 }
 
-func validateWindowsHandleAccess(file *os.File, requireProtected, privateFile bool) error {
+func validateWindowsHandleAccess(file *os.File) error {
 	descriptor, err := windows.GetSecurityInfo(windows.Handle(file.Fd()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION|windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
 		return fmt.Errorf("inspect config access: %w", err)
 	}
-	return validateWindowsDescriptor(descriptor, requireProtected, privateFile)
+	return validateWindowsDescriptor(descriptor, true, true)
 }
 
 func validateWindowsDescriptor(descriptor *windows.SECURITY_DESCRIPTOR, requireProtected, file bool) error {
