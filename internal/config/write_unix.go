@@ -20,9 +20,6 @@ func canonicalConfigPath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := validateUnixAncestry(effectiveParent); err != nil {
-		return "", err
-	}
 	return filepath.Join(effectiveParent, filepath.Base(absolute)), nil
 }
 

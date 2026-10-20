@@ -66,10 +66,14 @@ func TestDarwinMutationACLAndExistingReadACLAreRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	addDarwinACL(t, mutationParent, "everyone allow add_file,delete_child")
-	if _, err := New(Options{
+	store, err := New(Options{
 		ExplicitPath:    filepath.Join(mutationParent, "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
-	}); err == nil {
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SaveCLIKey("test-key"); err == nil {
 		t.Fatal("directory mutation ACL was accepted")
 	}
 
