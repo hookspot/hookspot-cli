@@ -98,7 +98,7 @@ func Failure(err error) *TransportFailure {
 	return &TransportFailure{Kind: classifyTransportError(err), Err: err}
 }
 
-// Forwarder forwards received event bytes to a local target via HTTP POST.
+// Forwarder forwards each received delivery to a local target with its own method.
 type Forwarder struct {
 	targetBaseURL string
 	trailingSlash bool
