@@ -41,14 +41,24 @@ func validateConfigFile(file *os.File, _ os.FileInfo) error {
 }
 
 func prepareConfigDirectory(path string, managed bool) error {
-	dir := filepath.Dir(path)
-	if err := createPrivateDirectories(dir); err != nil {
+	if err := createPrivateDirectories(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
-	if err := validateWindowsDirectoryChain(dir); err != nil {
+	return checkConfigDirectory(path, managed)
+}
+
+func checkConfigDirectory(path string, managed bool) error {
+	existing, missing, err := existingAncestor(filepath.Dir(path))
+	if err != nil {
 		return err
 	}
-	return validateWindowsAccess(dir, managed)
+	if err := validateWindowsDirectoryChain(existing); err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return nil
+	}
+	return validateWindowsAccess(existing, managed)
 }
 
 func canonicalConfigPath(path string) (string, error) {

@@ -244,10 +244,10 @@ func (s *Store) ClearCLIKey() error {
 	return s.persist(record)
 }
 
-// PrepareWrite creates the record's missing private folders and refuses an
-// unsafe folder chain without writing the record.
-func (s *Store) PrepareWrite() error {
-	return prepareConfigDirectory(s.path, s.managedDir)
+// CheckFolders refuses an unsafe folder chain for the record, validating the
+// folders that exist without creating any.
+func (s *Store) CheckFolders() error {
+	return checkConfigDirectory(s.path, s.managedDir)
 }
 
 // EnvironmentCLIKeyActive reports whether logout leaves a nonempty

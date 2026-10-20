@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestConfigWritingCommandsStopBeforeAPIUnderUnsafeFolder(t *testing.T) {
+func TestConfigWritingCommandsFailWithoutCreatingFolders(t *testing.T) {
 	credentials := map[string]string{"HOOKSPOT_CLI_KEY": "test-key"}
 	for _, test := range []struct {
 		name        string
@@ -26,23 +26,33 @@ func TestConfigWritingCommandsStopBeforeAPIUnderUnsafeFolder(t *testing.T) {
 		{name: "local project use", environment: credentials, args: []string{"project", "use", "--local"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			// Umask 002 leaves home group-writable; it holds both the global and the local config.
-			home := t.TempDir()
-			if err := os.Chmod(home, 0o775); err != nil {
-				t.Fatal(err)
-			}
 			var requests atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				w.WriteHeader(http.StatusInternalServerError)
 			}))
 			defer server.Close()
-			environment := map[string]string{"HOME": home, "USERPROFILE": home}
-			for key, value := range test.environment {
-				environment[key] = value
+			// home holds both the global and the local config.
+			run := func(home string) commandResult {
+				environment := map[string]string{"HOME": home, "USERPROFILE": home}
+				for key, value := range test.environment {
+					environment[key] = value
+				}
+				return runCommandProcessDirectoryEnvironment(t, home, test.input, developmentMetadata(server.URL), environment, test.args...)
+			}
+			requireEmpty := func(home string) {
+				t.Helper()
+				if entries, err := os.ReadDir(home); err != nil || len(entries) != 0 {
+					t.Fatalf("home entries = %v, %v; want none", entries, err)
+				}
 			}
 
-			result := runCommandProcessDirectoryEnvironment(t, home, test.input, developmentMetadata(server.URL), environment, test.args...)
+			// Umask 002 leaves home group-writable.
+			unsafe := t.TempDir()
+			if err := os.Chmod(unsafe, 0o775); err != nil {
+				t.Fatal(err)
+			}
+			result := run(unsafe)
 			if result.err == nil || !strings.Contains(result.stderr, "permissions 775 allow untrusted mutation") {
 				t.Fatalf("result = %v, stderr = %q", result.err, result.stderr)
 			}
@@ -52,9 +62,14 @@ func TestConfigWritingCommandsStopBeforeAPIUnderUnsafeFolder(t *testing.T) {
 			if result.stdout != "" {
 				t.Fatalf("stdout = %q, want no prompt", result.stdout)
 			}
-			if entries, err := os.ReadDir(home); err != nil || len(entries) != 0 {
-				t.Fatalf("home entries = %v, %v; want none", entries, err)
+			requireEmpty(unsafe)
+
+			safe := t.TempDir()
+			result = run(safe)
+			if result.err == nil || !strings.Contains(result.stderr, "Hookspot API is unavailable") {
+				t.Fatalf("result = %v, stderr = %q", result.err, result.stderr)
 			}
+			requireEmpty(safe)
 		})
 	}
 }

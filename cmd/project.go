@@ -79,8 +79,8 @@ names. Name matching ignores case.`,
 		if err != nil {
 			return err
 		}
-		if err = store.PrepareWrite(); err != nil {
-			return wrapCommandError("prepare configuration", configRecoveryHint(), err)
+		if err = store.CheckFolders(); err != nil {
+			return wrapCommandError("check configuration", configRecoveryHint(), err)
 		}
 		project, err := resolveProjectSelection(cmd.Context(), client, args, store.SavedProject(), cmd.InOrStdin(), cmd.OutOrStdout())
 		if err != nil {

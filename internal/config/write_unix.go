@@ -57,14 +57,21 @@ func validateConfigFile(file *os.File, info os.FileInfo) error {
 }
 
 func prepareConfigDirectory(path string, managed bool) error {
-	dir := filepath.Dir(path)
-	if err := createUnixDirectories(dir); err != nil {
+	if err := createUnixDirectories(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
+	return checkConfigDirectory(path, managed)
+}
+
+func checkConfigDirectory(path string, managed bool) error {
+	dir := filepath.Dir(path)
 	if err := validateUnixAncestry(dir); err != nil {
 		return err
 	}
 	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("inspect config directory: %w", err)
 	}
