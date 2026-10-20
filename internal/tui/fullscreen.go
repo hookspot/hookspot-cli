@@ -682,7 +682,7 @@ func (m Fullscreen) columns(width int) []column {
 	}
 	if m.forwarding() {
 		columns = append(columns,
-			column{title: "STATUS", width: 7, value: outcome},
+			column{title: "STATUS", width: 7, value: func(e session.Entry) cell { return outcome(e.Outcome()) }},
 			column{title: "LATENCY", width: 7, right: true, value: latency},
 		)
 	}
@@ -723,12 +723,12 @@ func render(columns []column, cells []cell, plain bool) string {
 
 // outcome is a forwarded request's status, or its transport failure in a
 // word.
-func outcome(e session.Entry) cell {
-	if e.Failure == nil {
-		return cell{text: strconv.Itoa(e.Response.Status), style: lipgloss.NewStyle().Foreground(cards.StatusColor(e.Response.Status))}
+func outcome(o session.Outcome) cell {
+	if o.Failure == "" {
+		return cell{text: strconv.Itoa(o.Status), style: lipgloss.NewStyle().Foreground(cards.StatusColor(o.Status))}
 	}
 	text := "failed"
-	switch e.Failure.Kind {
+	switch o.Failure {
 	case proxy.TransportConnectionRefused:
 		text = "refused"
 	case proxy.TransportTimeout:

@@ -14,9 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"hookspot/internal/cards"
-	"hookspot/internal/proxy"
 	"hookspot/internal/session"
-	"hookspot/internal/ws"
 )
 
 const (
@@ -240,7 +238,7 @@ func (m Fullscreen) statsCells(stats session.Stats) map[string]cell {
 		last := stats.Last.Received.Format(time.TimeOnly)
 		cells["LAST"] = cell{text: last, style: faintStyle}
 		if m.forwarding() {
-			result := outcome(stats.Last)
+			result := outcome(stats.Last.Outcome())
 			cells["LAST"] = cell{text: last + " " + result.text, style: result.style}
 		}
 	}
@@ -374,7 +372,7 @@ func (m Fullscreen) activity(route cards.BannerRoute) []string {
 	if e := stats.Last; e.Number != 0 {
 		last = "#" + strconv.Itoa(e.Number) + "  " + faintStyle.Render(e.Received.Format(time.TimeOnly))
 		if m.forwarding() {
-			result := outcome(e)
+			result := outcome(e.Outcome())
 			last += "  " + result.style.Render(result.text)
 		}
 	}
@@ -399,11 +397,7 @@ func statusBars(outcomes map[session.Outcome]int) []string {
 	var bars []bar
 	labelWidth, countWidth, most := 0, 0, 0
 	for o, count := range outcomes {
-		e := session.Entry{Response: ws.Response{Status: o.Status}}
-		if o.Failure != "" {
-			e.Failure = &proxy.TransportFailure{Kind: o.Failure}
-		}
-		b := bar{outcome(e), count}
+		b := bar{outcome(o), count}
 		bars = append(bars, b)
 		labelWidth, countWidth, most = max(labelWidth, len(b.outcome.text)), max(countWidth, len(strconv.Itoa(count))), max(most, count)
 	}

@@ -119,16 +119,12 @@ func add(s session.Stats, e session.Entry) session.Stats {
 	} else {
 		s.OK++
 	}
-	o := session.Outcome{Status: e.Response.Status}
-	if e.Failure != nil {
-		o = session.Outcome{Failure: e.Failure.Kind}
-	}
 	// Earlier snapshots keep their own counts.
 	s.Outcomes = maps.Clone(s.Outcomes)
 	if s.Outcomes == nil {
 		s.Outcomes = map[session.Outcome]int{}
 	}
-	s.Outcomes[o]++
+	s.Outcomes[e.Outcome()]++
 	if e.Timed() {
 		s.Max = max(s.Max, e.Latency)
 		s.P50, s.P95 = s.Max/2, s.Max-time.Millisecond

@@ -496,16 +496,25 @@ func (l Listen) httpFailure(e session.Entry, inner int) string {
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
 	return frame(border, inner, l.title(e), cardLabel(e), "",
-		section{lines: outcome(ColorBadge(StatusColor(response.Status), session.StatusText(response.Status)), e, inner)},
+		section{lines: outcome(OutcomeBadge(e), e, inner)},
 		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
 }
 
 func (l Listen) transportFailure(e session.Entry, inner int) string {
-	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+TransportLabel(e.Failure.Kind)), e, inner), "")
+	lines := append(outcome(OutcomeBadge(e), e, inner), "")
 	lines = append(lines, l.TransportHints(e.Target, e.Failure)...)
 	return frame(errorStyle, inner, l.title(e), cardLabel(e), "", section{lines: lines})
+}
+
+// OutcomeBadge is what forwarding e got: its status, or its transport
+// failure.
+func OutcomeBadge(e session.Entry) string {
+	if e.Failure != nil {
+		return ColorBadge(StatusColor(0), "✗ "+TransportLabel(e.Failure.Kind))
+	}
+	return ColorBadge(StatusColor(e.Response.Status), session.StatusText(e.Response.Status))
 }
 
 // RedirectHint follows a 3xx response that names a Location: webhook senders

@@ -40,6 +40,14 @@ type Outcome struct {
 	Failure proxy.TransportErrorKind
 }
 
+// Outcome is how forwarding e ended.
+func (e Entry) Outcome() Outcome {
+	if e.Failure != nil {
+		return Outcome{Failure: e.Failure.Kind}
+	}
+	return Outcome{Status: e.Response.Status}
+}
+
 type stats struct {
 	count, ok, failed int
 	outcomes          map[Outcome]int
@@ -71,14 +79,10 @@ func (s *stats) add(entry Entry) {
 	} else {
 		s.ok++
 	}
-	outcome := Outcome{Status: entry.Response.Status}
-	if entry.Failure != nil {
-		outcome = Outcome{Failure: entry.Failure.Kind}
-	}
 	if s.outcomes == nil {
 		s.outcomes = map[Outcome]int{}
 	}
-	s.outcomes[outcome]++
+	s.outcomes[entry.Outcome()]++
 	if !entry.Timed() {
 		return
 	}
