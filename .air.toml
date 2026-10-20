@@ -11,7 +11,7 @@ tmp_dir = "tmp"
   # The command to (re)run is passed by `make dev` (default: `listen`).
   # Override it with ARGS, for example: make dev ARGS="listen --help".
   include_ext = ["go", "mod"]
-  exclude_dir = ["tmp", ".git", ".superpowers", "docs"]
+  exclude_dir = ["tmp", ".git", "docs"]
   stop_on_error = true
   # SIGINT lets listen stop gracefully and restore the terminal (cursor,
   # status line); air's default SIGKILL would leave them broken.
