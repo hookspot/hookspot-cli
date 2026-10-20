@@ -20,9 +20,9 @@ import (
 
 func selectionProjects() []api.Project {
 	return []api.Project{
-		{UID: "proj_storefront", Name: "Storefront", Organization: api.Organization{UID: "org_acme", Name: "Acme Inc."}},
-		{UID: "proj_payments", Name: "Payments", Organization: api.Organization{UID: "org_acme", Name: "Acme Inc."}},
-		{UID: "proj_billing", Name: "Billing", Organization: api.Organization{UID: "org_other", Name: "Other"}},
+		{UID: "proj_storefront", Name: "Storefront", Organization: api.Organization{Name: "Acme Inc."}},
+		{UID: "proj_payments", Name: "Payments", Organization: api.Organization{Name: "Acme Inc."}},
+		{UID: "proj_billing", Name: "Billing", Organization: api.Organization{Name: "Other"}},
 	}
 }
 
@@ -62,7 +62,7 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 	}
 
 	duplicate := append(selectionProjects(), api.Project{
-		UID: "proj_duplicate", Name: "PAYMENTS", Organization: api.Organization{UID: "org_duplicate", Name: "ACME INC."},
+		UID: "proj_duplicate", Name: "PAYMENTS", Organization: api.Organization{Name: "ACME INC."},
 	})
 	if _, err := projectCandidates(duplicate, []string{"Acme Inc.", "Payments"}); err == nil || !strings.Contains(err.Error(), "multiple") {
 		t.Fatalf("duplicate exact pair error = %v", err)
@@ -519,9 +519,9 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 	}
 
 	projects := []api.Project{
-		{UID: "local_a", Name: "Project 1", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
-		{UID: "local_b", Name: "Project 2", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
-		{UID: "local_c", Name: "Project 3", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
+		{UID: "local_a", Name: "Project 1", Organization: api.Organization{Name: "asd1"}},
+		{UID: "local_b", Name: "Project 2", Organization: api.Organization{Name: "asd1"}},
+		{UID: "local_c", Name: "Project 3", Organization: api.Organization{Name: "asd1"}},
 	}
 	requests := make(chan string, 32)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -704,7 +704,7 @@ func TestProjectDisplayName_OnlyShowsOrganizationAndProject(t *testing.T) {
 		UID:          "proj_payments",
 		Name:         "Payments",
 		Slug:         "payments",
-		Organization: api.Organization{UID: "org_acme", Name: "Acme", Slug: "acme"},
+		Organization: api.Organization{Name: "Acme", Slug: "acme"},
 	}
 
 	if got, want := projectDisplayName(project), "Acme | Payments"; got != want {

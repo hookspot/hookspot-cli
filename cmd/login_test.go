@@ -73,7 +73,7 @@ func instantLoginAttempt() *api.LoginAttempt {
 func approvedLoginResult(key string, project *api.Project) *api.LoginResult {
 	return &api.LoginResult{
 		Status:  "approved",
-		User:    api.User{UID: "usr_1", Email: "dev@example.com", CLIKey: key},
+		User:    api.User{Email: "dev@example.com", CLIKey: key},
 		Project: project,
 	}
 }

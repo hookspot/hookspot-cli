@@ -47,8 +47,8 @@ func TestRouteLabel(t *testing.T) {
 		route api.Route
 		want  string
 	}{
-		{"name", api.Route{Name: &name, DisplayName: "shopify -> fallback", Destination: destination}, "orders"},
-		{"no name", api.Route{DisplayName: "shopify -> /webhooks/shopify", Destination: destination}, "/webhooks/shopify"},
+		{"name", api.Route{Name: &name, Destination: destination}, "orders"},
+		{"no name", api.Route{Destination: destination}, "/webhooks/shopify"},
 		{"empty name", api.Route{Name: &empty, Destination: destination}, "/webhooks/shopify"},
 	}
 	for _, test := range tests {

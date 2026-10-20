@@ -81,7 +81,7 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
 			t.Errorf("X-CLI-KEY = %q, want %q", got, "test-key")
 		}
-		if err := json.NewEncoder(w).Encode(User{UID: "usr_1", Email: "dev@example.com"}); err != nil {
+		if err := json.NewEncoder(w).Encode(User{Email: "dev@example.com"}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -158,17 +158,8 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 			Name: "Production",
 			Slug: "production",
 			Organization: Organization{
-				UID:  "org_1",
 				Name: "Acme Incorporated",
 				Slug: "acme",
-			},
-			Sources: []Source{
-				{
-					UID:    "src_1",
-					Name:   "Shopify",
-					URL:    "https://events.example.com/src_1",
-					Active: true,
-				},
 			},
 		}
 		if err := json.NewEncoder(w).Encode(project); err != nil {
@@ -194,15 +185,6 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 	}
 	if project.Organization.Slug != "acme" {
 		t.Fatalf("Organization.Slug = %q, want %q", project.Organization.Slug, "acme")
-	}
-	if len(project.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(project.Sources))
-	}
-	if project.Sources[0].UID != "src_1" {
-		t.Fatalf("Sources[0].UID = %q, want %q", project.Sources[0].UID, "src_1")
-	}
-	if project.Sources[0].URL != "https://events.example.com/src_1" {
-		t.Fatalf("Sources[0].URL = %q, want %q", project.Sources[0].URL, "https://events.example.com/src_1")
 	}
 }
 
@@ -533,7 +515,7 @@ func TestClient_PollLogin_ApprovedWithProject(t *testing.T) {
 	if result.Status != "approved" {
 		t.Fatalf("Status = %q, want %q", result.Status, "approved")
 	}
-	if result.User.UID != "usr_1" || result.User.Email != "dev@example.com" {
+	if result.User.Email != "dev@example.com" {
 		t.Fatalf("User = %+v", result.User)
 	}
 	if result.User.CLIKey != "cli-secret" {
