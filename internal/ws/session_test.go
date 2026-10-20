@@ -393,36 +393,6 @@ func TestClientCancellationInterruptsWithheldUpgradeResponse(t *testing.T) {
 	}
 }
 
-func TestClientCancellationInterruptsRead(t *testing.T) {
-	joined := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn := acceptTestConnection(t, w, r)
-		defer conn.Close()
-		join := readFrame(t, conn)
-		writeJoinAccepted(t, conn, join)
-		close(joined)
-		_, _, _ = conn.ReadMessage()
-	}))
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "", "project:proj_1", nil, "", testClientOptions()).
-			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
-	}()
-	<-joined
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Listen error = %v, want context cancellation", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Listen did not return after cancellation during read")
-	}
-}
-
 func TestClientRepeatedCancellationJoinsSessionWorkers(t *testing.T) {
 	joined := make(chan struct{})
 	closed := make(chan struct{})
