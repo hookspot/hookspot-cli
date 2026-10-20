@@ -135,11 +135,8 @@ type Handler func(delivery Delivery) (Response, error)
 // deliveryResponse is the delivery_response event payload sent back to the
 // server, correlated to the delivery by AttemptUID.
 type deliveryResponse struct {
-	AttemptUID string      `json:"attempt_uid"`
-	Status     int         `json:"status"`
-	Headers    http.Header `json:"headers"`
-	Body       []byte      `json:"body"`
-	LatencyMS  int64       `json:"latency_ms"`
+	AttemptUID string `json:"attempt_uid"`
+	Response
 }
 
 // Client connects to a hookspot Phoenix Channel and streams events.
@@ -454,13 +451,7 @@ func (c *Client) handleDelivery(ctx context.Context, writer *connWriter, activeJ
 		return sessionError(SessionHandler, true, err)
 	}
 
-	responsePayload, encodeErr := json.Marshal(deliveryResponse{
-		AttemptUID: delivery.AttemptUID,
-		Status:     resp.Status,
-		Headers:    resp.Headers,
-		Body:       resp.Body,
-		LatencyMS:  resp.LatencyMS,
-	})
+	responsePayload, encodeErr := json.Marshal(deliveryResponse{AttemptUID: delivery.AttemptUID, Response: resp})
 	if encodeErr != nil {
 		return sessionError(SessionHandler, true, fmt.Errorf("encode delivery response: %w", encodeErr))
 	}
