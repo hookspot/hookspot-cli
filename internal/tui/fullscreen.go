@@ -677,7 +677,7 @@ func (m Fullscreen) columns(width int) []column {
 			return cell{text: cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)), style: cards.SourceStyle(e.Delivery.SourceUID)}
 		}},
 		{title: "METHOD", width: 6, value: func(e session.Entry) cell {
-			return cell{text: cards.Line(session.Method(e.Delivery))}
+			return cell{text: cards.Line(e.Delivery.Method)}
 		}},
 		{title: "PATH", value: func(e session.Entry) cell {
 			return cell{text: cards.Line(e.Delivery.Path)}

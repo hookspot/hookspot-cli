@@ -465,7 +465,7 @@ func (l Listen) row(e session.Entry, width int) string {
 	// Badges are padded, so one space sets them apart. Whoever posts to a
 	// source picks the method, so one longer than OPTIONS is cut.
 	const methodWidth, maxMethod = 6, len("OPTIONS")
-	left := Pad(Badge(truncate(Line(session.Method(d)), maxMethod)), methodWidth) + " "
+	left := Pad(Badge(truncate(Line(d.Method), maxMethod)), methodWidth) + " "
 	if e.Number > 0 {
 		left = faintStyle.Render(fmt.Sprintf("#%-3d", e.Number)) + left
 	}
@@ -598,7 +598,7 @@ func result(status int, failure *proxy.TransportFailure) string {
 
 // title names a card's request: number, source, method and path.
 func (l Listen) title(e session.Entry) string {
-	title := l.Source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(session.Method(e.Delivery)) + " " + Line(e.Delivery.Path)
+	title := l.Source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(e.Delivery.Method) + " " + Line(e.Delivery.Path)
 	if e.Number > 0 {
 		title = faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + title
 	}

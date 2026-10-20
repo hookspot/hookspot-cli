@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"hookspot/internal/ws"
 )
 
 // fixtureDir is where exports land, relative to the working directory.
@@ -50,7 +48,7 @@ func (s *Session) ExportFixture(n int, redact bool) (Fixture, error) {
 		Path    string      `json:"path"`
 		Query   string      `json:"query"`
 		Headers http.Header `json:"headers"`
-	}{Method(d), d.Path, d.Query, headers}); err != nil {
+	}{d.Method, d.Path, d.Query, headers}); err != nil {
 		return Fixture{}, err
 	}
 
@@ -128,12 +126,4 @@ func writeFixture(file string, data []byte) (string, error) {
 	}
 	path := filepath.Join(dir, file)
 	return path, os.WriteFile(path, data, 0o600)
-}
-
-// Method is the delivery's method; an empty one is POST, as forwarding sends it.
-func Method(d ws.Delivery) string {
-	if d.Method == "" {
-		return http.MethodPost
-	}
-	return d.Method
 }

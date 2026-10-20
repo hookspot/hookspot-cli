@@ -80,11 +80,6 @@ func ExecuteContext(ctx context.Context) error {
 	return rootCmd.ExecuteContext(ctx)
 }
 
-// Execute runs the root command.
-func Execute() error {
-	return ExecuteContext(context.Background())
-}
-
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file")
 	rootCmd.PersistentFlags().String("cli-key", "", "hookspot CLI key (prefer HOOKSPOT_CLI_KEY)")

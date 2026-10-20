@@ -54,13 +54,9 @@ func (f *TransportFailure) Unwrap() error {
 	return f.Err
 }
 
-// ClassifyTransportError walks wrapped network errors and returns their most
+// classifyTransportError walks wrapped network errors and returns their most
 // useful user-facing category.
-func ClassifyTransportError(err error) TransportErrorKind {
-	if err == nil {
-		return TransportOther
-	}
-
+func classifyTransportError(err error) TransportErrorKind {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return TransportTimeout
 	}
@@ -99,14 +95,7 @@ func ClassifyTransportError(err error) TransportErrorKind {
 
 // Failure wraps err with its transport category.
 func Failure(err error) *TransportFailure {
-	if err == nil {
-		return nil
-	}
-	var failure *TransportFailure
-	if errors.As(err, &failure) {
-		return failure
-	}
-	return &TransportFailure{Kind: ClassifyTransportError(err), Err: err}
+	return &TransportFailure{Kind: classifyTransportError(err), Err: err}
 }
 
 // Forwarder forwards received event bytes to a local target via HTTP POST.
@@ -199,8 +188,9 @@ func (f *Forwarder) String() string {
 	return f.targetBaseURL
 }
 
-// DestinationURL returns the exact URL used for a delivery.
-func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, error) {
+// DestinationURL returns the URL a delivery to destinationPath goes to,
+// without its query.
+func (f *Forwarder) DestinationURL(destinationPath string) (*url.URL, error) {
 	if strings.ContainsAny(destinationPath, "?#") {
 		return nil, errors.New("invalid destination path")
 	}
@@ -223,20 +213,14 @@ func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, 
 	if target.Path == "" {
 		target.Path = "/"
 	}
-	target.RawQuery = rawQuery
 	return target, nil
 }
 
 // Forward replays a request to targetBaseURL+path with the given method, raw
-// query string, body, and headers. An empty method defaults to POST. It
-// returns the URL it sent to without the query, or the target base URL when
-// path has none.
+// query string, body, and headers. It returns the URL it sent to without the
+// query, or the target base URL when path has none.
 func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (string, *http.Response, error) {
-	if method == "" {
-		method = http.MethodPost
-	}
-
-	target, err := f.DestinationURL(path, "")
+	target, err := f.DestinationURL(path)
 	if err != nil {
 		return f.String(), nil, err
 	}

@@ -47,7 +47,7 @@ func (m Fullscreen) detail(width, height int) []string {
 	}
 	lines := append(m.tabs(), content...)
 	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + m.Listen.Source(e.Delivery.SourceUID) +
-		faintStyle.Render(" · ") + cards.Line(session.Method(e.Delivery)) + " " + cards.Line(e.Delivery.Path)
+		faintStyle.Render(" · ") + cards.Line(e.Delivery.Method) + " " + cards.Line(e.Delivery.Path)
 	label := ""
 	if e.Delivery.RequestUID != "" {
 		label = faintStyle.Render(cards.Line(e.Delivery.RequestUID))
@@ -181,7 +181,7 @@ func (m Fullscreen) request(e session.Entry) []string {
 	if d.Query != "" {
 		target += "?" + cards.Line(d.Query)
 	}
-	lines := []string{boldStyle.Render(cards.Line(session.Method(d))) + " " + target}
+	lines := []string{boldStyle.Render(cards.Line(d.Method)) + " " + target}
 	return append(lines, m.message(d.Headers, d.Body)...)
 }
 

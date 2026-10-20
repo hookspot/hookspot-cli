@@ -110,10 +110,6 @@ var listenCmd = &cobra.Command{
 			return sourcesErr
 		}
 
-		wsURL := activeEndpoint.WebSocket()
-		if wsURL == nil {
-			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
-		}
 		routes, err := bannerRoutes(sources, forwarder)
 		if err != nil {
 			return err
@@ -126,7 +122,7 @@ var listenCmd = &cobra.Command{
 			local = forwarder
 			target = forwarder.String()
 		}
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
+		wsClient := ws.New(activeEndpoint.WebSocket().String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
 		// Piped output may feed a script: it gets plain mode and no update
 		// alert.
 		piped := !cards.Terminal(cmd.OutOrStdout())
@@ -550,7 +546,7 @@ func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.Ban
 				Label:     session.RouteLabel(route),
 			}
 			if forwarder != nil {
-				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
+				destination, err := forwarder.DestinationURL(route.Destination.Path)
 				if err != nil {
 					return nil, fmt.Errorf("resolve forwarding destination: %w", err)
 				}

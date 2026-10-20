@@ -86,28 +86,6 @@ func TestForwarder_Forward_ReplaysRequest(t *testing.T) {
 	}
 }
 
-func TestForwarder_Forward_DefaultsToPOST(t *testing.T) {
-	var gotMethod string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	f := mustForwarder(t, server.URL)
-
-	_, resp, err := f.Forward(context.Background(), "", "/webhooks", "", nil, nil)
-	if err != nil {
-		t.Fatalf("Forward: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if gotMethod != http.MethodPost {
-		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
-	}
-}
-
 func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -136,30 +114,27 @@ func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
 
 func TestForwarderDestinationURL(t *testing.T) {
 	tests := []struct {
-		name  string
-		base  string
-		path  string
-		query string
-		want  string
+		name string
+		base string
+		path string
+		want string
 	}{
-		{"destination path", "http://localhost:4000", "/webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
-		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "", "http://localhost:4000/local/webhooks/shopify"},
-		{"path without slash", "http://localhost:4000", "webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
-		{"empty path", "http://localhost:4000", "", "", "http://localhost:4000/"},
-		{"root at bare host", "localhost:3000", "/", "", "http://localhost:3000/"},
-		{"root at typed root slash", "localhost:3000/", "/", "", "http://localhost:3000/"},
-		{"root at base path", "localhost:3000/webhooks/stripe", "/", "", "http://localhost:3000/webhooks/stripe"},
-		{"empty path at base path", "localhost:3000/webhooks/stripe", "", "", "http://localhost:3000/webhooks/stripe"},
-		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "", "http://localhost:8000/webhooks/"},
-		{"root at base path keeps query", "localhost:3000/webhooks/stripe", "/", "a=1", "http://localhost:3000/webhooks/stripe?a=1"},
-		{"root at typed trailing slash keeps query", "localhost:8000/webhooks/", "/", "a=1", "http://localhost:8000/webhooks/?a=1"},
-		{"escaped base path", "localhost:3000/api%20v1", "/hooks", "", "http://localhost:3000/api%20v1/hooks"},
+		{"destination path", "http://localhost:4000", "/webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "http://localhost:4000/local/webhooks/shopify"},
+		{"path without slash", "http://localhost:4000", "webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"empty path", "http://localhost:4000", "", "http://localhost:4000/"},
+		{"root at bare host", "localhost:3000", "/", "http://localhost:3000/"},
+		{"root at typed root slash", "localhost:3000/", "/", "http://localhost:3000/"},
+		{"root at base path", "localhost:3000/webhooks/stripe", "/", "http://localhost:3000/webhooks/stripe"},
+		{"empty path at base path", "localhost:3000/webhooks/stripe", "", "http://localhost:3000/webhooks/stripe"},
+		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "http://localhost:8000/webhooks/"},
+		{"escaped base path", "localhost:3000/api%20v1", "/hooks", "http://localhost:3000/api%20v1/hooks"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustForwarder(t, tt.base)
-			got, err := f.DestinationURL(tt.path, tt.query)
+			got, err := f.DestinationURL(tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -336,8 +311,8 @@ func TestClassifyTransportErrorWalksWrappedNetworkErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := ClassifyTransportError(test.err); got != test.want {
-				t.Fatalf("ClassifyTransportError() = %q, want %q", got, test.want)
+			if got := classifyTransportError(test.err); got != test.want {
+				t.Fatalf("classifyTransportError() = %q, want %q", got, test.want)
 			}
 		})
 	}
