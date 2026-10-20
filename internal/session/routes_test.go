@@ -7,32 +7,25 @@ import (
 	"hookspot/internal/ws"
 )
 
-func TestRouteFor(t *testing.T) {
+func TestKnownRoute(t *testing.T) {
 	sources := []api.Source{
-		{UID: "src_stripe", Routes: []api.Route{
-			{UID: "rte_orders", Destination: api.Destination{Path: "/hooks"}},
-			{UID: "rte_billing", Destination: api.Destination{Path: "/hooks"}},
-			{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
-		}},
-		{UID: "src_github", Routes: []api.Route{
-			{UID: "rte_github", Destination: api.Destination{Path: "/github"}},
-		}},
+		{UID: "src_stripe", Routes: []api.Route{{UID: "rte_orders"}, {UID: "rte_billing"}}},
+		{UID: "src_github", Routes: []api.Route{{UID: "rte_github"}}},
 	}
 	tests := []struct {
 		name     string
 		delivery ws.Delivery
-		want     string
+		want     bool
 	}{
-		{"route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_billing", Path: "/hooks"}, "rte_billing"},
-		{"unknown route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted", Path: "/refunds"}, ""},
-		{"route uid of another source", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_github", Path: "/github"}, ""},
-		{"unknown source", ws.Delivery{SourceUID: "src_other", RouteUID: "rte_orders", Path: "/hooks"}, ""},
+		{"route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_billing"}, true},
+		{"unknown route uid", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_deleted"}, false},
+		{"route uid of another source", ws.Delivery{SourceUID: "src_stripe", RouteUID: "rte_github"}, false},
+		{"unknown source", ws.Delivery{SourceUID: "src_other", RouteUID: "rte_orders"}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			route, ok := routeFor(sources, test.delivery)
-			if route.UID != test.want || ok != (test.want != "") {
-				t.Fatalf("routeFor() = %q, %v; want %q", route.UID, ok, test.want)
+			if got := knownRoute(sources, test.delivery); got != test.want {
+				t.Fatalf("knownRoute() = %v, want %v", got, test.want)
 			}
 		})
 	}

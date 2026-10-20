@@ -19,10 +19,7 @@ import (
 	"hookspot/internal/ws"
 )
 
-var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{
-	{UID: "rte_orders", Destination: api.Destination{Path: "/orders"}},
-	{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
-}}}
+var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{{UID: "rte_orders"}, {UID: "rte_refunds"}}}}
 
 func delivery(route, path string) ws.Delivery {
 	return ws.Delivery{
