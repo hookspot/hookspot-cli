@@ -24,6 +24,9 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return wrapCommandError("resolve login configuration", configRecoveryHint(), err)
 		}
+		if err = store.PrepareWrite(); err != nil {
+			return wrapCommandError("prepare configuration", configRecoveryHint(), err)
+		}
 
 		explicitKey := explicitLoginKey(cmd)
 		if explicitKey || loginInteractive {

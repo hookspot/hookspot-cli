@@ -244,6 +244,12 @@ func (s *Store) ClearCLIKey() error {
 	return s.persist(record)
 }
 
+// PrepareWrite creates the record's missing private folders and refuses an
+// unsafe folder chain without writing the record.
+func (s *Store) PrepareWrite() error {
+	return prepareConfigDirectory(s.path, s.managedDir)
+}
+
 // EnvironmentCLIKeyActive reports whether logout leaves a nonempty
 // HOOKSPOT_CLI_KEY active. Explicit flags are intentionally irrelevant
 // because they do not outlive this invocation.
