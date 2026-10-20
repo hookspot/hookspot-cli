@@ -189,7 +189,7 @@ func (s *Store) Resolve(flags Overrides) (Config, error) {
 func (s *Store) SaveCLIKey(key string) error {
 	record := s.record
 	record.CLIKey = key
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // SaveLogin persists a browser login's key and, when projectUID is nonempty,
@@ -201,14 +201,14 @@ func (s *Store) SaveLogin(key, projectUID string) error {
 	if projectUID != "" {
 		record.Project = projectUID
 	}
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // SaveProject persists only the project UID owned by this store.
 func (s *Store) SaveProject(uid string) error {
 	record := s.record
 	record.Project = uid
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // ClearCLIKey removes only the persisted key, preserving the project.
@@ -218,7 +218,7 @@ func (s *Store) ClearCLIKey() error {
 	}
 	record := s.record
 	record.CLIKey = ""
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // EnvironmentCLIKeyActive reports whether logout leaves a nonempty
@@ -229,7 +229,7 @@ func (s *Store) EnvironmentCLIKeyActive() bool {
 	return set && value != ""
 }
 
-func (s *Store) persist(record persistedRecord, noOverwrite bool) error {
+func (s *Store) persist(record persistedRecord) error {
 	contents, err := toml.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode config file: %w", err)
@@ -237,7 +237,7 @@ func (s *Store) persist(record persistedRecord, noOverwrite bool) error {
 	if err := prepareConfigDirectory(s.path, s.managedDir); err != nil {
 		return err
 	}
-	if err := s.write(s.path, contents, noOverwrite); err != nil {
+	if err := s.write(s.path, contents, !s.exists); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
 	s.record = record
