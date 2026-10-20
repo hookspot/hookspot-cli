@@ -89,7 +89,7 @@ names. Name matching ignores case.`,
 		}
 
 		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
-		project, err := resolveProjectSelection(cmd.Context(), client, args, store.SavedProject(), cmd.InOrStdin(), cmd.OutOrStdout(), promptProject)
+		project, err := resolveProjectSelection(cmd.Context(), client, args, store.SavedProject(), cmd.InOrStdin(), cmd.OutOrStdout())
 		if err != nil {
 			return err
 		}
@@ -97,16 +97,7 @@ names. Name matching ignores case.`,
 	},
 }
 
-type projectAPI interface {
-	GetProject(context.Context, string) (*api.Project, error)
-	ListProjects(context.Context) ([]api.Project, error)
-}
-
-// projectPrompt returns the index of the project chosen from projects; current
-// is the saved project's index, or -1.
-type projectPrompt func(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, current int) (int, error)
-
-func resolveProjectSelection(ctx context.Context, client projectAPI, args []string, currentUID string, in io.Reader, out io.Writer, prompt projectPrompt) (*api.Project, error) {
+func resolveProjectSelection(ctx context.Context, client *api.Client, args []string, currentUID string, in io.Reader, out io.Writer) (*api.Project, error) {
 	if len(args) == 1 {
 		if _, err := endpoint.Segment(args[0]); err == nil {
 			project, err := client.GetProject(ctx, args[0])
@@ -128,7 +119,7 @@ func resolveProjectSelection(ctx context.Context, client projectAPI, args []stri
 	if err != nil {
 		return nil, err
 	}
-	return selectProject(ctx, in, out, candidates, currentUID, prompt)
+	return selectProject(ctx, in, out, candidates, currentUID)
 }
 
 func projectCandidates(projects []api.Project, args []string) ([]api.Project, error) {
@@ -161,29 +152,18 @@ func projectCandidates(projects []api.Project, args []string) ([]api.Project, er
 	return candidates, nil
 }
 
-func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, currentUID string, prompt projectPrompt) (*api.Project, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if len(projects) == 0 {
-		return nil, errors.New("no projects are available for selection")
-	}
+// selectProject returns a sole project without prompting; the prompt marks
+// the saved project when it's listed.
+func selectProject(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, currentUID string) (*api.Project, error) {
 	if len(projects) == 1 {
 		return &projects[0], nil
 	}
-
 	current := slices.IndexFunc(projects, func(project api.Project) bool { return project.UID == currentUID })
-	selectedIndex, err := prompt(ctx, in, out, projects, current)
+	selected, err := promptProject(ctx, in, out, projects, current)
 	if err != nil {
 		return nil, err
 	}
-	if selectedIndex < 0 || selectedIndex >= len(projects) {
-		return nil, errors.New("invalid project selection")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	return &projects[selectedIndex], nil
+	return &projects[selected], nil
 }
 
 func promptProject(ctx context.Context, in io.Reader, out io.Writer, projects []api.Project, current int) (int, error) {
