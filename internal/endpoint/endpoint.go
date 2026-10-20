@@ -49,9 +49,6 @@ func Parse(raw string) (Base, error) {
 	if u.RawQuery != "" || u.ForceQuery {
 		return Base{}, fmt.Errorf("invalid server URL: query parameters are not allowed")
 	}
-	if u.Fragment != "" {
-		return Base{}, fmt.Errorf("invalid server URL: fragments are not allowed")
-	}
 	if strings.Contains(u.EscapedPath(), "%") || u.RawPath != "" {
 		return Base{}, fmt.Errorf("invalid server URL: encoded path segments are not allowed")
 	}
@@ -149,25 +146,7 @@ func validRelativePath(value string) bool {
 }
 
 func validPath(value string) bool {
-	if value == "" || value == "/" {
-		return true
-	}
-	if !strings.HasPrefix(value, "/") {
-		return false
-	}
-	if value != "/" && strings.Contains(value, "//") {
-		return false
-	}
-	trimmed := strings.TrimSuffix(strings.TrimPrefix(value, "/"), "/")
-	if trimmed == "" {
-		return true
-	}
-	for _, segment := range strings.Split(trimmed, "/") {
-		if !validUnreservedSegment(segment) {
-			return false
-		}
-	}
-	return true
+	return value == "" || value == "/" || strings.HasPrefix(value, "/") && validRelativePath(strings.TrimSuffix(value, "/"))
 }
 
 func validUnreservedSegment(value string) bool {
