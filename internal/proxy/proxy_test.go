@@ -55,11 +55,16 @@ func TestForwarder_Forward_ReplaysRequest(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("X-Hookspot-Event", "evt_123")
 
-	resp, err := f.Forward(context.Background(), http.MethodPut, "/webhooks", "a=1&b=2", []byte(`{"id":"evt_123"}`), headers)
+	target, resp, err := f.Forward(context.Background(), http.MethodPut, "/webhooks", "a=1&b=2", []byte(`{"id":"evt_123"}`), headers)
 	if err != nil {
 		t.Fatalf("Forward: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// The query stays out of the target, which entries show next to it.
+	if target != server.URL+"/webhooks" {
+		t.Fatalf("target = %q, want %q", target, server.URL+"/webhooks")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -81,79 +86,29 @@ func TestForwarder_Forward_ReplaysRequest(t *testing.T) {
 	}
 }
 
-func TestForwarder_Forward_DefaultsToPOST(t *testing.T) {
-	var gotMethod string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	f := mustForwarder(t, server.URL)
-
-	resp, err := f.Forward(context.Background(), "", "/webhooks", "", nil, nil)
-	if err != nil {
-		t.Fatalf("Forward: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if gotMethod != http.MethodPost {
-		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
-	}
-}
-
-func TestForwarder_Forward_AppendsDestinationPathToTargetPath(t *testing.T) {
-	var gotPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	resp, err := mustForwarder(t, server.URL+"/local").Forward(
-		context.Background(),
-		http.MethodPost,
-		"/webhooks/shopify",
-		"",
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("Forward: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if got, want := gotPath, "/local/webhooks/shopify"; got != want {
-		t.Fatalf("path = %q, want %q", got, want)
-	}
-}
-
 func TestForwarderDestinationURL(t *testing.T) {
 	tests := []struct {
-		name  string
-		base  string
-		path  string
-		query string
-		want  string
+		name string
+		base string
+		path string
+		want string
 	}{
-		{"destination path", "http://localhost:4000", "/webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
-		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "", "http://localhost:4000/local/webhooks/shopify"},
-		{"path without slash", "http://localhost:4000", "webhooks/shopify", "", "http://localhost:4000/webhooks/shopify"},
-		{"empty path", "http://localhost:4000", "", "", "http://localhost:4000/"},
-		{"root at bare host", "localhost:3000", "/", "", "http://localhost:3000/"},
-		{"root at typed root slash", "localhost:3000/", "/", "", "http://localhost:3000/"},
-		{"root at base path", "localhost:3000/webhooks/stripe", "/", "", "http://localhost:3000/webhooks/stripe"},
-		{"empty path at base path", "localhost:3000/webhooks/stripe", "", "", "http://localhost:3000/webhooks/stripe"},
-		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "", "http://localhost:8000/webhooks/"},
-		{"root at base path keeps query", "localhost:3000/webhooks/stripe", "/", "a=1", "http://localhost:3000/webhooks/stripe?a=1"},
-		{"root at typed trailing slash keeps query", "localhost:8000/webhooks/", "/", "a=1", "http://localhost:8000/webhooks/?a=1"},
+		{"destination path", "http://localhost:4000", "/webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"base path", "http://localhost:4000/local/", "/webhooks/shopify", "http://localhost:4000/local/webhooks/shopify"},
+		{"path without slash", "http://localhost:4000", "webhooks/shopify", "http://localhost:4000/webhooks/shopify"},
+		{"empty path", "http://localhost:4000", "", "http://localhost:4000/"},
+		{"root at bare host", "localhost:3000", "/", "http://localhost:3000/"},
+		{"root at typed root slash", "localhost:3000/", "/", "http://localhost:3000/"},
+		{"root at base path", "localhost:3000/webhooks/stripe", "/", "http://localhost:3000/webhooks/stripe"},
+		{"empty path at base path", "localhost:3000/webhooks/stripe", "", "http://localhost:3000/webhooks/stripe"},
+		{"root at typed trailing slash", "localhost:8000/webhooks/", "/", "http://localhost:8000/webhooks/"},
+		{"escaped base path", "localhost:3000/api%20v1", "/hooks", "http://localhost:3000/api%20v1/hooks"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := mustForwarder(t, tt.base)
-			got, err := f.DestinationURL(tt.path, tt.query)
+			got, err := f.DestinationURL(tt.path)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -167,41 +122,35 @@ func TestForwarderDestinationURL(t *testing.T) {
 func TestForwarderRejectsDestinationPathsThatWouldBeRewritten(t *testing.T) {
 	forwarder := mustForwarder(t, "http://localhost:4000")
 	for _, path := range []string{"/two words", "/path?second=query", "/path#fragment", "/line\nbreak"} {
-		if _, err := forwarder.DestinationURL(path, ""); err == nil {
-			t.Fatalf("DestinationURL(%q) unexpectedly succeeded", path)
+		if target, _, err := forwarder.Forward(context.Background(), http.MethodPost, path, "", nil, nil); err == nil || target != forwarder.String() {
+			t.Fatalf("Forward(%q) = %q, %v; want the base target and an error", path, target, err)
 		}
 	}
 }
 
 func TestNewValidatesForwardTarget(t *testing.T) {
-	for _, valid := range []string{"localhost:4000", "http://localhost:4000", "https://example.invalid/prefix"} {
-		f, err := New(valid)
-		if err != nil {
-			t.Fatalf("New(%q): %v", valid, err)
-		}
-		if !strings.Contains(valid, "://") && f.String() != "http://"+valid {
-			t.Fatalf("String() = %q", f.String())
+	for raw, want := range map[string]string{
+		"3000":                           "http://localhost:3000",
+		"3000/webhooks":                  "http://localhost:3000/webhooks",
+		"localhost:4000":                 "http://localhost:4000",
+		"http://localhost:4000":          "http://localhost:4000",
+		"https://example.invalid/prefix": "https://example.invalid/prefix",
+		// Docker's DNS resolves Compose service names, underscores included.
+		"http://web_app:3000":             "http://web_app:3000",
+		"http://localhost:3000/api%20v1/": "http://localhost:3000/api%20v1/",
+	} {
+		if got := mustForwarder(t, raw).String(); got != want {
+			t.Fatalf("New(%q) = %q, want %q", raw, got, want)
 		}
 	}
 	for _, invalid := range []string{
 		"", "ftp://example.invalid", "http:///missing", "http://user@example.invalid",
-		"http://example.invalid?query=1", "http://example.invalid/#fragment", "http://example.invalid#",
-		"http://example.invalid:", "http://example.invalid:99999", "http://example.invalid/a b",
+		"http://example.invalid?query=1", "http://example.invalid?", "http://example.invalid/#fragment", "http://example.invalid#",
+		"http://example.invalid:", "http://example.invalid:99999", "http://example.invalid:0", "http://example.invalid/a b",
 		"99999", "3000/webhooks?x=1", "3000/webhooks#top",
 	} {
-		if _, err := New(invalid); err == nil {
-			t.Fatalf("New(%q) unexpectedly succeeded", invalid)
-		}
-	}
-}
-
-func TestNewMapsBarePortToLocalhost(t *testing.T) {
-	for raw, want := range map[string]string{
-		"3000":          "http://localhost:3000",
-		"3000/webhooks": "http://localhost:3000/webhooks",
-	} {
-		if got := mustForwarder(t, raw).String(); got != want {
-			t.Fatalf("New(%q) = %q, want %q", raw, got, want)
+		if _, err := New(invalid); err == nil || strings.Contains(err.Error(), "server URL") {
+			t.Fatalf("New(%q) = %v, want a forward target error", invalid, err)
 		}
 	}
 }
@@ -214,7 +163,7 @@ func TestForwarderBypassesEnvironmentProxy(t *testing.T) {
 
 	// Go never proxies loopback hosts; 0.0.0.0 reaches the same server without that exemption.
 	target := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
-	resp, err := mustForwarder(t, target).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
+	_, resp, err := mustForwarder(t, target).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
 	if err != nil {
 		t.Fatalf("Forward through HTTP_PROXY=%s: %v", os.Getenv("HTTP_PROXY"), err)
 	}
@@ -238,7 +187,7 @@ func TestForwarderReturnsRedirectWithoutFollowing(t *testing.T) {
 			}))
 			defer origin.Close()
 
-			resp, err := mustForwarder(t, origin.URL).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
+			_, resp, err := mustForwarder(t, origin.URL).Forward(context.Background(), http.MethodPost, "/hook", "", nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -270,7 +219,7 @@ func TestForwarderPreservesRequestAndRemovesHopHeaders(t *testing.T) {
 		"host":              {"untrusted.invalid"},
 	}
 	originalHeaders := headers.Clone()
-	resp, err := mustForwarder(t, server.URL+"/prefix").Forward(
+	_, resp, err := mustForwarder(t, server.URL+"/prefix").Forward(
 		context.Background(), http.MethodPost, "/hooks/a%2Fb", "x=1%2F2&literal=%23", nil, headers,
 	)
 	if err != nil {
@@ -336,8 +285,8 @@ func TestClassifyTransportErrorWalksWrappedNetworkErrors(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := ClassifyTransportError(test.err); got != test.want {
-				t.Fatalf("ClassifyTransportError() = %q, want %q", got, test.want)
+			if got := classifyTransportError(test.err); got != test.want {
+				t.Fatalf("classifyTransportError() = %q, want %q", got, test.want)
 			}
 		})
 	}

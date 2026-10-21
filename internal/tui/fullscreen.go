@@ -60,9 +60,6 @@ type Fullscreen struct {
 	Target string
 	// RequestsURL is where to retry requests missed while offline.
 	RequestsURL string
-	// ShowSensitiveHeaders keeps sensitive header values in copied commands
-	// and fixtures.
-	ShowSensitiveHeaders bool
 
 	// now, toastFor and dialEvery are time.Now, 4s and 1s unless a test sets
 	// them.
@@ -280,11 +277,11 @@ func (m Fullscreen) key(msg tea.KeyPressMsg) (Fullscreen, tea.Cmd) {
 		}
 	case key.Matches(msg, keys.copy):
 		if i >= 0 {
-			return m, copyCurl(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, copyCurl(m.Requests, m.entries[i].Number, !m.Listen.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.export):
 		if i >= 0 {
-			return m, exportFixture(m.Requests, m.entries[i].Number, !m.ShowSensitiveHeaders)
+			return m, exportFixture(m.Requests, m.entries[i].Number, !m.Listen.ShowSensitiveHeaders)
 		}
 	case key.Matches(msg, keys.test):
 		return m, sendTest(m.Requests, m.testSource())
@@ -677,7 +674,7 @@ func (m Fullscreen) columns(width int) []column {
 			return cell{text: cards.Line(m.Listen.SourceName(e.Delivery.SourceUID)), style: cards.SourceStyle(e.Delivery.SourceUID)}
 		}},
 		{title: "METHOD", width: 6, value: func(e session.Entry) cell {
-			return cell{text: cards.Line(session.Method(e.Delivery))}
+			return cell{text: cards.Line(e.Delivery.Method)}
 		}},
 		{title: "PATH", value: func(e session.Entry) cell {
 			return cell{text: cards.Line(e.Delivery.Path)}
@@ -685,7 +682,7 @@ func (m Fullscreen) columns(width int) []column {
 	}
 	if m.forwarding() {
 		columns = append(columns,
-			column{title: "STATUS", width: 7, value: outcome},
+			column{title: "STATUS", width: 7, value: func(e session.Entry) cell { return outcome(e.Outcome()) }},
 			column{title: "LATENCY", width: 7, right: true, value: latency},
 		)
 	}
@@ -726,12 +723,12 @@ func render(columns []column, cells []cell, plain bool) string {
 
 // outcome is a forwarded request's status, or its transport failure in a
 // word.
-func outcome(e session.Entry) cell {
-	if e.Failure == nil {
-		return cell{text: strconv.Itoa(e.Response.Status), style: lipgloss.NewStyle().Foreground(cards.StatusColor(e.Response.Status))}
+func outcome(o session.Outcome) cell {
+	if o.Failure == "" {
+		return cell{text: strconv.Itoa(o.Status), style: lipgloss.NewStyle().Foreground(cards.StatusColor(o.Status))}
 	}
 	text := "failed"
-	switch e.Failure.Kind {
+	switch o.Failure {
 	case proxy.TransportConnectionRefused:
 		text = "refused"
 	case proxy.TransportTimeout:

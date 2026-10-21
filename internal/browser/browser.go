@@ -41,8 +41,5 @@ func Open(target string) error {
 
 func validBrowserURL(target string) bool {
 	parsed, err := url.Parse(target)
-	if err != nil || parsed.Host == "" {
-		return false
-	}
-	return parsed.Scheme == "http" || parsed.Scheme == "https"
+	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }

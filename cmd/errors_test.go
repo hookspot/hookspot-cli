@@ -5,26 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"strings"
-	"sync/atomic"
 	"testing"
 
 	"hookspot/internal/api"
-	"hookspot/internal/endpoint"
 	"hookspot/internal/ws"
 )
-
-func TestRootCommandSilencesCobraErrorOutput(t *testing.T) {
-	if !rootCmd.SilenceErrors {
-		t.Fatal("root command allows Cobra to print errors")
-	}
-	if !rootCmd.SilenceUsage {
-		t.Fatal("root command allows Cobra to print usage for runtime errors")
-	}
-}
 
 func TestHandleError(t *testing.T) {
 	const wantNotFoundHint = "The project may have been deleted or your access removed. " +
@@ -60,6 +46,13 @@ func TestHandleError(t *testing.T) {
 			}),
 			wantCode: 1,
 			want:     "authentication failed: the Hookspot CLI key was rejected\n\nCheck the key, then run 'hookspot login' again or update HOOKSPOT_CLI_KEY.\n",
+		},
+		{
+			name:     "API redirect hides the response body",
+			err:      &api.Error{StatusCode: 302, Method: "GET", URL: "https://example.test/cli/me", Message: "<html>body</html>"},
+			wantCode: 1,
+			want: "Hookspot API redirect blocked: GET https://example.test/cli/me returned 302 Found\n\n" +
+				"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release.\n",
 		},
 		{
 			name:     "API rate limit",
@@ -151,58 +144,6 @@ func TestHandleError(t *testing.T) {
 			}
 			if got := output.String(); got != test.want {
 				t.Fatalf("output = %q, want %q", got, test.want)
-			}
-		})
-	}
-}
-
-func TestHandleErrorExplainsBlockedAPIClientRedirect(t *testing.T) {
-	for _, status := range []int{http.StatusFound, http.StatusTemporaryRedirect} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			var redirectedRequests atomic.Int32
-			destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				redirectedRequests.Add(1)
-				fmt.Fprint(w, "location-sentinel")
-			}))
-			defer destination.Close()
-
-			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Location", destination.URL+"/location-sentinel")
-				w.WriteHeader(status)
-				fmt.Fprint(w, "<html>html-body-sentinel</html>")
-			}))
-			defer origin.Close()
-
-			base, err := endpoint.Parse(origin.URL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = api.New(base, "key-sentinel", "").Me(context.Background())
-			if err == nil {
-				t.Fatal("API client accepted redirect")
-			}
-
-			var output bytes.Buffer
-			if code := HandleError(&output, err); code != 1 {
-				t.Fatalf("exit code = %d, want 1", code)
-			}
-			want := fmt.Sprintf(
-				"Hookspot API redirect blocked: GET %s/cli/me returned %d %s\n\n"+
-					"Redirects are not followed to protect the Hookspot CLI key. Install the correct Hookspot release.\n",
-				origin.URL,
-				status,
-				http.StatusText(status),
-			)
-			if output.String() != want {
-				t.Fatalf("output = %q, want %q", output.String(), want)
-			}
-			for _, sentinel := range []string{"html-body-sentinel", "location-sentinel", "key-sentinel", destination.URL} {
-				if strings.Contains(output.String(), sentinel) {
-					t.Fatalf("output leaked %q: %s", sentinel, output.String())
-				}
-			}
-			if got := redirectedRequests.Load(); got != 0 {
-				t.Fatalf("redirect destination requests = %d, want 0", got)
 			}
 		})
 	}

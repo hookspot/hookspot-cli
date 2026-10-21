@@ -74,7 +74,6 @@ func New(base endpoint.Base, cliKey, userAgent string) *Client {
 
 // User represents the authenticated hookspot user.
 type User struct {
-	UID    string `json:"uid"`
 	Email  string `json:"email"`
 	CLIKey string `json:"cli_key"`
 }
@@ -133,7 +132,6 @@ func (c *Client) PollLogin(ctx context.Context, pollToken string) (*LoginResult,
 
 // Organization represents the organization a project belongs to.
 type Organization struct {
-	UID  string `json:"uid"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
 }
@@ -151,16 +149,12 @@ type Source struct {
 type Route struct {
 	UID         string      `json:"uid"`
 	Name        *string     `json:"name"`
-	Active      bool        `json:"active"`
 	Destination Destination `json:"destination"`
-	DisplayName string      `json:"display_name"`
 }
 
 // Destination represents the target path configured for a route.
 type Destination struct {
-	UID    string `json:"uid"`
-	Path   string `json:"path"`
-	Active bool   `json:"active"`
+	Path string `json:"path"`
 }
 
 // Project represents a hookspot project accessible to the current user.
@@ -169,7 +163,6 @@ type Project struct {
 	Name         string       `json:"name"`
 	Slug         string       `json:"slug"`
 	Organization Organization `json:"organization"`
-	Sources      []Source     `json:"sources"`
 }
 
 // ListProjects returns the projects accessible to the client's CLI key.

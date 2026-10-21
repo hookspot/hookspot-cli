@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"runtime"
 	"strings"
@@ -20,10 +19,7 @@ import (
 	"hookspot/internal/ws"
 )
 
-var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{
-	{UID: "rte_orders", Destination: api.Destination{Path: "/orders"}},
-	{UID: "rte_refunds", Destination: api.Destination{Path: "/refunds"}},
-}}}
+var testSources = []api.Source{{UID: "src_stripe", Routes: []api.Route{{UID: "rte_orders"}, {UID: "rte_refunds"}}}}
 
 func delivery(route, path string) ws.Delivery {
 	return ws.Delivery{
@@ -76,7 +72,7 @@ type fakeForwarder struct {
 	calls   []ws.Delivery
 }
 
-func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
+func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, body []byte, headers http.Header) (string, *http.Response, error) {
 	f.mu.Lock()
 	r := reply{status: http.StatusOK}
 	if len(f.replies) > 0 {
@@ -86,21 +82,16 @@ func (f *fakeForwarder) Forward(_ context.Context, method, path, query string, b
 	f.mu.Unlock()
 	runtime.Gosched()
 	f.clock.Add(r.latency)
+	target := "http://localhost:3000" + path
 	if r.err != nil {
-		return nil, r.err
+		return target, nil, r.err
 	}
 	reader := io.Reader(strings.NewReader(r.body))
 	if r.bodyErr != nil {
 		reader = iotest.ErrReader(r.bodyErr)
 	}
-	return &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(reader)}, nil
+	return target, &http.Response{StatusCode: r.status, Header: r.header, Body: io.NopCloser(reader)}, nil
 }
-
-func (f *fakeForwarder) DestinationURL(path, _ string) (*url.URL, error) {
-	return url.Parse("http://localhost:3000" + path)
-}
-
-func (f *fakeForwarder) String() string { return "http://localhost:3000" }
 
 type recorder struct {
 	mu     sync.Mutex
@@ -142,6 +133,7 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		reply{err: errors.New("network unavailable"), latency: 7 * time.Millisecond},
 		reply{status: http.StatusOK, bodyErr: errors.New("connection reset mid-body")},
 		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
+		reply{status: http.StatusOK, body: strings.Repeat("x", maxLocalResponseBodyBytes+1)},
 	)
 
 	response, err := s.Handle(delivery("rte_orders", "/orders"))
@@ -168,12 +160,18 @@ func TestHandleAnswersHookspot(t *testing.T) {
 		t.Fatalf("failed response body entry = %#v, want a transport failure", cut)
 	}
 
+	// An oversized body fails like a cut one, and so does its replay.
 	response, err = s.Handle(delivery("rte_orders", "/orders"))
-	if err == nil || !strings.Contains(err.Error(), "local response body exceeds 16 MiB limit") || response.Status != 0 {
-		t.Fatalf("Handle with an oversized response = %#v, %v; want no acknowledgement", response.Status, err)
+	if err != nil || response.Status != http.StatusBadGateway || response.Body != nil {
+		t.Fatalf("Handle with an oversized response = %#v, %v; want 502", response, err)
 	}
-	if got := len(sink.recorded()); got != 3 {
-		t.Fatalf("recorded %d entries, want the oversized response left out", got)
+	if err := s.Replay(4); err != nil {
+		t.Fatalf("Replay of the oversized response = %v", err)
+	}
+	for _, e := range sink.recorded()[3:] {
+		if e.Entry.Failure == nil || e.Entry.Failure.Error() != "local response body exceeds 16 MiB limit" {
+			t.Fatalf("oversized response entry = %#v, want a transport failure", e.Entry)
+		}
 	}
 }
 

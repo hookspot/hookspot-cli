@@ -5,12 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -20,9 +18,9 @@ import (
 
 func selectionProjects() []api.Project {
 	return []api.Project{
-		{UID: "proj_storefront", Name: "Storefront", Organization: api.Organization{UID: "org_acme", Name: "Acme Inc."}},
-		{UID: "proj_payments", Name: "Payments", Organization: api.Organization{UID: "org_acme", Name: "Acme Inc."}},
-		{UID: "proj_billing", Name: "Billing", Organization: api.Organization{UID: "org_other", Name: "Other"}},
+		{UID: "proj_storefront", Name: "Storefront", Organization: api.Organization{Name: "Acme Inc."}},
+		{UID: "proj_payments", Name: "Payments", Organization: api.Organization{Name: "Acme Inc."}},
+		{UID: "proj_billing", Name: "Billing", Organization: api.Organization{Name: "Other"}},
 	}
 }
 
@@ -62,7 +60,7 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 	}
 
 	duplicate := append(selectionProjects(), api.Project{
-		UID: "proj_duplicate", Name: "PAYMENTS", Organization: api.Organization{UID: "org_duplicate", Name: "ACME INC."},
+		UID: "proj_duplicate", Name: "PAYMENTS", Organization: api.Organization{Name: "ACME INC."},
 	})
 	if _, err := projectCandidates(duplicate, []string{"Acme Inc.", "Payments"}); err == nil || !strings.Contains(err.Error(), "multiple") {
 		t.Fatalf("duplicate exact pair error = %v", err)
@@ -71,72 +69,6 @@ func TestProjectCandidatesMatchExactNamesIgnoringCase(t *testing.T) {
 	matched, err := projectCandidates(unicodeProjects, []string{"mÜNCHEN 合作", "RÉCEPTION"})
 	if err != nil || len(matched) != 1 || matched[0].UID != "proj_unicode" {
 		t.Fatalf("Unicode exact match = %+v, %v", matched, err)
-	}
-}
-
-func TestSelectProjectHasNoCurrentWithoutSavedProjectListed(t *testing.T) {
-	tests := []struct {
-		name     string
-		savedUID string
-	}{
-		{name: "no saved project", savedUID: ""},
-		{name: "saved project not listed", savedUID: "proj_billing"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			projects := selectionProjects()[:2]
-			promptCalled := false
-			prompt := func(ctx context.Context, in io.Reader, out io.Writer, got []api.Project, current int) (int, error) {
-				promptCalled = true
-				if err := ctx.Err(); err != nil {
-					t.Fatal(err)
-				}
-				if !reflect.DeepEqual(got, projects) {
-					t.Fatalf("projects = %+v, want %+v", got, projects)
-				}
-				if current != -1 {
-					t.Fatalf("current = %d, want -1", current)
-				}
-				return 0, nil
-			}
-
-			selected, err := selectProject(context.Background(), strings.NewReader(""), io.Discard, projects, test.savedUID, prompt)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !promptCalled {
-				t.Fatal("selectProject did not prompt")
-			}
-			if selected.UID != projects[0].UID {
-				t.Fatalf("selected UID = %q, want %q", selected.UID, projects[0].UID)
-			}
-		})
-	}
-}
-
-func TestSelectProjectHandlesSoleCandidateAndPromptFailures(t *testing.T) {
-	projects := selectionProjects()
-	promptCalled := false
-	selected, err := selectProject(context.Background(), nil, nil, projects[:1], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
-		promptCalled = true
-		return 0, nil
-	})
-	if err != nil || selected.UID != "proj_storefront" || promptCalled {
-		t.Fatalf("sole selection = %+v, err = %v, promptCalled = %v", selected, err, promptCalled)
-	}
-
-	wantErr := errors.New("prompt failed")
-	if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
-		return 0, wantErr
-	}); !errors.Is(err, wantErr) {
-		t.Fatalf("prompt error = %v, want %v", err, wantErr)
-	}
-	for _, index := range []int{-1, 2} {
-		if _, err := selectProject(context.Background(), nil, nil, projects[:2], "", func(context.Context, io.Reader, io.Writer, []api.Project, int) (int, error) {
-			return index, nil
-		}); err == nil || !strings.Contains(err.Error(), "invalid project selection") {
-			t.Fatalf("index %d error = %v", index, err)
-		}
 	}
 }
 
@@ -519,9 +451,9 @@ func TestProjectUseLocalIsolatesFreshProcessesByWorkingDirectory(t *testing.T) {
 	}
 
 	projects := []api.Project{
-		{UID: "local_a", Name: "Project 1", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
-		{UID: "local_b", Name: "Project 2", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
-		{UID: "local_c", Name: "Project 3", Organization: api.Organization{UID: "org_a", Name: "asd1"}},
+		{UID: "local_a", Name: "Project 1", Organization: api.Organization{Name: "asd1"}},
+		{UID: "local_b", Name: "Project 2", Organization: api.Organization{Name: "asd1"}},
+		{UID: "local_c", Name: "Project 3", Organization: api.Organization{Name: "asd1"}},
 	}
 	requests := make(chan string, 32)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -696,19 +628,6 @@ func TestProjectUseLocalRejectsCustomConfigBeforeAPI(t *testing.T) {
 				t.Fatalf("custom config changed: %v\n%s", err, contents)
 			}
 		})
-	}
-}
-
-func TestProjectDisplayName_OnlyShowsOrganizationAndProject(t *testing.T) {
-	project := api.Project{
-		UID:          "proj_payments",
-		Name:         "Payments",
-		Slug:         "payments",
-		Organization: api.Organization{UID: "org_acme", Name: "Acme", Slug: "acme"},
-	}
-
-	if got, want := projectDisplayName(project), "Acme | Payments"; got != want {
-		t.Fatalf("projectDisplayName() = %q, want %q", got, want)
 	}
 }
 

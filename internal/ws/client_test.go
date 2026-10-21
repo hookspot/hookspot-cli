@@ -28,9 +28,7 @@ func readFrame(t *testing.T, conn *websocket.Conn) message {
 }
 
 func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
-	upgrader := websocket.Upgrader{}
-
-	gotResponse := make(chan deliveryResponse, 1)
+	gotResponse := make(chan string, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
@@ -40,11 +38,7 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 			t.Errorf("vsn = %q, want 2.0.0", got)
 		}
 
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade: %v", err)
-			return
-		}
+		conn := acceptTestConnection(t, w, r)
 		defer conn.Close()
 
 		// Expect the join frame.
@@ -65,17 +59,7 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 			t.Errorf("sources = %v, want [stripe]", joinPayload.Sources)
 		}
 
-		// Reply ok, then push a delivery.
-		reply, _ := encode(message{
-			JoinRef: join.JoinRef,
-			Ref:     join.Ref,
-			Topic:   join.Topic,
-			Event:   "phx_reply",
-			Payload: json.RawMessage(`{"status":"ok","response":{}}`),
-		})
-		if err := conn.WriteMessage(websocket.TextMessage, reply); err != nil {
-			t.Errorf("write reply: %v", err)
-		}
+		writeJoinAccepted(t, conn, join)
 
 		deliveryPayload, _ := json.Marshal(Delivery{
 			AttemptUID: "att_1",
@@ -88,14 +72,11 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 			Query:      "a=1",
 			Body:       []byte(`{"k":1}`),
 		})
-		push, _ := encode(message{
+		writeTestMessage(t, conn, message{
 			Topic:   "project:proj_1",
 			Event:   "delivery",
 			Payload: deliveryPayload,
 		})
-		if err := conn.WriteMessage(websocket.TextMessage, push); err != nil {
-			t.Errorf("write push: %v", err)
-		}
 
 		// Expect the delivery_response push back.
 		respFrame := readFrame(t, conn)
@@ -105,19 +86,13 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 		if respFrame.Topic != "project:proj_1" {
 			t.Errorf("topic = %q, want project:proj_1", respFrame.Topic)
 		}
-		var dr deliveryResponse
-		if err := json.Unmarshal(respFrame.Payload, &dr); err != nil {
-			t.Errorf("unmarshal delivery_response: %v", err)
-		}
-		gotResponse <- dr
+		gotResponse <- string(respFrame.Payload)
 
 		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
-
-	client := New(wsURL, "test-key", "", "project:proj_1", []string{"stripe"}, "")
+	client := New(testWebSocketURL(server), "test-key", "", "project:proj_1", []string{"stripe"}, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -169,21 +144,10 @@ func TestClient_Listen_ForwardsAndRepliesWithResponse(t *testing.T) {
 	}
 
 	select {
-	case dr := <-gotResponse:
-		if dr.AttemptUID != "att_1" {
-			t.Fatalf("attempt_uid = %q, want att_1", dr.AttemptUID)
-		}
-		if dr.Status != 201 {
-			t.Fatalf("status = %d, want 201", dr.Status)
-		}
-		if got := dr.Headers.Get("X-Foo"); got != "bar" {
-			t.Fatalf("X-Foo = %q, want bar", got)
-		}
-		if string(dr.Body) != "ok" {
-			t.Fatalf("body = %q, want %q", dr.Body, "ok")
-		}
-		if dr.LatencyMS != 38 {
-			t.Fatalf("latency_ms = %d, want 38", dr.LatencyMS)
+	case got := <-gotResponse:
+		const want = `{"attempt_uid":"att_1","status":201,"headers":{"X-Foo":["bar"]},"body":"b2s=","latency_ms":38}`
+		if got != want {
+			t.Fatalf("delivery_response payload = %s, want %s", got, want)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for delivery_response")
@@ -248,35 +212,24 @@ func TestClient_Listen_JoinErrorReturns(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.reason, func(t *testing.T) {
-			upgrader := websocket.Upgrader{}
-
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, err := upgrader.Upgrade(w, r, nil)
-				if err != nil {
-					t.Errorf("upgrade: %v", err)
-					return
-				}
+				conn := acceptTestConnection(t, w, r)
 				defer conn.Close()
 
 				join := readFrame(t, conn)
-				reply, _ := encode(message{
+				writeTestMessage(t, conn, message{
 					JoinRef: join.JoinRef,
 					Ref:     join.Ref,
 					Topic:   join.Topic,
 					Event:   "phx_reply",
 					Payload: json.RawMessage(`{"status":"error","response":{"reason":"` + test.reason + `"}}`),
 				})
-				if err := conn.WriteMessage(websocket.TextMessage, reply); err != nil {
-					t.Errorf("write reply: %v", err)
-				}
 
 				time.Sleep(100 * time.Millisecond)
 			}))
 			defer server.Close()
 
-			wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
-
-			client := New(wsURL, "test-key", "", "project:proj_1", nil, "")
+			client := New(testWebSocketURL(server), "test-key", "", "project:proj_1", nil, "")
 			client.OnJoined = func(string) error {
 				t.Error("OnJoined ran for a rejected join")
 				return nil
@@ -367,8 +320,7 @@ func TestClient_Listen_HandshakeAuthenticationErrorReturns(t *testing.T) {
 	}))
 	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/cli/websocket?vsn=2.0.0"
-	err := New(wsURL, "bad-key", "", "project:proj_1", nil, "").Listen(
+	err := New(testWebSocketURL(server), "bad-key", "", "project:proj_1", nil, "").Listen(
 		context.Background(),
 		func(Delivery) (Response, error) { return Response{}, nil },
 	)

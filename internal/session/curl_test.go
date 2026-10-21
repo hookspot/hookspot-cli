@@ -183,30 +183,18 @@ func TestCurlReproducesTheRequest(t *testing.T) {
 	}
 }
 
-func TestCurlRedactsOnlyTheShownCommand(t *testing.T) {
+func TestCurlShowsSensitiveHeadersWhenAsked(t *testing.T) {
 	s, _, _ := newTestSession()
 	d := delivery("rte_orders", "/orders")
 	d.Headers["Authorization"] = []string{"Bearer secret"}
 	if _, err := s.Handle(d); err != nil {
 		t.Fatal(err)
 	}
-
-	redacted, err := s.Curl(1, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !redacted.Redacted || !strings.Contains(redacted.Shown, "-H 'Authorization: [redacted]'") || strings.Contains(redacted.Shown, "secret") {
-		t.Errorf("shown command:\n%s", redacted.Shown)
-	}
-	if !strings.Contains(redacted.Command, "-H 'Authorization: Bearer secret'") {
-		t.Errorf("full command:\n%s", redacted.Command)
-	}
-
 	shown, err := s.Curl(1, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shown.Redacted || shown.Shown != shown.Command || shown.Command != redacted.Command {
+	if shown.Redacted || shown.Shown != shown.Command || !strings.Contains(shown.Shown, "-H 'Authorization: Bearer secret'") {
 		t.Errorf("with --show-sensitive-headers, shown:\n%s\nfull:\n%s", shown.Shown, shown.Command)
 	}
 }

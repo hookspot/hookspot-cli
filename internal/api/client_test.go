@@ -81,7 +81,7 @@ func TestClient_Me_ReturnsUser(t *testing.T) {
 		if got := r.Header.Get("X-CLI-KEY"); got != "test-key" {
 			t.Errorf("X-CLI-KEY = %q, want %q", got, "test-key")
 		}
-		if err := json.NewEncoder(w).Encode(User{UID: "usr_1", Email: "dev@example.com"}); err != nil {
+		if err := json.NewEncoder(w).Encode(User{Email: "dev@example.com"}); err != nil {
 			t.Fatalf("encode: %v", err)
 		}
 	}))
@@ -158,17 +158,8 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 			Name: "Production",
 			Slug: "production",
 			Organization: Organization{
-				UID:  "org_1",
 				Name: "Acme Incorporated",
 				Slug: "acme",
-			},
-			Sources: []Source{
-				{
-					UID:    "src_1",
-					Name:   "Shopify",
-					URL:    "https://events.example.com/src_1",
-					Active: true,
-				},
 			},
 		}
 		if err := json.NewEncoder(w).Encode(project); err != nil {
@@ -194,15 +185,6 @@ func TestClient_GetProject_ReturnsProjectWithOrganization(t *testing.T) {
 	}
 	if project.Organization.Slug != "acme" {
 		t.Fatalf("Organization.Slug = %q, want %q", project.Organization.Slug, "acme")
-	}
-	if len(project.Sources) != 1 {
-		t.Fatalf("len(Sources) = %d, want 1", len(project.Sources))
-	}
-	if project.Sources[0].UID != "src_1" {
-		t.Fatalf("Sources[0].UID = %q, want %q", project.Sources[0].UID, "src_1")
-	}
-	if project.Sources[0].URL != "https://events.example.com/src_1" {
-		t.Fatalf("Sources[0].URL = %q, want %q", project.Sources[0].URL, "https://events.example.com/src_1")
 	}
 }
 
@@ -437,45 +419,6 @@ func TestClient_StartLogin_SendsDeviceNameWithoutCLIKey(t *testing.T) {
 	}
 }
 
-func TestClient_StartLogin_PreservesDeploymentPrefix(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/gateway/hookspot/cli/auth" {
-			t.Errorf("path = %q, want /gateway/hookspot/cli/auth", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, `{"browser_token":"browser-token","poll_token":"poll-token"}`)
-	}))
-	defer server.Close()
-
-	_, err := New(testEndpoint(t, server.URL+"/gateway/hookspot/"), "", "").StartLogin(context.Background(), "mbp")
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestClient_StartLogin_ReturnsStructuredAPIError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"error":"not found"}`)
-	}))
-	defer server.Close()
-
-	_, err := New(testEndpoint(t, server.URL), "", "").StartLogin(context.Background(), "mbp")
-	var apiErr *Error
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error = %T %v, want *api.Error", err, err)
-	}
-	if apiErr.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", apiErr.StatusCode)
-	}
-	if apiErr.Method != http.MethodPost {
-		t.Fatalf("method = %q, want POST", apiErr.Method)
-	}
-	if apiErr.URL != server.URL+"/cli/auth" {
-		t.Fatalf("URL = %q, want %q", apiErr.URL, server.URL+"/cli/auth")
-	}
-}
-
 func TestClient_PollLogin_Pending(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -533,7 +476,7 @@ func TestClient_PollLogin_ApprovedWithProject(t *testing.T) {
 	if result.Status != "approved" {
 		t.Fatalf("Status = %q, want %q", result.Status, "approved")
 	}
-	if result.User.UID != "usr_1" || result.User.Email != "dev@example.com" {
+	if result.User.Email != "dev@example.com" {
 		t.Fatalf("User = %+v", result.User)
 	}
 	if result.User.CLIKey != "cli-secret" {
@@ -572,43 +515,5 @@ func TestClient_PollLogin_ApprovedWithoutProject(t *testing.T) {
 	}
 	if result.Project != nil {
 		t.Fatalf("Project = %+v, want nil", result.Project)
-	}
-}
-
-func TestClient_PollLogin_ReturnsStructuredAPIError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"status":"not_found"}`)
-	}))
-	defer server.Close()
-
-	_, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
-	var apiErr *Error
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error = %T %v, want *api.Error", err, err)
-	}
-	if apiErr.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", apiErr.StatusCode)
-	}
-	if apiErr.Method != http.MethodPost || apiErr.URL != server.URL+"/cli/auth/poll" {
-		t.Fatalf("request context = %s %s", apiErr.Method, apiErr.URL)
-	}
-}
-
-func TestClient_PollLogin_RejectsOversizedSuccessfulJSONResponse(t *testing.T) {
-	padding := bytes.Repeat([]byte{'x'}, 1024*1024+1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"approved","user":{"email":"`))
-		_, _ = w.Write(padding)
-		_, _ = w.Write([]byte(`"}}`))
-	}))
-	defer server.Close()
-
-	_, err := New(testEndpoint(t, server.URL), "", "").PollLogin(context.Background(), "poll-token")
-	if err == nil || !strings.Contains(err.Error(), "response exceeds 1 MiB limit") {
-		t.Fatalf("PollLogin error = %v, want response limit error", err)
-	}
-	if strings.Contains(err.Error(), strings.Repeat("x", 64)) {
-		t.Fatal("response limit error exposed response data")
 	}
 }

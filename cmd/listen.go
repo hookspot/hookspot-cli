@@ -9,7 +9,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -58,12 +57,9 @@ var listenCmd = &cobra.Command{
 			}
 		}
 
-		cfg, err := resolveCommandConfig(cmd, true)
+		cfg, client, err := apiClient(cmd, "listen", true)
 		if err != nil {
-			return wrapCommandError("resolve listen configuration", configRecoveryHint(), err)
-		}
-		if cfg.CLIKey == "" {
-			return loginRequiredError()
+			return err
 		}
 		if cfg.Project == "" && cfg.OrganizationSlug == "" {
 			return newCommandError(
@@ -72,7 +68,6 @@ var listenCmd = &cobra.Command{
 			)
 		}
 
-		client := api.New(activeEndpoint, cfg.CLIKey, userAgent())
 		var project *api.Project
 		if cfg.OrganizationSlug != "" {
 			project, err = client.GetProjectBySlugs(cmd.Context(), cfg.OrganizationSlug, cfg.ProjectSlug)
@@ -110,10 +105,6 @@ var listenCmd = &cobra.Command{
 			return sourcesErr
 		}
 
-		wsURL := activeEndpoint.WebSocket()
-		if wsURL == nil {
-			return newCommandError("Hookspot websocket endpoint is not configured", "Install the correct release.")
-		}
 		routes, err := bannerRoutes(sources, forwarder)
 		if err != nil {
 			return err
@@ -126,7 +117,7 @@ var listenCmd = &cobra.Command{
 			local = forwarder
 			target = forwarder.String()
 		}
-		wsClient := ws.New(wsURL.String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
+		wsClient := ws.New(activeEndpoint.WebSocket().String(), cfg.CLIKey, userAgent(), "project:"+project.UID, sourceUIDs, target)
 		// Piped output may feed a script: it gets plain mode and no update
 		// alert.
 		piped := !cards.Terminal(cmd.OutOrStdout())
@@ -135,6 +126,7 @@ var listenCmd = &cobra.Command{
 			stop:        stopListening,
 			sources:     sources,
 			local:       local,
+			target:      target,
 			listenCards: listenCards,
 			writer:      writer,
 			project:     projectDisplayName(*project),
@@ -178,8 +170,10 @@ type listenSetup struct {
 	ctx     context.Context
 	stop    context.CancelFunc
 	sources []api.Source
-	// local is nil in inspect mode.
+	// local is nil in inspect mode, and target, the --forward-to base URL,
+	// is "".
 	local       session.Forwarder
+	target      string
 	listenCards cards.Listen
 	writer      *cards.Writer
 	project     string
@@ -192,15 +186,12 @@ type listenSetup struct {
 func runFullscreen(setup listenSetup, program *tui.Program, warnings []session.Event) error {
 	sess := session.New(setup.ctx, setup.sources, setup.local, program.FullscreenSink())
 	screen := tui.Fullscreen{
-		Requests:             sess,
-		Listen:               setup.listenCards,
-		Project:              setup.project,
-		Routes:               setup.routes,
-		RequestsURL:          setup.requestsURL,
-		ShowSensitiveHeaders: setup.listenCards.ShowSensitiveHeaders,
-	}
-	if setup.local != nil {
-		screen.Target = setup.local.String()
+		Requests:    sess,
+		Listen:      setup.listenCards,
+		Project:     setup.project,
+		Routes:      setup.routes,
+		RequestsURL: setup.requestsURL,
+		Target:      setup.target,
 	}
 	return runInTerminal(program, screen, func() error {
 		// The alt screen hides the warnings printed before it.
@@ -549,7 +540,7 @@ func bannerRoutes(sources []api.Source, forwarder *proxy.Forwarder) ([]cards.Ban
 				Label:     session.RouteLabel(route),
 			}
 			if forwarder != nil {
-				destination, err := forwarder.DestinationURL(route.Destination.Path, "")
+				destination, err := forwarder.DestinationURL(route.Destination.Path)
 				if err != nil {
 					return nil, fmt.Errorf("resolve forwarding destination: %w", err)
 				}
@@ -623,11 +614,7 @@ func replyToReplay(writer *cards.Writer, err error) error {
 // lineCommandReader feeds the lines typed into the stream to its commands.
 type lineCommandReader struct {
 	cancel       context.CancelFunc
-	closeInput   io.Closer
-	producerDone <-chan struct{}
 	consumerDone <-chan error
-	once         sync.Once
-	err          error
 }
 
 // startLineCommands runs each line of input until parent ends. A failed
@@ -636,11 +623,8 @@ func startLineCommands(parent context.Context, input io.Reader, run func(line st
 	ctx, cancel := context.WithCancel(parent)
 	lines := make(chan string, 1)
 	producerResult := make(chan error, 1)
-	producerDone := make(chan struct{})
-	closer, owned := ownedInput(input)
 
 	go func() {
-		defer close(producerDone)
 		defer close(lines)
 		scanner := bufio.NewScanner(input)
 		for scanner.Scan() {
@@ -691,47 +675,15 @@ func startLineCommands(parent context.Context, input io.Reader, run func(line st
 		}
 	}()
 
-	reader := &lineCommandReader{
-		cancel:       cancel,
-		producerDone: producerDone,
-		consumerDone: consumerDone,
-	}
-	if owned {
-		reader.closeInput = closer
-	}
-	return reader
+	return &lineCommandReader{cancel: cancel, consumerDone: consumerDone}
 }
 
-func ownedInput(input io.Reader) (io.Closer, bool) {
-	closer, ok := input.(io.Closer)
-	if !ok {
-		return nil, false
-	}
-	if file, ok := input.(*os.File); ok && file == os.Stdin {
-		// The console reader may remain blocked until process exit. It owns no
-		// callback work, is started once for the command, and global stdin is
-		// never closed.
-		return nil, false
-	}
-	return closer, true
-}
-
+// Stop ends the commands and returns a failed one's error. It leaves a read of
+// input blocked until the process exits: input is stdin, which is never
+// closed, and the read runs no command.
 func (r *lineCommandReader) Stop() error {
-	r.once.Do(func() {
-		r.cancel()
-		var closeErr error
-		if r.closeInput != nil {
-			closeErr = r.closeInput.Close()
-		}
-		r.err = <-r.consumerDone
-		if r.closeInput != nil {
-			<-r.producerDone
-		}
-		if r.err == nil {
-			r.err = closeErr
-		}
-	})
-	return r.err
+	r.cancel()
+	return <-r.consumerDone
 }
 
 func init() {

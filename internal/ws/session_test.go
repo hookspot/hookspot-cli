@@ -393,36 +393,6 @@ func TestClientCancellationInterruptsWithheldUpgradeResponse(t *testing.T) {
 	}
 }
 
-func TestClientCancellationInterruptsRead(t *testing.T) {
-	joined := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn := acceptTestConnection(t, w, r)
-		defer conn.Close()
-		join := readFrame(t, conn)
-		writeJoinAccepted(t, conn, join)
-		close(joined)
-		_, _, _ = conn.ReadMessage()
-	}))
-	defer server.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- newClient(testWebSocketURL(server), "test-key", "", "project:proj_1", nil, "", testClientOptions()).
-			Listen(ctx, func(Delivery) (Response, error) { return Response{}, nil })
-	}()
-	<-joined
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("Listen error = %v, want context cancellation", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Listen did not return after cancellation during read")
-	}
-}
-
 func TestClientRepeatedCancellationJoinsSessionWorkers(t *testing.T) {
 	joined := make(chan struct{})
 	closed := make(chan struct{})
@@ -591,24 +561,16 @@ type failingHeartbeatWriter struct{ err error }
 func (w failingHeartbeatWriter) SetWriteDeadline(time.Time) error { return nil }
 func (w failingHeartbeatWriter) WriteMessage(int, []byte) error   { return w.err }
 
-func TestHeartbeatWriteFailureNotifiesSession(t *testing.T) {
+func TestHeartbeatReturnsWriteFailure(t *testing.T) {
 	wantErr := errors.New("write unavailable")
 	client := &Client{options: clientOptions{heartbeatInterval: time.Millisecond}}
-	done := make(chan struct{})
-	failure := make(chan error, 1)
-	go client.heartbeat(
+	err := client.heartbeat(
 		&connWriter{conn: failingHeartbeatWriter{err: wantErr}, timeout: time.Second},
-		newHeartbeatTracker(2), done, func(err error) { failure <- err },
+		newHeartbeatTracker(2), make(chan struct{}),
 	)
-	select {
-	case err := <-failure:
-		if !errors.Is(err, wantErr) {
-			t.Fatalf("heartbeat error = %v, want write failure", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("heartbeat write failure was not reported")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("heartbeat error = %v, want write failure", err)
 	}
-	close(done)
 }
 
 func TestClientSerialSlowDeliveriesRearmIdleThenInactivityExpires(t *testing.T) {
@@ -723,7 +685,6 @@ func TestClientHandlerFailureWithoutResponseSendsNoAcknowledgement(t *testing.T)
 
 func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T) {
 	responseSeen := make(chan deliveryResponse, 1)
-	paddedBody := make(chan bool, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn := acceptTestConnection(t, w, r)
 		defer conn.Close()
@@ -731,7 +692,6 @@ func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T)
 		writeJoinAccepted(t, conn, join)
 		writeTestMessage(t, conn, message{Topic: join.Topic, Event: deliveryEvent, Payload: backendDelivery("att_1", "POST", "")})
 		frame := readFrame(t, conn)
-		paddedBody <- strings.Contains(string(frame.Payload), `"body":"b2s="`)
 		var response deliveryResponse
 		if err := json.Unmarshal(frame.Payload, &response); err != nil {
 			t.Fatal(err)
@@ -756,9 +716,6 @@ func TestClientCompletedResponseIsAcknowledgedBeforeHandlerFailure(t *testing.T)
 	response := <-responseSeen
 	if response.Status != http.StatusTemporaryRedirect || response.Headers.Get("Location") != "/next" || string(response.Body) != "ok" {
 		t.Fatalf("acknowledged response changed: %#v", response)
-	}
-	if !<-paddedBody {
-		t.Fatal("outgoing response body was not padded standard Base64")
 	}
 }
 

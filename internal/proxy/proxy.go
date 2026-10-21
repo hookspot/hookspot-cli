@@ -11,12 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode"
-
-	"hookspot/internal/endpoint"
 )
 
 // ForwardTimeout is how long Forward waits for the local target's response.
@@ -55,13 +54,9 @@ func (f *TransportFailure) Unwrap() error {
 	return f.Err
 }
 
-// ClassifyTransportError walks wrapped network errors and returns their most
+// classifyTransportError walks wrapped network errors and returns their most
 // useful user-facing category.
-func ClassifyTransportError(err error) TransportErrorKind {
-	if err == nil {
-		return TransportOther
-	}
-
+func classifyTransportError(err error) TransportErrorKind {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return TransportTimeout
 	}
@@ -100,17 +95,10 @@ func ClassifyTransportError(err error) TransportErrorKind {
 
 // Failure wraps err with its transport category.
 func Failure(err error) *TransportFailure {
-	if err == nil {
-		return nil
-	}
-	var failure *TransportFailure
-	if errors.As(err, &failure) {
-		return failure
-	}
-	return &TransportFailure{Kind: ClassifyTransportError(err), Err: err}
+	return &TransportFailure{Kind: classifyTransportError(err), Err: err}
 }
 
-// Forwarder forwards received event bytes to a local target via HTTP POST.
+// Forwarder forwards each received delivery to a local target with its own method.
 type Forwarder struct {
 	targetBaseURL string
 	trailingSlash bool
@@ -131,7 +119,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	if !strings.Contains(targetBaseURL, "://") {
 		targetBaseURL = "http://" + targetBaseURL
 	}
-	base, err := endpoint.Parse(targetBaseURL)
+	base, err := parseTarget(targetBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid forward target: %w", err)
 	}
@@ -141,7 +129,7 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	transport.Proxy = nil
 
 	return &Forwarder{
-		targetBaseURL: base.String(),
+		targetBaseURL: base,
 		trailingSlash: strings.HasSuffix(targetBaseURL, "/"),
 		client: &http.Client{
 			Transport: transport,
@@ -153,6 +141,44 @@ func New(targetBaseURL string) (*Forwarder, error) {
 	}, nil
 }
 
+// parseTarget returns raw without its trailing slash. Unlike the server URL,
+// its host is whatever the local network resolves, such as a Compose service
+// named web_app, and its path prefix may be escaped.
+func parseTarget(raw string) (string, error) {
+	for _, r := range raw {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "", errors.New("whitespace and control characters are not allowed")
+		}
+	}
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil:
+		return "", errors.Unwrap(err)
+	case u.Scheme != "http" && u.Scheme != "https":
+		return "", errors.New("scheme must be HTTP or HTTPS")
+	case u.Hostname() == "":
+		return "", errors.New("host is required")
+	case !validPort(u):
+		return "", errors.New("invalid port")
+	case u.User != nil:
+		return "", errors.New("user information is not allowed")
+	case u.RawQuery != "" || u.ForceQuery:
+		return "", errors.New("query parameters are not allowed")
+	case strings.Contains(raw, "#"):
+		return "", errors.New("fragments are not allowed")
+	}
+	origin := url.URL{Scheme: u.Scheme, Host: u.Host}
+	return origin.String() + strings.TrimSuffix(u.EscapedPath(), "/"), nil
+}
+
+func validPort(u *url.URL) bool {
+	if u.Port() == "" {
+		return !strings.HasSuffix(u.Host, ":")
+	}
+	port, err := strconv.Atoi(u.Port())
+	return err == nil && port >= 1 && port <= 65535
+}
+
 // String returns the validated target base URL, with the trailing slash kept
 // when typed, so a command built from it forwards the same way.
 func (f *Forwarder) String() string {
@@ -162,8 +188,9 @@ func (f *Forwarder) String() string {
 	return f.targetBaseURL
 }
 
-// DestinationURL returns the exact URL used for a delivery.
-func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, error) {
+// DestinationURL returns the URL a delivery to destinationPath goes to,
+// without its query.
+func (f *Forwarder) DestinationURL(destinationPath string) (*url.URL, error) {
 	if strings.ContainsAny(destinationPath, "?#") {
 		return nil, errors.New("invalid destination path")
 	}
@@ -186,25 +213,23 @@ func (f *Forwarder) DestinationURL(destinationPath, rawQuery string) (*url.URL, 
 	if target.Path == "" {
 		target.Path = "/"
 	}
-	target.RawQuery = rawQuery
 	return target, nil
 }
 
 // Forward replays a request to targetBaseURL+path with the given method, raw
-// query string, body, and headers. An empty method defaults to POST.
-func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (*http.Response, error) {
-	if method == "" {
-		method = http.MethodPost
-	}
-
-	target, err := f.DestinationURL(path, query)
+// query string, body, and headers. It returns the URL it sent to without the
+// query, or the target base URL when path has none.
+func (f *Forwarder) Forward(ctx context.Context, method, path, query string, body []byte, headers http.Header) (string, *http.Response, error) {
+	target, err := f.DestinationURL(path)
 	if err != nil {
-		return nil, err
+		return f.String(), nil, err
 	}
+	destination := target.String()
+	target.RawQuery = query
 
 	req, err := http.NewRequestWithContext(ctx, method, target.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return destination, nil, err
 	}
 
 	for key, values := range Headers(headers) {
@@ -213,7 +238,8 @@ func (f *Forwarder) Forward(ctx context.Context, method, path, query string, bod
 		}
 	}
 
-	return f.client.Do(req)
+	resp, err := f.client.Do(req)
+	return destination, resp, err
 }
 
 // Headers returns the headers Forward sends: canonical names, without

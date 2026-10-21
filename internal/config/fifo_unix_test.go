@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -54,33 +55,51 @@ func TestConfigRejectsFIFOAndSymlinkWithoutOpeningThem(t *testing.T) {
 }
 
 func TestConfigValidatesEffectiveDirectoryAncestry(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0o755); err != nil {
+	clearConfigEnvironment(t)
+	home := setIsolatedHome(t)
+	// Umask 002 leaves ~/.config group-writable.
+	shared := filepath.Join(home, ".config")
+	if err := os.Mkdir(shared, 0o775); err != nil {
 		t.Fatal(err)
 	}
-	unsafe := filepath.Join(root, "unsafe")
-	if err := os.Mkdir(unsafe, 0o777); err != nil {
+	if err := os.Chmod(shared, 0o775); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(unsafe, 0o777); err != nil {
+	t.Setenv("HOOKSPOT_CLI_KEY", "environment-key")
+	store, err := New(Options{})
+	if err != nil {
+		t.Fatalf("absent config under a group-writable ancestor was rejected: %v", err)
+	}
+	cfg, err := store.Resolve(Overrides{})
+	if err != nil || cfg.CLIKey != "environment-key" {
+		t.Fatalf("resolved config = %+v, %v", cfg, err)
+	}
+	if err = store.SaveCLIKey("saved-key"); err == nil {
+		t.Fatal("write under a group-writable ancestor was accepted")
+	}
+	existing := filepath.Join(shared, "hookspot", "config.toml")
+	writeConfigFixture(t, existing, "schema_version = 1\n")
+	// Unreadable, so only a folder check made before the open names the folder.
+	if err = os.Chmod(existing, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(Options{
-		ExplicitPath:    filepath.Join(unsafe, "private", "config.toml"),
-		ExplicitPathSet: true, Intent: LoginCreate,
-	}); err == nil {
-		t.Fatal("world-writable ancestor was accepted")
+	if _, err = New(Options{}); err == nil || !strings.Contains(err.Error(), "allow untrusted mutation") {
+		t.Fatalf("existing config under a group-writable ancestor: %v", err)
 	}
 
+	root := t.TempDir()
+	if err = os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	real := filepath.Join(root, "real")
-	if err := os.Mkdir(real, 0o755); err != nil {
+	if err = os.Mkdir(real, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(root, "alias")
-	if err := os.Symlink(real, alias); err != nil {
+	if err = os.Symlink(real, alias); err != nil {
 		t.Fatal(err)
 	}
-	store, err := New(Options{
+	store, err = New(Options{
 		ExplicitPath:    filepath.Join(alias, "private", "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
 	})
@@ -112,10 +131,14 @@ func TestConfigRejectsForeignOwnedAncestorWhenPrivileged(t *testing.T) {
 	if err := os.Chown(foreign, 1234, 1234); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(Options{
+	store, err := New(Options{
 		ExplicitPath:    filepath.Join(foreign, "private", "config.toml"),
 		ExplicitPathSet: true, Intent: LoginCreate,
-	}); err == nil {
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SaveCLIKey("saved-key"); err == nil {
 		t.Fatal("foreign-owned ancestor was accepted")
 	}
 }

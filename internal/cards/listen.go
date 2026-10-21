@@ -465,7 +465,7 @@ func (l Listen) row(e session.Entry, width int) string {
 	// Badges are padded, so one space sets them apart. Whoever posts to a
 	// source picks the method, so one longer than OPTIONS is cut.
 	const methodWidth, maxMethod = 6, len("OPTIONS")
-	left := Pad(Badge(truncate(Line(session.Method(d)), maxMethod)), methodWidth) + " "
+	left := Pad(Badge(truncate(Line(d.Method), maxMethod)), methodWidth) + " "
 	if e.Number > 0 {
 		left = faintStyle.Render(fmt.Sprintf("#%-3d", e.Number)) + left
 	}
@@ -496,16 +496,25 @@ func (l Listen) httpFailure(e session.Entry, inner int) string {
 
 	border := lipgloss.NewStyle().Foreground(StatusColor(response.Status))
 	return frame(border, inner, l.title(e), cardLabel(e), "",
-		section{lines: outcome(ColorBadge(StatusColor(response.Status), session.StatusText(response.Status)), e, inner)},
+		section{lines: outcome(OutcomeBadge(e), e, inner)},
 		section{title: faintStyle.Render("request · " + BodyTitle(d.Body, d.Headers)), lines: l.Body(d.Body, d.Headers)},
 		section{title: faintStyle.Render("response · " + BodyTitle(response.Body, response.Headers)), lines: responseLines},
 	)
 }
 
 func (l Listen) transportFailure(e session.Entry, inner int) string {
-	lines := append(outcome(ColorBadge(StatusColor(0), "✗ "+TransportLabel(e.Failure.Kind)), e, inner), "")
+	lines := append(outcome(OutcomeBadge(e), e, inner), "")
 	lines = append(lines, l.TransportHints(e.Target, e.Failure)...)
 	return frame(errorStyle, inner, l.title(e), cardLabel(e), "", section{lines: lines})
+}
+
+// OutcomeBadge is what forwarding e got: its status, or its transport
+// failure.
+func OutcomeBadge(e session.Entry) string {
+	if e.Failure != nil {
+		return ColorBadge(StatusColor(0), "✗ "+TransportLabel(e.Failure.Kind))
+	}
+	return ColorBadge(StatusColor(e.Response.Status), session.StatusText(e.Response.Status))
 }
 
 // RedirectHint follows a 3xx response that names a Location: webhook senders
@@ -598,7 +607,7 @@ func result(status int, failure *proxy.TransportFailure) string {
 
 // title names a card's request: number, source, method and path.
 func (l Listen) title(e session.Entry) string {
-	title := l.Source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(session.Method(e.Delivery)) + " " + Line(e.Delivery.Path)
+	title := l.Source(e.Delivery.SourceUID) + faintStyle.Render(" · ") + Line(e.Delivery.Method) + " " + Line(e.Delivery.Path)
 	if e.Number > 0 {
 		title = faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + title
 	}

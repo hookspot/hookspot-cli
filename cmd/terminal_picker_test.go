@@ -15,8 +15,8 @@ import (
 // the picker opens on the saved project, reads keys in raw mode, and leaves
 // the screen and terminal mode as it found them.
 func TestTerminalProjectPicker(t *testing.T) {
-	// start runs project use with three projects, proj_payments saved.
-	start := func(t *testing.T, options terminalOptions) (*terminalRun, string) {
+	// start runs project use with three projects and saved as the saved one.
+	start := func(t *testing.T, options terminalOptions, saved string) (*terminalRun, string) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/cli/projects" {
 				http.NotFound(w, r)
@@ -26,7 +26,7 @@ func TestTerminalProjectPicker(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 		config := filepath.Join(t.TempDir(), "config.toml")
-		if err := writeCommandFixture(config, []byte(fakeHookspotConfig)); err != nil {
+		if err := writeCommandFixture(config, []byte("schema_version = 1\ncli_key = 'key'\nproject = '"+saved+"'\n")); err != nil {
 			t.Fatal(err)
 		}
 		return startTerminal(t, options, developmentMetadata(server.URL), "--config", config, "project", "use"), config
@@ -54,7 +54,7 @@ func TestTerminalProjectPicker(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			run, config := start(t, terminalOptions{width: 80, height: 24})
+			run, config := start(t, terminalOptions{width: 80, height: 24}, "proj_payments")
 			run.waitForText("› Acme Inc.  Payments    current")
 			run.send(test.keys)
 			if code := run.wait(); code != 0 {
@@ -68,8 +68,21 @@ func TestTerminalProjectPicker(t *testing.T) {
 		})
 	}
 
+	t.Run("saved project not listed", func(t *testing.T) {
+		run, config := start(t, terminalOptions{width: 80, height: 24}, "proj_gone")
+		run.waitForText("› Acme Inc.  Storefront")
+		if screen := run.text(); strings.Contains(screen, "current") {
+			t.Errorf("screen marks a current project:\n%s", screen)
+		}
+		run.send("\x1b")
+		if code := run.wait(); code != 0 {
+			t.Fatalf("exit code = %d, want 0; screen:\n%s", code, run.text())
+		}
+		requireSaved(t, config, "proj_gone")
+	})
+
 	t.Run("stdout piped", func(t *testing.T) {
-		run, config := start(t, terminalOptions{width: 100, height: 24, pipeStdout: true})
+		run, config := start(t, terminalOptions{width: 100, height: 24, pipeStdout: true}, "proj_payments")
 		if code := run.wait(); code != 1 {
 			t.Fatalf("exit code = %d, want 1; screen:\n%s", code, run.text())
 		}

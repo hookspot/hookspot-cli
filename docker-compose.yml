@@ -1,27 +1,4 @@
 services:
-  cli:
-    build:
-      context: .
-      args:
-        GO_IMAGE: ${GO_ALPINE_IMAGE}
-        RUNTIME_IMAGE: ${RUNTIME_IMAGE}
-        SERVER_URL: ${SERVER_URL:-https://hookspot.localhost:4443}
-        VERSION: dev
-        COMMIT: ${COMMIT:-unknown}
-        SOURCE_DATE: ${SOURCE_DATE:-unknown}
-        BUILD_KIND: dev
-    image: hookspot:dev
-    environment:
-      - HOOKSPOT_CLI_KEY
-      - HOOKSPOT_ORGANIZATION_SLUG
-      - HOOKSPOT_PROJECT_SLUG
-      - HOOKSPOT_CONFIG_FILE
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "hookspot.localhost:host-gateway"
-    volumes:
-      - hookspot-config:/home/hookspot/.config/hookspot
-
   dev:
     image: ${GO_IMAGE}
     working_dir: /src
@@ -47,6 +24,5 @@ services:
 volumes:
   hookspot-gomod:
   hookspot-gocache:
-  hookspot-config:
   hookspot-dev-config:
     name: ${DEV_CONFIG_VOLUME:-hookspot-dev-config}

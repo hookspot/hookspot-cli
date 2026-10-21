@@ -163,7 +163,6 @@ func TestRequest(t *testing.T) {
 		mimeFallback.Body = []byte(`{"id":"evt_1"}`)
 		empty := testDelivery()
 		empty.SourceUID = "src_shopify"
-		empty.Method = ""
 		empty.Body = nil
 		unknown := testDelivery()
 		unknown.SourceUID = "src_gone"

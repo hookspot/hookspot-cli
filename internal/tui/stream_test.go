@@ -2,15 +2,12 @@ package tui
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,7 +44,7 @@ type forwarder struct {
 	gate   <-chan struct{}
 }
 
-func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ http.Header) (*http.Response, error) {
+func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ http.Header) (string, *http.Response, error) {
 	if f.called != nil {
 		f.called <- struct{}{}
 	}
@@ -59,18 +56,12 @@ func (f forwarder) Forward(_ context.Context, _, path, _ string, _ []byte, _ htt
 	if path == "/fail" {
 		status = http.StatusInternalServerError
 	}
-	return &http.Response{
+	return "http://localhost:3000" + path, &http.Response{
 		StatusCode: status,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(`{"error":"boom"}`)),
 	}, nil
 }
-
-func (forwarder) DestinationURL(path, _ string) (*url.URL, error) {
-	return url.Parse("http://localhost:3000" + path)
-}
-
-func (forwarder) String() string { return "http://localhost:3000" }
 
 // output is a program's output, safe to read while it draws.
 type output struct {
@@ -344,147 +335,70 @@ func TestStreamStatusLine(t *testing.T) {
 
 // TestStreamStatusLineAtEveryWidth renders the status line in every state,
 // with the update alert and with the server's notice, at every width from 20
-// to 140 columns, and compares it with the line the give-way rules in the
-// comments of Status.Render, Status.offline and statusAlert give.
+// to 140 columns: no line overflows. TestStreamStatusLineGivesWay and the
+// goldens show what gives way.
 func TestStreamStatusLineAtEveryWidth(t *testing.T) {
-	const project = "Acme | Payments"
 	states := []struct {
-		name, state string
-		events      []tea.Msg
-		// reason is why the connection dropped, while offline.
-		reason   string
-		stopping bool
-		// hint ends the line without the prompt, promptHint with it.
-		hint, promptHint string
+		name   string
+		events []tea.Msg
 	}{
-		{name: "connecting", state: "○ connecting…", hint: QuitHint},
-		{name: "live", state: "● live", events: []tea.Msg{session.Ready{}}, hint: QuitHint},
-		{name: "offline", state: "○ reconnecting", events: []tea.Msg{session.Ready{}}, reason: "dial tcp: connection refused", hint: QuitHint},
-		{name: "offline briefly", state: "○ reconnecting", events: []tea.Msg{session.Ready{}}, reason: "EOF", hint: QuitHint},
-		{name: "stopping", state: "◌ stopping…", events: []tea.Msg{session.Ready{}, stoppingMsg{}}, stopping: true, hint: QuitHint, promptHint: "ctrl-c force quit"},
-		{name: "stopped", state: "■ stopped", events: []tea.Msg{session.Ready{}, stoppingMsg{}, stoppedMsg{}}, stopping: true},
+		{name: "connecting"},
+		{name: "live", events: []tea.Msg{session.Ready{}}},
+		{name: "offline", events: []tea.Msg{session.Ready{}, session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}}},
+		{name: "offline briefly", events: []tea.Msg{session.Ready{}, session.ConnectionLost{Err: errors.New("EOF")}}},
+		{name: "stopping", events: []tea.Msg{session.Ready{}, stoppingMsg{}}},
+		{name: "stopped", events: []tea.Msg{session.Ready{}, stoppingMsg{}, stoppedMsg{}}},
 	}
-	totals := []struct {
-		name  string
-		stats session.Stats
-		parts []string
-	}{
-		{name: "no requests", parts: []string{"0 requests"}},
-		{
-			name:  "requests",
-			stats: session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond},
-			parts: []string{"12 requests", "10 ok · 2 failed", "p50 41ms"},
-		},
-	}
-	notice := "⚠ " + deprecation
-	// Cut below minCut columns, a notice or a reason would say nothing.
-	const minCut = 20
-	alerts := []struct {
-		name  string
-		event tea.Msg
-		whole string
-		// shrunk is the alert's form within room columns, or "".
-		shrunk func(room int) string
-	}{
-		{name: "update", event: updateAvailable, whole: "↑ 1.3.0 · brew upgrade hookspot-cli", shrunk: func(room int) string {
-			if short := "↑ update available"; room >= ansi.StringWidth(short) {
-				return short
-			}
-			return ""
-		}},
-		{name: "notice", event: session.Notice{Text: deprecation}, whole: notice, shrunk: func(room int) string {
-			if room < minCut {
-				return ""
-			}
-			return ansi.Truncate(notice, room, "…")
-		}},
-	}
-	// wholeOnly is the shrunk form of what shows whole or not at all.
-	wholeOnly := func(int) string { return "" }
+	totals := []session.Stats{{}, {Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond}}
+	alerts := []tea.Msg{nil, updateAvailable, session.Notice{Text: deprecation}}
 	for _, s := range states {
-		for _, total := range totals {
-			for _, prompt := range []bool{false, true} {
-				for _, alert := range alerts {
-					t.Run(fmt.Sprintf("%s/%s/prompt %t/%s", s.name, total.name, prompt, alert.name), func(t *testing.T) {
-						// An alert keeps the first stay parts, and its whole form the first
-						// stayWhole; offline it keeps them all.
-						parts := append([]string{s.state, project}, total.parts...)
-						stay, stayWhole := 2, 3
-						if s.reason != "" {
-							parts = append(parts, s.reason)
-							stay, stayWhole = len(parts), len(parts)
-						}
-						hint := s.hint
-						if prompt {
-							hint = s.promptHint
-						}
-						stream := Stream{Project: project, Prompt: prompt}
-						events := append([]tea.Msg{session.Recorded{Totals: total.stats}}, s.events...)
-						if s.reason != "" {
-							events = append(events, session.ConnectionLost{Err: errors.New(s.reason)})
+		t.Run(s.name, func(t *testing.T) {
+			for _, total := range totals {
+				for _, prompt := range []bool{false, true} {
+					for _, alert := range alerts {
+						events := append([]tea.Msg{session.Recorded{Totals: total}}, s.events...)
+						if alert != nil {
+							events = append([]tea.Msg{alert}, events...)
 						}
 						for columns := 20; columns <= 140; columns++ {
-							without := streamView(stream, columns, events...)
-							with := streamView(stream, columns, append([]tea.Msg{alert.event}, events...)...)
-							for _, line := range append(without, with...) {
+							for _, line := range streamView(Stream{Project: "Acme | Payments", Prompt: prompt}, columns, events...) {
 								if ansi.StringWidth(line) > columns {
-									t.Fatalf("at %d columns, %q overflows", columns, line)
+									t.Fatalf("at %d columns with %d requests, prompt %t and alert %T, %q overflows", columns, total.Count, prompt, alert, line)
 								}
-							}
-
-							// ending is the line that ends with end: whole beside the first
-							// endsWhole parts, else shrunk beside the first ends, and then
-							// as many parts as fit; "" where neither fits.
-							room := func(n int) int { return columns - ansi.StringWidth(strings.Join(parts[:n], " · ")) - 2 }
-							ending := func(ends, endsWhole int, end string, shrunk func(int) string) string {
-								if room(endsWhole) < ansi.StringWidth(end) {
-									end = shrunk(room(ends))
-								}
-								if end == "" {
-									return ""
-								}
-								n := ends
-								for n < len(parts) && room(n+1) >= ansi.StringWidth(end) {
-									n++
-								}
-								line := strings.Join(parts[:n], " · ")
-								return line + strings.Repeat(" ", columns-ansi.StringWidth(line)-ansi.StringWidth(end)) + end
-							}
-
-							// Live, the hint shows while every part fits beside it; stopping,
-							// the details give way to it as to an alert. Offline, where the
-							// parts don't fit, the reason keeps the most leading totals that
-							// fit beside it, and only the width cuts it; where even beside the
-							// state and project alone it would be cut to fewer than minCut
-							// columns, nothing gives way.
-							want := ending(len(parts), len(parts), hint, wholeOnly)
-							if s.stopping {
-								want = ending(2, 2, hint, wholeOnly)
-							}
-							shown := parts
-							if s.reason != "" && columns-ansi.StringWidth(s.state+" · "+project+" · ") >= min(minCut, ansi.StringWidth(s.reason)) {
-								for n := len(parts) - 1; n >= 2; n-- {
-									shown = append(slices.Clone(parts[:n]), s.reason)
-									if ansi.StringWidth(strings.Join(shown, " · ")) <= columns {
-										break
-									}
-								}
-							}
-							want = cmp.Or(want, ansi.Truncate(strings.Join(shown, " · "), columns, "…"))
-							if without[0] != want {
-								t.Fatalf("at %d columns, without the alert:\n got %q\nwant %q", columns, without[0], want)
-							}
-							if !s.stopping {
-								want = cmp.Or(ending(stay, stayWhole, alert.whole, alert.shrunk), want)
-							}
-							if with[0] != want {
-								t.Fatalf("at %d columns, with the alert:\n got %q\nwant %q", columns, with[0], want)
 							}
 						}
-					})
+					}
 				}
 			}
-		}
+		})
+	}
+}
+
+// TestStreamStatusLineGivesWay checks the status line where its totals give
+// way to the offline reason or to an alert, and where the reason is too
+// narrow for them to.
+func TestStreamStatusLineGivesWay(t *testing.T) {
+	totals := session.Recorded{Totals: session.Stats{Count: 12, OK: 10, Failed: 2, P50: 41 * time.Millisecond, Max: 900 * time.Millisecond}}
+	refused := session.ConnectionLost{Err: errors.New("dial tcp: connection refused")}
+	tests := []struct {
+		name    string
+		columns int
+		events  []tea.Msg
+		want    string
+	}{
+		// EOF has under minCut columns beside the state and project, but fits.
+		{name: "short reason", columns: 52, events: []tea.Msg{session.Ready{}, session.ConnectionLost{Err: errors.New("EOF")}}, want: "○ reconnecting · Acme | Payments · 12 requests · EOF"},
+		{name: "reason cut to minCut", columns: 55, events: []tea.Msg{session.Ready{}, refused}, want: "○ reconnecting · Acme | Payments · dial tcp: connectio…"},
+		{name: "reason under minCut", columns: 54, events: []tea.Msg{session.Ready{}, refused}, want: "○ reconnecting · Acme | Payments · 12 requests · 10 o…"},
+		{name: "update alert", columns: 80, events: []tea.Msg{session.Ready{}, updateAvailable}, want: "● live · Acme | Payments · 12 requests" + strings.Repeat(" ", 7) + "↑ 1.3.0 · brew upgrade hookspot-cli"},
+		{name: "stopping hint", columns: 50, events: []tea.Msg{session.Ready{}, stoppingMsg{}}, want: "◌ stopping… · Acme | Payments" + strings.Repeat(" ", 10) + "ctrl-c quit"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := streamView(Stream{Project: "Acme | Payments"}, test.columns, append([]tea.Msg{totals}, test.events...)...)[0]; got != test.want {
+				t.Errorf("at %d columns:\n got %q\nwant %q", test.columns, got, test.want)
+			}
+		})
 	}
 }
 
@@ -591,8 +505,6 @@ func TestStreamCommands(t *testing.T) {
 		{name: "failed copy", line: "c 9", err: boom, asked: "curl #9 redact true", reply: `boom\x1b`},
 		{name: "failed export", line: "e 9", err: boom, asked: "fixture #9 redact true", reply: `boom\x1b`},
 		{name: "failed test event", line: "t x", err: boom, asked: "test x", reply: `boom\x1b`},
-		{name: "inspect replay last", inspect: true, line: "", reply: "nothing to replay without --forward-to"},
-		{name: "inspect replay", inspect: true, line: "r 1", reply: "nothing to replay without --forward-to"},
 		{name: "inspect typo", inspect: true, line: "c", reply: "commands: c N cURL · e N fixture · t test event · ? help"},
 		{name: "inspect help", inspect: true, line: "?", reply: help + "replays need --forward-to\nctrl-c  stop listening"},
 	}

@@ -50,12 +50,7 @@ func parseFilter(text string) []term {
 
 // matches reports whether e matches every term.
 func matches(e session.Entry, terms []term, l cards.Listen) bool {
-	for _, t := range terms {
-		if !t.matches(e, l) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(terms, func(t term) bool { return !t.matches(e, l) })
 }
 
 // matches compares source names and paths by prefix, names ignoring case,

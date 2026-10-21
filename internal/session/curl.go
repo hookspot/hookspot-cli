@@ -60,7 +60,7 @@ func (s *Session) Curl(n int, redact bool) (Curl, error) {
 	if !printable(d.Method+target, "") {
 		return Curl{}, fmt.Errorf("#%d: its method or URL has control characters", n)
 	}
-	method := Method(d)
+	method := d.Method
 	if !plainName.MatchString(method) {
 		method = Quote(method)
 	}

@@ -63,7 +63,8 @@ A re-run of the job keeps them (`mode: keep-existing`).
    anything is published.
 2. `make release-tools` builds the locked GoReleaser-on-pinned-Go image from
    `Dockerfile.release` (digests in `release/toolchain.env`).
-3. `make release-publish` runs `goreleaser release --clean` in that image. The
+3. `make release-publish` runs `goreleaser release --clean` in that image for
+   the pushed tag, even when a pre-release tag shares its commit. The
    before hooks clear `npm/binaries/`, run `go mod download`, and run
    `releasecheck metadata`, which writes `build-info.json`. GoReleaser builds
    the six binaries (`serverURL` from `.goreleaser.yaml`), copies each into
@@ -72,7 +73,7 @@ A re-run of the job keeps them (`mode: keep-existing`).
    `hookspot_<version>_checksums.txt`, creates the GitHub Release with those
    seven assets and its notes, and pushes `Formula/hookspot-cli.rb` to
    `hookspot/homebrew-hookspot`.
-4. `make release-image-publish` builds the `release` stage of `Dockerfile` for
+4. `make release-image-publish` builds the image from `Dockerfile` for
    `linux/amd64` and `linux/arm64`, copying the Linux binaries from step 3, and
    pushes `hookspot/cli:<version>`, plus `latest` for a non-pre-release
    version. It runs before npm because image tags can be pushed again and npm

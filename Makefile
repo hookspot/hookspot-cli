@@ -17,7 +17,7 @@ RUN_ENV := -e HOOKSPOT_CLI_KEY -e HOOKSPOT_ORGANIZATION_SLUG -e HOOKSPOT_PROJECT
 RELEASE_IMAGE := hookspot-release:local
 RELEASE_RUN := $(DOCKER_RUN) $(RELEASE_IMAGE)
 IMAGE := hookspot/cli
-IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --target release --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
+IMAGE_BUILD := docker buildx build --platform linux/amd64,linux/arm64 --build-arg RUNTIME_IMAGE=$(RUNTIME_IMAGE)
 DEV_CONFIG_VOLUME ?= hookspot-dev-config
 COMMIT ?= $(shell git rev-parse HEAD)
 SOURCE_DATE ?= $(shell git show -s --format=%cI HEAD)
@@ -36,7 +36,7 @@ E2E_OUTPUT ?= tmp/e2e/hookspot
 E2E_GOOS ?= darwin
 E2E_GOARCH ?= $(shell uname -m | sed s/x86_64/amd64/)
 
-.PHONY: tidy build test golden vet vuln fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot release-publish release-image release-image-publish
+.PHONY: tidy build test golden vuln fmt lint toolchain-check check e2e-build run get dev npm-test release-tools release-check release-snapshot release-publish release-image release-image-publish
 
 tidy:
 	$(GO) mod tidy
@@ -56,9 +56,6 @@ test:
 golden:
 	$(GO) test $(value ARGS) $(if $(ARGS_PKGS),,$(GOLDEN_PKGS)) -update
 
-vet:
-	$(GO) vet ./...
-
 # Known vulnerabilities the code each GOOS builds reaches, in its modules and
 # the standard library. -exec hands GOOS to govulncheck alone, so go run still
 # builds govulncheck for this machine.
@@ -68,7 +65,7 @@ vuln:
 fmt:
 	$(LINT) fmt $(value ARGS)
 
-# Includes gofmt and staticcheck. Each GOOS has its own config and terminal code.
+# Includes gofmt, go vet and staticcheck. Each GOOS has its own config and terminal code.
 lint:
 	for goos in darwin linux windows; do GOOS=$$goos $(LINT) run $(value ARGS) || exit 1; done
 
@@ -78,12 +75,11 @@ toolchain-check:
 	@go=$$(sed -n 's/^go = "\(.*\)"$$/\1/p' mise.toml); lint=$$(sed -n 's/^golangci-lint = "\(.*\)"$$/\1/p' mise.toml); \
 	grep -qx "go $$go" go.mod \
 		&& grep -q "^GO_IMAGE=golang:$$go@" release/toolchain.env \
-		&& grep -q "^GO_ALPINE_IMAGE=golang:$$go-" release/toolchain.env \
 		&& grep -q "^GOLANGCI_LINT_IMAGE=golangci/golangci-lint:v$$lint@" release/toolchain.env \
 		|| { echo "go.mod, mise.toml and release/toolchain.env pin different Go or golangci-lint versions" >&2; exit 1; }
 
 # Everything CI's ci job runs. release-snapshot needs a clean tree.
-check: toolchain-check lint vet vuln test release-tools release-check release-snapshot release-image npm-test
+check: toolchain-check lint vuln test release-tools release-check release-snapshot release-image npm-test
 	scripts/smoke_test.sh
 	cd npm && npm pack --dry-run
 
@@ -142,7 +138,9 @@ release-snapshot:
 	$(call require-clean-tree,release-snapshot)
 	$(RELEASE_RUN) release --snapshot --clean --skip=publish
 
-# CI only: publishes the GitHub Release and the Homebrew formula.
+# CI only: publishes the GitHub Release and the Homebrew formula. The pushed
+# tag names the version: on a commit tagged both v1.2.3-rc.1 and v1.2.3,
+# GoReleaser would pick the rc.
 release-publish:
 ifndef GITHUB_TOKEN
 	$(error GITHUB_TOKEN is required to publish the GitHub Release)
@@ -150,8 +148,11 @@ endif
 ifndef HOMEBREW_TAP_TOKEN
 	$(error HOMEBREW_TAP_TOKEN is required to push the Homebrew formula)
 endif
+ifndef GITHUB_REF_NAME
+	$(error GITHUB_REF_NAME is required to name the tag to publish, e.g. GITHUB_REF_NAME=v1.2.3)
+endif
 	$(call require-clean-tree,release-publish)
-	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN $(RELEASE_IMAGE) release --clean
+	$(DOCKER_RUN) -e GITHUB_TOKEN -e HOMEBREW_TAP_TOKEN -e GORELEASER_CURRENT_TAG="$(GITHUB_REF_NAME)" $(RELEASE_IMAGE) release --clean
 
 # Multi-arch image of the Linux binaries that release-snapshot or
 # release-publish staged in npm/binaries/. Builds without pushing.

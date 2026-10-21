@@ -52,7 +52,7 @@ func TestWindowsStoreCreatesPrivateFileAndPreservesParentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = validateWindowsHandleAccess(file, true, true); err != nil {
+	if err = validateWindowsHandleAccess(file); err != nil {
 		_ = file.Close()
 		t.Fatalf("created config access = %v", err)
 	}

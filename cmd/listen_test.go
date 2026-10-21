@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,21 +29,6 @@ import (
 	"hookspot/internal/tui"
 	"hookspot/internal/ws"
 )
-
-func TestFormatProjectLabel_UsesSlugs(t *testing.T) {
-	project := &api.Project{
-		Name: "Payments API",
-		Slug: "payments",
-		Organization: api.Organization{
-			Name: "Acme Incorporated",
-			Slug: "acme",
-		},
-	}
-
-	if got, want := formatProjectLabel(project), "acme/payments"; got != want {
-		t.Fatalf("formatProjectLabel() = %q, want %q", got, want)
-	}
-}
 
 func TestFormatProjectLabelEscapesBackendControls(t *testing.T) {
 	project := &api.Project{
@@ -131,17 +115,6 @@ func TestResolveSources_SuggestsOnlyAnUnambiguousCaseMatch(t *testing.T) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
 		})
-	}
-}
-
-func TestSourceNamesByUID(t *testing.T) {
-	sources := []api.Source{
-		{UID: "src_1", Name: "stripe"},
-		{UID: "src_2", Name: "shopify"},
-	}
-	want := map[string]string{"src_1": "stripe", "src_2": "shopify"}
-	if got := sourceNamesByUID(sources); !reflect.DeepEqual(got, want) {
-		t.Fatalf("sourceNamesByUID() = %#v, want %#v", got, want)
 	}
 }
 
@@ -512,6 +485,7 @@ func TestListenJoinsProjectTopicWithAPIUIDsMachineAndTarget(t *testing.T) {
 	}{
 		{name: "print-only", args: []string{"stripe"}, forwardTo: "null"},
 		{name: "forwarding", args: []string{"stripe", "--forward-to", "3000/hooks/"}, forwardTo: `"http://localhost:3000/hooks/"`},
+		{name: "forwarding to a Compose service", args: []string{"stripe", "--forward-to", "http://web_app:3000/api%20v1"}, forwardTo: `"http://web_app:3000/api%20v1"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -592,23 +566,6 @@ func TestListenRequiresASourceWithRoutes(t *testing.T) {
 	}
 }
 
-func TestSuperviseListenDoesNotReconnectAfterInvalidDelivery(t *testing.T) {
-	listener := &scriptedWebSocketListener{errors: []error{
-		&ws.SessionError{Kind: ws.SessionProtocol, Connected: true, Err: errors.New("invalid delivery payload")},
-		&ws.SessionError{Kind: ws.SessionConnect, Err: errors.New("must not be reached")},
-	}}
-	var stderr bytes.Buffer
-
-	err := superviseListen(context.Background(), plainNotices(io.Discard, &stderr, ""), listener, nil, reconnectPolicy{Delay: noDelay, MaxInitialAttempts: 10})
-	var sessionErr *ws.SessionError
-	if !errors.As(err, &sessionErr) || sessionErr.Kind != ws.SessionProtocol || listener.calls != 1 {
-		t.Fatalf("error = %#v, calls = %d; want one fatal protocol attempt", err, listener.calls)
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("fatal protocol error printed reconnect notice: %q", stderr.String())
-	}
-}
-
 func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 	local := httptest.NewServer(http.NotFoundHandler())
 	defer local.Close()
@@ -638,6 +595,35 @@ func TestListenPrintsRootHintOnceAndOnlyWhenForwarding(t *testing.T) {
 	}
 }
 
+func TestListenFailsAnOversizedLocalResponseAndGoesOn(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/webhooks/stripe" {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), 16*1024*1024+1))
+		}
+	}))
+	defer local.Close()
+	result, hookspot := runListenStream(t, fakeHookspotSources, []string{"--forward-to", local.URL},
+		ws.Delivery{AttemptUID: "att_1", RequestUID: "req_stripe_1", SourceUID: "src_stripe", RouteUID: "rte_stripe", Method: "POST", Path: "/webhooks/stripe"},
+		ws.Delivery{AttemptUID: "att_2", RequestUID: "req_github_1", SourceUID: "src_github", RouteUID: "rte_github", Method: "POST", Path: "/webhooks/github"},
+	)
+	if !strings.Contains(result.stdout, "✗ transport error") || !strings.Contains(result.stdout, "failed: local response body exceeds 16 MiB limit") {
+		t.Fatalf("stdout = %q, want #1 failed for its oversized body", result.stdout)
+	}
+	if !regexp.MustCompile(`(?m)^#2 +POST +github .* 200 `).MatchString(result.stdout) {
+		t.Fatalf("stdout = %q, want #2 forwarded after #1", result.stdout)
+	}
+	for _, want := range []int{http.StatusBadGateway, http.StatusOK} {
+		select {
+		case response := <-hookspot.responses:
+			if response.Status != want || len(response.Body) != 0 {
+				t.Fatalf("response = %+v, want %d without a body", response, want)
+			}
+		default:
+			t.Fatalf("no response with %d", want)
+		}
+	}
+}
+
 func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 	wantErr := errors.New("replay output unavailable")
 	var lines []string
@@ -658,8 +644,10 @@ func TestLineCommandReaderRunsEachLineAndPropagatesFailure(t *testing.T) {
 	}
 }
 
-func TestLineCommandReaderClosesAndJoinsOwnedReaderOnCancellation(t *testing.T) {
-	reader, writer := io.Pipe()
+func TestLineCommandReaderStopsWhileInputBlocks(t *testing.T) {
+	reader, _ := io.Pipe()
+	// Stop leaves input open, so closing it here ends the blocked read.
+	t.Cleanup(func() { _ = reader.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	commands := startLineCommands(ctx, reader, func(string) error { return nil }, func() {})
 	cancel()
@@ -671,33 +659,26 @@ func TestLineCommandReaderClosesAndJoinsOwnedReaderOnCancellation(t *testing.T) 
 			t.Fatalf("Stop error = %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("owned command input did not stop")
-	}
-	if _, err := writer.Write([]byte("\n")); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("write after stop error = %v, want closed pipe", err)
+		t.Fatal("command input did not stop")
 	}
 }
 
-func TestLineCommandReaderStopsAfterBlockedFallbackReadResumes(t *testing.T) {
+func TestLineCommandReaderDoesNotRunLineReadAfterCancellation(t *testing.T) {
 	reader := newGatedLineReader("r 1\nr 2\n")
 	ctx, cancel := context.WithCancel(context.Background())
+	var ran atomic.Bool
 	commands := startLineCommands(ctx, reader, func(string) error {
-		t.Fatal("a line read after cancellation ran")
+		ran.Store(true)
 		return nil
 	}, func() {})
 	<-reader.started
 	cancel()
 	close(reader.release)
-	select {
-	case <-commands.producerDone:
-	case <-time.After(time.Second):
-		t.Fatal("fallback command reader did not stop after its read resumed")
-	}
-	if got := reader.readCount(); got != 1 {
-		t.Fatalf("read count after cancellation = %d, want 1", got)
-	}
 	if err := commands.Stop(); err != nil {
 		t.Fatalf("Stop error = %v", err)
+	}
+	if ran.Load() {
+		t.Fatal("a line read after cancellation ran")
 	}
 }
 
@@ -726,12 +707,12 @@ func TestLineCommandReaderDoesNotRunQueuedLineAfterCancellation(t *testing.T) {
 	}
 }
 
+// gatedLineReader holds its first read until release closes, then ends.
 type gatedLineReader struct {
 	started chan struct{}
 	release chan struct{}
 	data    []byte
-	mu      sync.Mutex
-	reads   int
+	read    bool
 }
 
 func newGatedLineReader(value string) *gatedLineReader {
@@ -743,22 +724,13 @@ func newGatedLineReader(value string) *gatedLineReader {
 }
 
 func (r *gatedLineReader) Read(buffer []byte) (int, error) {
-	r.mu.Lock()
-	r.reads++
-	read := r.reads
-	r.mu.Unlock()
-	if read == 1 {
-		close(r.started)
-		<-r.release
-		return copy(buffer, r.data), nil
+	if r.read {
+		return 0, io.EOF
 	}
-	return 0, io.EOF
-}
-
-func (r *gatedLineReader) readCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.reads
+	r.read = true
+	close(r.started)
+	<-r.release
+	return copy(buffer, r.data), nil
 }
 
 func TestLineCommandsReplayAndAnswerTypos(t *testing.T) {

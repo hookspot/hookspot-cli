@@ -210,9 +210,9 @@ func (m Stream) run(line string) (tea.Model, tea.Cmd) {
 	requests := m.Requests
 	switch command.Key {
 	case ReplayLastKey:
-		return m.replay(requests.ReplayLast)
+		return m, runReplay(requests.ReplayLast)
 	case ReplayKey:
-		return m.replay(func() error { return requests.Replay(command.N) })
+		return m, runReplay(func() error { return requests.Replay(command.N) })
 	case CurlKey:
 		return m, copyCurl(requests, command.N, !m.ShowSensitiveHeaders)
 	case ExportKey:
@@ -245,15 +245,6 @@ func exportFixture(requests Requests, n int, redact bool) tea.Cmd {
 		}
 		return replyMsg(cards.Exported(n, fixture))
 	}
-}
-
-// replay refuses without --forward-to, where nothing replays.
-func (m Stream) replay(replay func() error) (tea.Model, tea.Cmd) {
-	if !m.Forwarding {
-		m.reply = session.ErrNoTarget.Error()
-		return m, nil
-	}
-	return m, runReplay(replay)
 }
 
 // runReplay replays off the event loop, which must never wait on the

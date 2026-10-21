@@ -65,12 +65,14 @@ func newStoreAt(path string, managed bool, intent Intent) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect config file: %w", err)
 	}
-	if err = validateConfigFileType(path, info); err != nil {
-		return nil, err
-	}
-	contents, err := readValidatedConfig(path, info)
+	file, err := openConfigFile(path, info)
 	if err != nil {
 		return nil, err
+	}
+	defer file.Close()
+	contents, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read config file: %w", err)
 	}
 	var record persistedRecord
 	if err := toml.Unmarshal(contents, &record); err != nil {
@@ -123,27 +125,48 @@ func newLocalStore(opts Options) (*Store, error) {
 	}, nil
 }
 
-func readValidatedConfig(path string, info os.FileInfo) ([]byte, error) {
+// openConfigFile opens the file Lstat described as info, refusing one the
+// store must not trust.
+func openConfigFile(path string, info os.FileInfo) (*os.File, error) {
+	if err := validateConfigPath(path, info); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config file: %w", err)
 	}
-	defer file.Close()
-	openedInfo, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("inspect opened config file: %w", err)
-	}
-	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
-		return nil, errors.New("config file changed while it was being opened")
-	}
-	if err = validateConfigFile(path, file, info); err != nil {
+	if err = validateOpenedConfigFile(file, info); err != nil {
+		_ = file.Close()
 		return nil, err
 	}
-	contents, err := io.ReadAll(file)
+	return file, nil
+}
+
+func validateOpenedConfigFile(file *os.File, info os.FileInfo) error {
+	openedInfo, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("read config file: %w", err)
+		return fmt.Errorf("inspect opened config file: %w", err)
 	}
-	return contents, nil
+	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		return errors.New("config file changed while it was being opened")
+	}
+	return validateConfigFile(file, info)
+}
+
+// validateConfigTarget refuses to replace a file the store would refuse to read.
+func validateConfigTarget(path string) error {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect config target: %w", err)
+	}
+	file, err := openConfigFile(path, info)
+	if err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 // Path returns the selected configuration file path.
@@ -189,7 +212,7 @@ func (s *Store) Resolve(flags Overrides) (Config, error) {
 func (s *Store) SaveCLIKey(key string) error {
 	record := s.record
 	record.CLIKey = key
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // SaveLogin persists a browser login's key and, when projectUID is nonempty,
@@ -201,14 +224,14 @@ func (s *Store) SaveLogin(key, projectUID string) error {
 	if projectUID != "" {
 		record.Project = projectUID
 	}
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // SaveProject persists only the project UID owned by this store.
 func (s *Store) SaveProject(uid string) error {
 	record := s.record
 	record.Project = uid
-	return s.persist(record, !s.exists)
+	return s.persist(record)
 }
 
 // ClearCLIKey removes only the persisted key, preserving the project.
@@ -218,7 +241,13 @@ func (s *Store) ClearCLIKey() error {
 	}
 	record := s.record
 	record.CLIKey = ""
-	return s.persist(record, !s.exists)
+	return s.persist(record)
+}
+
+// CheckFolders refuses an unsafe folder chain for the record, validating the
+// folders that exist without creating any.
+func (s *Store) CheckFolders() error {
+	return checkConfigDirectory(s.path, s.managedDir)
 }
 
 // EnvironmentCLIKeyActive reports whether logout leaves a nonempty
@@ -229,7 +258,7 @@ func (s *Store) EnvironmentCLIKeyActive() bool {
 	return set && value != ""
 }
 
-func (s *Store) persist(record persistedRecord, noOverwrite bool) error {
+func (s *Store) persist(record persistedRecord) error {
 	contents, err := toml.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode config file: %w", err)
@@ -237,7 +266,7 @@ func (s *Store) persist(record persistedRecord, noOverwrite bool) error {
 	if err := prepareConfigDirectory(s.path, s.managedDir); err != nil {
 		return err
 	}
-	if err := s.write(s.path, contents, noOverwrite); err != nil {
+	if err := s.write(s.path, contents, !s.exists); err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
 	s.record = record
@@ -290,4 +319,24 @@ func globalConfigPath(prefix string) (string, error) {
 		return "", fmt.Errorf("find home directory: %w", err)
 	}
 	return filepath.Join(home, ".config", "hookspot", prefix, "config.toml"), nil
+}
+
+// existingAncestor returns the nearest existing directory at or above dir, and
+// the missing directories below it, outermost first.
+func existingAncestor(dir string) (string, []string, error) {
+	var missing []string
+	current := filepath.Clean(dir)
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			return current, missing, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", nil, fmt.Errorf("inspect config directory: %w", err)
+		}
+		missing = append([]string{current}, missing...)
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", nil, errors.New("config path has no existing directory ancestor")
+		}
+		current = parent
+	}
 }

@@ -90,6 +90,7 @@ func TestParseRejectsUnsafeInputsWithoutEchoingThem(t *testing.T) {
 		{"encoded dot", "https://example.invalid/%2e%2e"},
 		{"empty path segment", "https://example.invalid/a//b"},
 		{"repeated root separator", "https://example.invalid//"},
+		{"repeated trailing separator", "https://example.invalid/a//"},
 		{"dot segment", "https://example.invalid/a/../b"},
 		{"unsafe path segment", "https://example.invalid/a;b"},
 		{"bracketed DNS name", "https://[example.invalid]"},

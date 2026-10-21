@@ -28,9 +28,6 @@ func (e *commandError) Error() string {
 	if e.cause == nil {
 		return e.message
 	}
-	if e.message == "" {
-		return e.cause.Error()
-	}
 	return e.message + ": " + e.cause.Error()
 }
 
@@ -41,9 +38,6 @@ func newCommandError(message, hint string) error {
 }
 
 func wrapCommandError(message, hint string, cause error) error {
-	if cause == nil {
-		return nil
-	}
 	return &commandError{message: message, hint: hint, cause: cause}
 }
 

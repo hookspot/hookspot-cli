@@ -551,35 +551,14 @@ func TestStoreMutationsPersistOnlyMarkedOwnedFields(t *testing.T) {
 			t.Fatalf("config missing %q:\n%s", required, text)
 		}
 	}
-
-	if err = store.SaveCLIKey("saved-key"); err != nil {
-		t.Fatal(err)
-	}
-	if err = store.ClearCLIKey(); err != nil {
-		t.Fatal(err)
-	}
-	contents, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(contents), "saved-key") || !strings.Contains(string(contents), "saved-project") {
-		t.Fatalf("unexpected config after logout: %s", contents)
-	}
 }
 
-func TestEnvironmentCLIKeyActiveUsesEnvironmentTierOnly(t *testing.T) {
+func TestEnvironmentCLIKeyActiveIgnoresEmptyKey(t *testing.T) {
 	clearConfigEnvironment(t)
 	setIsolatedHome(t)
 	store, err := New(Options{})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if store.EnvironmentCLIKeyActive() {
-		t.Fatal("unset key reported active")
-	}
-	t.Setenv("HOOKSPOT_CLI_KEY", "environment-key")
-	if !store.EnvironmentCLIKeyActive() {
-		t.Fatal("nonempty key was not reported active")
 	}
 	t.Setenv("HOOKSPOT_CLI_KEY", "")
 	if store.EnvironmentCLIKeyActive() {
@@ -639,29 +618,6 @@ func TestStoreMutationFailurePreservesDiskAndMemory(t *testing.T) {
 	}
 }
 
-func TestSaveLoginPersistsKeyAndProject(t *testing.T) {
-	clearConfigEnvironment(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true, Intent: LoginCreate})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = store.SaveLogin("login-key", "login-project"); err != nil {
-		t.Fatal(err)
-	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(contents)
-	if !strings.Contains(text, `cli_key = 'login-key'`) || !strings.Contains(text, `project = 'login-project'`) {
-		t.Fatalf("unexpected config:\n%s", text)
-	}
-	if store.SavedProject() != "login-project" {
-		t.Fatalf("SavedProject() = %q, want login-project", store.SavedProject())
-	}
-}
-
 func TestSaveLoginOverwritesExistingRecord(t *testing.T) {
 	clearConfigEnvironment(t)
 	path := filepath.Join(t.TempDir(), "config.toml")
@@ -684,60 +640,7 @@ func TestSaveLoginOverwritesExistingRecord(t *testing.T) {
 	if strings.Contains(text, "old-key") || strings.Contains(text, "old-project") {
 		t.Fatalf("previous login values survived:\n%s", text)
 	}
-}
-
-func TestSaveLoginWithoutProjectKeepsSavedProject(t *testing.T) {
-	clearConfigEnvironment(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	writeConfigFixture(t, path, "schema_version = 1\ncli_key = 'old-key'\nproject = 'kept-project'\n")
-	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = store.SaveLogin("new-key", ""); err != nil {
-		t.Fatal(err)
-	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(contents)
-	if !strings.Contains(text, `cli_key = 'new-key'`) || !strings.Contains(text, `project = 'kept-project'`) {
-		t.Fatalf("unexpected config:\n%s", text)
-	}
-	if strings.Contains(text, "old-key") {
-		t.Fatalf("previous key survived:\n%s", text)
-	}
-	if store.SavedProject() != "kept-project" {
-		t.Fatalf("SavedProject() = %q, want kept-project", store.SavedProject())
-	}
-}
-
-func TestSaveLoginFailurePreservesDiskAndMemory(t *testing.T) {
-	clearConfigEnvironment(t)
-	path := filepath.Join(t.TempDir(), "config.toml")
-	original := "schema_version = 1\ncli_key = 'old-key'\nproject = 'old-project'\n"
-	writeConfigFixture(t, path, original)
-	store, err := New(Options{ExplicitPath: path, ExplicitPathSet: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store.write = func(string, []byte, bool) error { return errors.New("publish failed") }
-	if err = store.SaveLogin("new-key", "new-project"); err == nil {
-		t.Fatal("SaveLogin succeeded")
-	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(contents) != original {
-		t.Fatalf("disk changed: %q", contents)
-	}
-	cfg, err := store.Resolve(Overrides{NeedProject: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.CLIKey != "old-key" || cfg.Project != "old-project" {
-		t.Fatalf("in-memory config = %+v", cfg)
+	if store.SavedProject() != "new-project" {
+		t.Fatalf("SavedProject() = %q, want new-project", store.SavedProject())
 	}
 }

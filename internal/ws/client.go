@@ -54,35 +54,19 @@ type SessionError struct {
 }
 
 func (e *SessionError) Error() string {
-	if e == nil || e.Err == nil {
-		return "WebSocket session error"
-	}
 	return e.Err.Error()
 }
 
 func (e *SessionError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
 	return e.Err
 }
 
 // Retryable reports whether reconnecting can reasonably recover this failure.
 func (e *SessionError) Retryable() bool {
-	return e != nil && (e.Kind == SessionConnect || e.Kind == SessionDisconnected)
+	return e.Kind == SessionConnect || e.Kind == SessionDisconnected
 }
 
 func sessionError(kind SessionErrorKind, connected bool, err error) error {
-	if err == nil {
-		return nil
-	}
-	var existing *SessionError
-	if errors.As(err, &existing) {
-		if connected {
-			existing.Connected = true
-		}
-		return existing
-	}
 	return &SessionError{Kind: kind, Connected: connected, Err: err}
 }
 
@@ -151,11 +135,8 @@ type Handler func(delivery Delivery) (Response, error)
 // deliveryResponse is the delivery_response event payload sent back to the
 // server, correlated to the delivery by AttemptUID.
 type deliveryResponse struct {
-	AttemptUID string      `json:"attempt_uid"`
-	Status     int         `json:"status"`
-	Headers    http.Header `json:"headers"`
-	Body       []byte      `json:"body"`
-	LatencyMS  int64       `json:"latency_ms"`
+	AttemptUID string `json:"attempt_uid"`
+	Response
 }
 
 // Client connects to a hookspot Phoenix Channel and streams events.
@@ -284,9 +265,6 @@ func (w *connWriter) sendMessage(m message, join bool, pending *heartbeatTracker
 		pending.add(r)
 	}
 	if err := w.conn.WriteMessage(websocket.TextMessage, frame); err != nil {
-		if pending != nil {
-			pending.take(r)
-		}
 		return "", err
 	}
 	return r, nil
@@ -378,13 +356,10 @@ func (c *Client) Listen(ctx context.Context, handler Handler) error {
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		c.heartbeat(writer, heartbeats, done, func(err error) {
-			select {
-			case heartbeatErr <- err:
-			default:
-			}
+		if err := c.heartbeat(writer, heartbeats, done); err != nil {
+			heartbeatErr <- err
 			_ = conn.Close()
-		})
+		}
 	}()
 
 	for {
@@ -470,13 +445,7 @@ func (c *Client) handleDelivery(ctx context.Context, writer *connWriter, activeJ
 		return sessionError(SessionHandler, true, err)
 	}
 
-	responsePayload, encodeErr := json.Marshal(deliveryResponse{
-		AttemptUID: delivery.AttemptUID,
-		Status:     resp.Status,
-		Headers:    resp.Headers,
-		Body:       resp.Body,
-		LatencyMS:  resp.LatencyMS,
-	})
+	responsePayload, encodeErr := json.Marshal(deliveryResponse{AttemptUID: delivery.AttemptUID, Response: resp})
 	if encodeErr != nil {
 		return sessionError(SessionHandler, true, fmt.Errorf("encode delivery response: %w", encodeErr))
 	}
@@ -619,21 +588,21 @@ func shortProtocolText(value string) string {
 	return value
 }
 
-// heartbeat has no reader or deadline ownership. A write failure closes the
-// connection through fail so the single read loop wakes and reports it.
-func (c *Client) heartbeat(writer *connWriter, pending *heartbeatTracker, done <-chan struct{}, fail func(error)) {
+// heartbeat has no reader or deadline ownership. Listen records its write
+// failure before closing the connection, so the single read loop wakes and
+// reports it.
+func (c *Client) heartbeat(writer *connWriter, pending *heartbeatTracker, done <-chan struct{}) error {
 	ticker := time.NewTicker(c.options.heartbeatInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-done:
-			return
+			return nil
 		case <-ticker.C:
 			_, err := writer.sendHeartbeat(pending)
 			if err != nil {
-				fail(err)
-				return
+				return err
 			}
 		}
 	}

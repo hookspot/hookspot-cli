@@ -47,7 +47,7 @@ func (m Fullscreen) detail(width, height int) []string {
 	}
 	lines := append(m.tabs(), content...)
 	title := faintStyle.Render("#"+strconv.Itoa(e.Number)) + " " + m.Listen.Source(e.Delivery.SourceUID) +
-		faintStyle.Render(" · ") + cards.Line(session.Method(e.Delivery)) + " " + cards.Line(e.Delivery.Path)
+		faintStyle.Render(" · ") + cards.Line(e.Delivery.Method) + " " + cards.Line(e.Delivery.Path)
 	label := ""
 	if e.Delivery.RequestUID != "" {
 		label = faintStyle.Render(cards.Line(e.Delivery.RequestUID))
@@ -181,7 +181,7 @@ func (m Fullscreen) request(e session.Entry) []string {
 	if d.Query != "" {
 		target += "?" + cards.Line(d.Query)
 	}
-	lines := []string{boldStyle.Render(cards.Line(session.Method(d))) + " " + target}
+	lines := []string{boldStyle.Render(cards.Line(d.Method)) + " " + target}
 	return append(lines, m.message(d.Headers, d.Body)...)
 }
 
@@ -245,16 +245,8 @@ func latencies(stats session.Stats) string {
 	return "p50 " + cards.FormatLatency(stats.P50) + separator + "p95 " + cards.FormatLatency(stats.P95) + separator + "max " + cards.FormatLatency(stats.Max)
 }
 
-// outcomeBadge is what forwarding got: the status, or the transport failure.
-func outcomeBadge(e session.Entry) string {
-	if e.Failure != nil {
-		return cards.ColorBadge(cards.StatusColor(0), "✗ "+cards.TransportLabel(e.Failure.Kind))
-	}
-	return cards.ColorBadge(cards.StatusColor(e.Response.Status), session.StatusText(e.Response.Status))
-}
-
 func outcomeWithLatency(e session.Entry) string {
-	return outcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))
+	return cards.OutcomeBadge(e) + " " + faintStyle.Render(cards.FormatLatency(e.Latency))
 }
 
 // numberedAt names request e and when it arrived.
