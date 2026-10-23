@@ -99,10 +99,12 @@ jobs:
           node-version: 22
 
       # The registry can take a few minutes to serve a freshly published version.
+      # Without --prefer-online, npm reuses the version list it fetched on the
+      # first attempt for up to 5 minutes (max-age=300), so retries never see it.
       - run: |
-          attempts=5
+          attempts=10
           for attempt in $(seq "$attempts"); do
-            npm install -g "@hookspot/cli@$VERSION" && break
+            npm install -g --prefer-online "@hookspot/cli@$VERSION" && break
             [ "$attempt" -lt "$attempts" ] || exit 1
             sleep 30
           done
