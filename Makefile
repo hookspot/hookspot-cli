@@ -120,8 +120,10 @@ npm-test:
 	node --test 'npm/test/*.test.js'
 
 # Locked GoReleaser-on-pinned-Go image shared by local snapshots and CI.
+# --load: a docker-container BUILDX_BUILDER otherwise leaves it in its cache,
+# and the later targets run a stale local image.
 release-tools:
-	docker build -f Dockerfile.release -t $(RELEASE_IMAGE) --build-arg GORELEASER_IMAGE=$(GORELEASER_IMAGE) --build-arg GO_IMAGE=$(GO_IMAGE) .
+	docker build --load -f Dockerfile.release -t $(RELEASE_IMAGE) --build-arg GORELEASER_IMAGE=$(GORELEASER_IMAGE) --build-arg GO_IMAGE=$(GO_IMAGE) .
 
 # Exit 2 is GoReleaser's deprecation notice for the `brews` section, which is
 # used deliberately (formula, not cask) and still supported by the pinned version.
