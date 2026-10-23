@@ -1,4 +1,4 @@
 # The versions release/toolchain.env pins in its images, and go.mod's Go.
 [tools]
-go = "1.26.9"
+go = "1.26.10"
 golangci-lint = "2.14.0"
